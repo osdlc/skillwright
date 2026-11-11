@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `cursor: {naming: prefixed}` on `skillwright.md` or a plugin note publishes that plugin's Cursor skills as `<plugin>-<skill>`, and body calls and mentions name them so. A plugin's value overrides the marketplace's. The default stays bare. A prefixed name that another plugin's skill also publishes under stops the build with `path-collision`.
+- A plugin's Cursor display name reaches its entry in `.cursor-plugin/marketplace.json` as well as its `plugin.json`.
+
+### Changed
+
+- `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts.
+- A root file value of the wrong shape is refused with the words a note gets, naming the key.
+
 ## [0.11.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.0...skillwright/v0.11.1) - 2026-11-10
 
 ### Added

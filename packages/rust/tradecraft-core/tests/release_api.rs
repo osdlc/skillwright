@@ -1244,6 +1244,294 @@ fn bare_names_that_collide_across_plugins_are_refused() {
 }
 
 #[test]
+fn a_bare_pi_collision_names_the_bare_setting() {
+    let vfs = pi_vault();
+    write(
+        &vfs,
+        "/vault/plugins/other/skills/review.md",
+        &note("review", ""),
+    );
+    let err = build_root(&vfs, pi_block("naming", "bare")).unwrap_err();
+    assert!(err.contains("`pi.naming: bare`"), "{err}");
+    assert!(!err.contains("by default"), "{err}");
+}
+
+/// Plugins `p1` and `p2`, each holding `hello`. `p2` also holds `lead`, which
+/// calls and mentions its own `hello` and calls `p1`'s.
+fn cursor_vault() -> MemVfs {
+    let lead = "---\nname: lead\ndescription: Use lead.\n---\n\n\
+                Run /[[hello]]. See [[hello]]. Then /[[plugins/p1/skills/hello]].\n";
+    root_vault(
+        "---\nname: house\n---\n",
+        &[
+            ("plugins/p1/skills/hello.md", &note("hello", "")),
+            ("plugins/p2/skills/hello.md", &note("hello", "")),
+            ("plugins/p2/skills/lead.md", lead),
+        ],
+    )
+}
+
+fn cursor_block(key: &str, value: &str) -> MarketplaceConfig {
+    let mut config = request().config;
+    let block = serde_json::Map::from_iter([(key.to_owned(), serde_json::json!(value))]);
+    config.blocks.insert("cursor".to_owned(), block);
+    config
+}
+
+/// `plugin`'s note in a [`root_vault`], with `extra` in its frontmatter.
+fn plugin_note(vfs: &MemVfs, plugin: &str, extra: &str) {
+    write(
+        vfs,
+        &format!("/vault/plugins/{plugin}/{plugin}.md"),
+        &note(plugin, extra),
+    );
+}
+
+const CURSOR_PACKS: &str = "/market/.cursor-plugin/packs";
+
+fn cursor_skill(vfs: &dyn Vfs, plugin: &str, folder: &str) -> Option<String> {
+    let path = format!("{CURSOR_PACKS}/{plugin}/skills/{folder}/SKILL.md");
+    vfs.exists(Path::new(&path)).then(|| text_at(vfs, &path))
+}
+
+#[test]
+fn cursor_names_are_bare_by_default() {
+    let vfs = cursor_vault();
+    build_root(&vfs, request().config).unwrap();
+    for plugin in ["p1", "p2"] {
+        let hello = cursor_skill(&vfs, plugin, "hello").expect(plugin);
+        assert!(hello.contains("name: hello\n"), "{hello}");
+    }
+}
+
+#[test]
+fn a_marketplace_can_prefix_cursor_names() {
+    let vfs = cursor_vault();
+    build_root(&vfs, cursor_block("naming", "prefixed")).unwrap();
+    for plugin in ["p1", "p2"] {
+        let hello = cursor_skill(&vfs, plugin, &format!("{plugin}-hello")).expect(plugin);
+        assert!(
+            hello.contains(&format!("name: {plugin}-hello\n")),
+            "{hello}"
+        );
+        assert!(cursor_skill(&vfs, plugin, "hello").is_none(), "{plugin}");
+    }
+}
+
+#[test]
+fn a_plugin_s_cursor_naming_overrides_the_marketplace_s() {
+    let vfs = cursor_vault();
+    plugin_note(&vfs, "p1", "cursor:\n  naming: bare\n");
+    build_root(&vfs, cursor_block("naming", "prefixed")).unwrap();
+    assert!(cursor_skill(&vfs, "p1", "hello").is_some());
+    assert!(cursor_skill(&vfs, "p2", "p2-hello").is_some());
+
+    let vfs = cursor_vault();
+    plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
+    build_root(&vfs, request().config).unwrap();
+    assert!(cursor_skill(&vfs, "p1", "hello").is_some());
+    assert!(cursor_skill(&vfs, "p2", "p2-hello").is_some());
+}
+
+#[test]
+fn a_body_names_the_prefixed_cursor_skill() {
+    let vfs = cursor_vault();
+    plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
+    build_root(&vfs, request().config).unwrap();
+    let lead = cursor_skill(&vfs, "p2", "p2-lead").unwrap();
+    assert!(
+        lead.contains("Run `/p2-hello`. See `p2-hello`. Then `/hello`."),
+        "{lead}"
+    );
+    let claude = text_at(&vfs, "/market/.claude-plugin/packs/p2/skills/lead/SKILL.md");
+    assert!(claude.contains("Run `/p2:hello`."), "{claude}");
+    let codex = text_at(&vfs, "/market/.agents/packs/p2/skills/lead/SKILL.md");
+    assert!(codex.contains("p2:hello"), "{codex}");
+}
+
+#[test]
+fn a_bad_cursor_naming_is_refused() {
+    let vfs = cursor_vault();
+    plugin_note(&vfs, "p1", "cursor:\n  naming: short\n");
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("unknown-naming"), "{err}");
+    assert!(err.contains("`cursor.naming` of plugin `p1`"), "{err}");
+}
+
+#[test]
+fn cursor_naming_is_not_an_unknown_key() {
+    let warned =
+        |report: &ExportReport, key: &str| report.warnings.iter().any(|w| w.detail.contains(key));
+    let vfs = vault(
+        "cursor:\n  naming: prefixed\n",
+        "cursor:\n  naming: bare\n",
+        "",
+    );
+    let report = build(&vfs);
+    assert!(!warned(&report, "cursor.naming"), "{:?}", report.warnings);
+
+    for harness in ["claude", "codex"] {
+        let vfs = vault("", &format!("{harness}:\n  naming: bare\n"), "");
+        let report = build(&vfs);
+        assert!(
+            warned(&report, &format!("{harness}.naming")),
+            "{:?}",
+            report.warnings
+        );
+        let vfs = vault(&format!("{harness}:\n  naming: bare\n"), "", "");
+        let report = build(&vfs);
+        assert!(
+            warned(&report, &format!("{harness}.naming")),
+            "{:?}",
+            report.warnings
+        );
+    }
+}
+
+#[test]
+fn cursor_naming_never_reaches_a_manifest() {
+    let vfs = cursor_vault();
+    plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
+    build_root(&vfs, cursor_block("naming", "prefixed")).unwrap();
+    let manifest = json_at(
+        &vfs,
+        &format!("{CURSOR_PACKS}/p2/.cursor-plugin/plugin.json"),
+    );
+    assert!(manifest.get("naming").is_none(), "{manifest}");
+    let catalog = json_at(&vfs, "/market/.cursor-plugin/marketplace.json");
+    assert!(catalog.get("naming").is_none(), "{catalog}");
+    assert!(entry(&catalog, "p2").get("naming").is_none(), "{catalog}");
+}
+
+#[test]
+fn a_prefixed_cursor_name_that_meets_a_bare_one_is_refused() {
+    let vfs = root_vault(
+        "---\nname: house\n---\n",
+        &[
+            ("plugins/p/skills/hello.md", &note("hello", "")),
+            ("plugins/x/skills/p-hello.md", &note("p-hello", "")),
+        ],
+    );
+    plugin_note(&vfs, "p", "cursor:\n  naming: prefixed\n");
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+    for part in [
+        "plugins/p/skills/hello.md",
+        "plugins/x/skills/p-hello.md",
+        "`p-hello`",
+        "cursor.naming",
+    ] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
+}
+
+/// Only Cursor admits these skills, so Pi's default prefix cannot be what
+/// refuses them.
+#[test]
+fn two_prefixed_cursor_names_that_meet_are_refused() {
+    let vfs = root_vault(
+        "---\nname: house\n---\n",
+        &[
+            (
+                "plugins/a/skills/b-c.md",
+                &note("b-c", "targets: [cursor]\n"),
+            ),
+            ("plugins/a-b/skills/c.md", &note("c", "targets: [cursor]\n")),
+        ],
+    );
+    let err = build_root(&vfs, cursor_block("naming", "prefixed")).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+    for part in [
+        "Cursor skill `a-b-c`",
+        "`cursor.naming: prefixed` on the marketplace",
+    ] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
+}
+
+/// The bare plugin sorts first, so the rule must read the second plugin's
+/// naming too.
+#[test]
+fn a_prefixed_cursor_name_after_a_bare_one_is_refused() {
+    let vfs = root_vault(
+        "---\nname: house\n---\n",
+        &[
+            (
+                "plugins/a/skills/z-hello.md",
+                &note("z-hello", "targets: [cursor]\n"),
+            ),
+            (
+                "plugins/z/skills/hello.md",
+                &note("hello", "targets: [cursor]\n"),
+            ),
+        ],
+    );
+    plugin_note(&vfs, "z", "cursor:\n  naming: prefixed\n");
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+    for part in [
+        "Cursor skill `z-hello`",
+        "`cursor.naming: prefixed` on plugin `z`",
+    ] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
+}
+
+#[test]
+fn bare_cursor_duplicates_stay_allowed_beside_a_prefixed_plugin() {
+    let vfs = cursor_vault();
+    write(
+        &vfs,
+        "/vault/plugins/p3/skills/hello.md",
+        &note("hello", ""),
+    );
+    plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
+    build_root(&vfs, request().config).unwrap();
+    assert!(cursor_skill(&vfs, "p1", "hello").is_some());
+    assert!(cursor_skill(&vfs, "p3", "hello").is_some());
+    assert!(cursor_skill(&vfs, "p2", "p2-hello").is_some());
+}
+
+#[test]
+fn a_prefixed_cursor_name_over_the_limit_refuses_the_build() {
+    let plugin = "p".repeat(33);
+    let skill = "s".repeat(31);
+    let vfs = root_vault(
+        "---\nname: house\n---\n",
+        &[(
+            &format!("plugins/{plugin}/skills/{skill}.md"),
+            &note(&skill, "targets: [cursor]\n"),
+        )],
+    );
+    plugin_note(&vfs, &plugin, "cursor:\n  naming: prefixed\n");
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("published-name-invalid"), "{err}");
+}
+
+#[test]
+fn an_explicit_default_naming_records_nothing() {
+    let vfs = cursor_vault();
+    plugin_note(
+        &vfs,
+        "p1",
+        "pi:\n  naming: prefixed\ncursor:\n  naming: bare\n",
+    );
+    let mut config = request().config;
+    config.name = Some("house".to_owned());
+    config.owner = Some(serde_json::json!("acme"));
+    let market = tradecraft_core::model::load(
+        &vfs,
+        &tradecraft_core::model::LoadRequest::new("/vault", config),
+        &Namespace::bare(),
+    )
+    .unwrap();
+    for plugin in market.plugins.values() {
+        assert!(plugin.bare_on.is_empty(), "{}", plugin.name);
+        assert!(plugin.prefixed_on.is_empty(), "{}", plugin.name);
+    }
+}
+
+#[test]
 fn a_marketplace_block_moves_a_harnesss_packs_and_its_catalog_follows() {
     let vfs = pi_vault();
     let mut config = request().config;

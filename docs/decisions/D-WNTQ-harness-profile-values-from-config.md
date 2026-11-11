@@ -10,7 +10,9 @@ two of its values for one build:
 
 - `<harness>: {packs: <path>}` moves that harness's packs folder inside the
   output.
-- `pi: {naming: bare}` changes Pi's skill naming, on a marketplace or a plugin.
+- `<harness>: {naming: bare | prefixed}` on a harness whose profile allows it
+  (Cursor, Pi) changes how that harness names a plugin's skills, on a
+  marketplace or a plugin. The plugin's value wins.
 
 The profile value is the default. Root catalogs stay fixed, because a harness
 finds them by their fixed path. `packs` is validated once, on the value that

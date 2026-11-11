@@ -7,15 +7,15 @@
 //! observations, a value any of them accepts passes. A key the facts give as
 //! dotted subfields only (`policy.installation`) is a mapping.
 //!
-//! A component's keys take the shape [`crate::keys::KEYS`] lists for its
-//! kind, widened where the table's own summary or the harness docs show
-//! another form. The same type checks a key written bare and in a block.
-//! A key with neither has no type here and is not checked. A test names each
-//! container key the facts leave untyped.
+//! A component's keys take the type of the [`Shape`] [`crate::keys::KEYS`]
+//! lists for its kind. The same type checks a key written bare and in a
+//! block. A key with neither has no type here and is not checked. A test
+//! names each container key the facts leave untyped.
 
 use serde_json::Value;
 
 use crate::frontmatter::EntityKind;
+use crate::harness::{HarnessProfile, PluginDialect};
 use crate::keys::Shape;
 
 /// One kind of JSON value.
@@ -140,17 +140,12 @@ pub(crate) fn hint_text(value: &Value) -> Option<String> {
 /// `value` of a component's `key` in the form every harness reads: a flag as
 /// a real boolean, a list `argument-hint` as its text. Anything else as is.
 pub(crate) fn normalized(kind: EntityKind, key: &str, value: Value) -> Value {
-    if component_type(kind, key) == Some(FLAG)
-        && let Some(yes) = flag(&value)
-    {
-        return Value::Bool(yes);
-    }
-    if key == "argument-hint"
-        && let Some(text) = hint_text(&value)
-    {
-        return Value::String(text);
-    }
-    value
+    let normal = match crate::keys::lookup(kind, key).map(|spec| spec.shape) {
+        Some(Shape::Flag) => flag(&value).map(Value::Bool),
+        Some(Shape::Hint) => hint_text(&value).map(Value::String),
+        _ => None,
+    };
+    normal.unwrap_or(value)
 }
 
 /// `harness`'s `block` less the keys it reads that are set to nothing. Such a
@@ -284,65 +279,53 @@ const PI: &[(&str, FieldType)] = &[
     ("pi", OBJECT),
 ];
 
-/// Container keys a harness reads that no fact gives a type for, by harness.
-/// They are not checked. `packs` and `naming` have their own checks.
-#[cfg(test)]
-const UNTYPED: &[(&str, &[&str])] = &[(
-    "pi",
-    &["description", "author", "license", "repository", "homepage"],
-)];
-
-fn facts(harness: &str) -> &'static [(&'static str, FieldType)] {
-    match harness {
-        "claude" => CLAUDE,
-        "codex" => CODEX,
-        "cursor" => CURSOR,
-        "pi" => PI,
-        _ => &[],
+/// The container key types of the harness whose manifests take `dialect`.
+pub(crate) fn facts_for(dialect: PluginDialect) -> &'static [(&'static str, FieldType)] {
+    match dialect {
+        PluginDialect::Claude => CLAUDE,
+        PluginDialect::Codex => CODEX,
+        PluginDialect::Cursor => CURSOR,
+        PluginDialect::Pi => PI,
     }
 }
 
-/// The type of `key` on a note of `kind`, bare or in a harness block, from
-/// the key table. `None` for a key the table does not list for `kind`.
+/// The type of `key` on a note of `kind`, bare or in a harness block: its
+/// key table row's [`Shape::field_type`]. `None` for a key the table does not
+/// list for `kind`.
 pub(crate) fn component_type(kind: EntityKind, key: &str) -> Option<FieldType> {
-    let spec = crate::keys::lookup(kind, key)?;
-    Some(match (key, spec.shape) {
-        // The table's summary: a list, or one string separated by spaces or
-        // commas.
-        ("allowed-tools", _) => STRING_OR_STRINGS,
-        // OpenCode's agent `tools` is a mapping of tool names (its agents
-        // docs, "Tools (deprecated)"). Its values are not checked. Claude Code
-        // reads only the list, and `project_agent` refuses a mapping for it.
-        ("tools", _) if kind == EntityKind::Agent => STRINGS_OR_OBJECT,
-        // Claude's subagent docs write the list as one string: `Read, Grep`.
-        ("tools", _) => STRING_OR_STRINGS,
-        // Claude's skills docs give `[issue-number]` as the example, which
-        // YAML reads as a list when it is not quoted.
-        ("argument-hint", _) => STRING_OR_STRINGS,
-        // A typed list, or Claude's own list of names or one string.
-        ("arguments", _) => STRING_OR_LIST,
-        // `metadata` takes any mapping. Its values are not checked, because
-        // skillwright ships unknown keys there with whatever value they hold.
-        (_, Shape::StringMap) => OBJECT,
-        (_, Shape::String) => STRING,
-        // Claude Code's skills docs: boolean fields also read yes/no, on/off
-        // and 1/0. [`normalized`] turns each into a real boolean.
-        (_, Shape::Bool) => FLAG,
-        (_, Shape::Number) => NUMBER,
-        (_, Shape::StringList) => STRINGS,
-        _ => return None,
-    })
+    crate::keys::lookup(kind, key)?.shape.field_type()
 }
 
-/// The type of `key` in a marketplace's or plugin's `harness` block: the
+impl Shape {
+    /// The kinds of value this shape takes, as the bare spec-key check and a
+    /// harness block read them. `None` for a shape with its own check.
+    pub(crate) const fn field_type(self) -> Option<FieldType> {
+        Some(match self {
+            Self::String => STRING,
+            Self::StringList => STRINGS,
+            Self::Words | Self::Hint => STRING_OR_STRINGS,
+            Self::AgentTools => STRINGS_OR_OBJECT,
+            Self::Bool => BOOL,
+            Self::Flag => FLAG,
+            Self::Number => NUMBER,
+            Self::Mapping => OBJECT,
+            Self::Arguments => STRING_OR_LIST,
+            Self::Url | Self::Person | Self::HarnessBlock | Self::Adopted => return None,
+        })
+    }
+}
+
+/// The type of `key` in a marketplace's or plugin's block for `profile`: the
 /// facts' type, or for a key that passes to members, [`component_type`].
-pub(crate) fn container_type(harness: &str, key: &str) -> Option<FieldType> {
-    facts(harness)
+/// `None` for a row with no plugin format.
+pub(crate) fn container_type(profile: &HarnessProfile, key: &str) -> Option<FieldType> {
+    facts_for(profile.plugin_format()?.dialect)
         .iter()
         .find(|(name, _)| *name == key)
         .map(|(_, ty)| *ty)
         .or_else(|| {
-            crate::model::member_block_keys(EntityKind::Skill, harness)
+            profile
+                .member_block_keys(EntityKind::Skill)
                 .contains(key)
                 .then(|| component_type(EntityKind::Skill, key))
                 .flatten()
@@ -353,6 +336,13 @@ pub(crate) fn container_type(harness: &str, key: &str) -> Option<FieldType> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Container keys a harness reads that no fact gives a type for, by harness.
+    /// They are not checked. `packs` and `naming` have their own checks.
+    const UNTYPED: &[(&str, &[&str])] = &[(
+        "pi",
+        &["description", "author", "license", "repository", "homepage"],
+    )];
 
     /// Every key a container block accepts has a type, or is named untyped.
     #[test]
@@ -370,7 +360,7 @@ mod tests {
                 .chain(format.marketplace_fields);
             for key in keys {
                 assert!(
-                    container_type(profile.name, key).is_some() != untyped.contains(key),
+                    container_type(profile, key).is_some() != untyped.contains(key),
                     "{}.{key}",
                     profile.name
                 );
@@ -407,8 +397,23 @@ mod tests {
             component_type(EntityKind::Skill, "tools"),
             Some(STRING_OR_STRINGS)
         );
-        assert_eq!(container_type("codex", "policy"), Some(OBJECT));
-        assert_eq!(container_type("claude", "model"), Some(STRING));
-        assert_eq!(container_type("pi", "author"), None);
+        let profile = |name| crate::harness::profile_named(name).unwrap();
+        assert_eq!(container_type(profile("codex"), "policy"), Some(OBJECT));
+        assert_eq!(container_type(profile("claude"), "model"), Some(STRING));
+        assert_eq!(container_type(profile("pi"), "author"), None);
+    }
+
+    #[test]
+    fn component_type_is_the_row_s_shape() {
+        for spec in crate::keys::KEYS {
+            for kind in EntityKind::ALL {
+                assert_eq!(
+                    component_type(kind, spec.key),
+                    crate::keys::lookup(kind, spec.key).and_then(|s| s.shape.field_type()),
+                    "{kind:?} {}",
+                    spec.key
+                );
+            }
+        }
     }
 }

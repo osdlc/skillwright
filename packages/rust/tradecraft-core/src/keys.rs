@@ -24,6 +24,7 @@
 use serde_json::Value;
 
 use crate::frontmatter::EntityKind;
+use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
 use crate::namespace::Namespace;
 
 /// Who a key belongs to.
@@ -46,15 +47,30 @@ pub enum Shape {
     Url,
     /// A list of strings.
     StringList,
+    /// A list of strings, or one string of words separated by spaces or
+    /// commas: `Read Grep` or `Read, Grep`.
+    Words,
+    /// An agent's tools: [`Self::Words`], or a mapping of tool names, as
+    /// OpenCode writes it. Its values are not checked.
+    AgentTools,
+    /// A hint: a string, or a list of strings, which is how YAML reads an
+    /// unquoted `[issue-number]`.
+    Hint,
     /// A boolean.
     Bool,
+    /// A boolean, or one of the words Claude Code's skills docs say its
+    /// boolean fields read: `yes`, `no`, `on`, `off`, `true`, `false`, `1`
+    /// and `0`, in any case.
+    Flag,
     /// A number.
     Number,
     /// A string, or a `{name, email, url}` mapping. Left blank, it is unset.
     Person,
-    /// A mapping of string keys to string values.
-    StringMap,
+    /// Any mapping. Its values are not checked.
+    Mapping,
     /// A list of `{name, description, required, values, default}` mappings.
+    /// With no namespace, a string or a list of strings is Claude's own
+    /// `arguments` key, which the field type takes and this shape does not.
     Arguments,
     /// A mapping of one harness's own keys.
     HarnessBlock,
@@ -64,27 +80,113 @@ pub enum Shape {
 
 impl Shape {
     /// Whether `value` has this shape. `null` passes only where the reader
-    /// takes it as absent: a harness block and the `adopted` block.
+    /// takes it as absent: a person, a harness block and the `adopted` block.
+    /// A shape that the bare spec-key check and a harness block also read
+    /// accepts what they accept, except [`Self::Arguments`].
     pub fn accepts(self, value: &Value) -> bool {
         match self {
-            Self::String => value.is_string(),
             Self::Url => value.as_str().is_some_and(is_url),
-            Self::StringList => value
-                .as_array()
-                .is_some_and(|items| items.iter().all(Value::is_string)),
-            Self::Bool => value.is_boolean(),
-            Self::Number => value.is_number(),
             Self::Person => {
                 value.is_null()
                     || value.is_string()
                     || value.get("name").is_some_and(Value::is_string)
             }
-            Self::StringMap => value
-                .as_object()
-                .is_some_and(|map| map.values().all(Value::is_string)),
             Self::Arguments => value.is_array(),
             Self::HarnessBlock | Self::Adopted => value.is_object() || value.is_null(),
+            _ => self.field_type().is_some_and(|ty| ty.accepts(value)),
         }
+    }
+}
+
+/// Why a value is not the shape its key takes, in the shape's own words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShapeRefusal {
+    /// What the value must be: `a string`.
+    pub what: &'static str,
+    /// The rest of the sentence after `must be <what>`: what the value is
+    /// instead, and a hint where one helps. `, not a number`.
+    pub detail: String,
+}
+
+impl ShapeRefusal {
+    /// The refusal as one sentence about `key`, spelled as the note wrote it.
+    pub fn sentence(&self, key: &str) -> String {
+        format!("`{key}` must be {}{}", self.what, self.detail)
+    }
+}
+
+impl Shape {
+    /// Why `value` is not this shape.
+    fn refusal(self, value: &Value) -> ShapeRefusal {
+        use crate::frontmatter::{ADOPTED_FIELDS, quoting_hint, type_name};
+        let found = type_name(value);
+        let not = format!(", not {found}");
+        let (what, detail) = match self {
+            Self::String => ("a string", format!("{not}{}", quoting_hint(value))),
+            Self::Url => (
+                "an http or https URL",
+                match value.as_str() {
+                    Some(text) => format!(", not `{text}`"),
+                    None => not,
+                },
+            ),
+            Self::StringList => match value {
+                Value::Array(items) => (
+                    "a list of strings",
+                    format!(
+                        "; one entry is {}",
+                        items
+                            .iter()
+                            .find(|item| !item.is_string())
+                            .map_or("not a string", type_name)
+                    ),
+                ),
+                _ => (
+                    "a list",
+                    format!(
+                        "{not}. An empty list means nowhere; removing the key means everywhere"
+                    ),
+                ),
+            },
+            Self::Words | Self::Hint => ("a string or a list of strings", not),
+            Self::AgentTools => ("a string, a list of strings or a mapping", not),
+            Self::Bool => ("a boolean", not),
+            Self::Flag => ("a boolean", format!("{not}; write `true` or `false`")),
+            Self::Number => ("a number", not),
+            Self::Person => (
+                "a name or a `{name, email, url}` mapping",
+                if value.is_object() {
+                    ", but it has no string `name`".to_owned()
+                } else {
+                    not
+                },
+            ),
+            Self::Mapping => ("a mapping", not),
+            Self::Arguments => ("a list of argument objects", not),
+            Self::HarnessBlock => ("a mapping of that harness's own keys", not),
+            Self::Adopted => (
+                "a mapping",
+                format!(" of {}{not}", ADOPTED_FIELDS.join(", ")),
+            ),
+        };
+        ShapeRefusal { what, detail }
+    }
+}
+
+/// Checks `value` against the shape the table gives `key` on a note of
+/// `kind`. Only skillwright's own keys are checked: a key the table does not
+/// list, and a spec key, pass. A `null` is checked like any value; a reader
+/// that reads it as unset, as the root file does, skips it first.
+///
+/// # Errors
+///
+/// A [`ShapeRefusal`] when `value` is not the key's shape.
+pub fn check_shape(kind: EntityKind, key: &str, value: &Value) -> Result<(), ShapeRefusal> {
+    match lookup(kind, key) {
+        Some(spec) if spec.owner == Owner::Skillwright && !spec.shape.accepts(value) => {
+            Err(spec.shape.refusal(value))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -122,8 +224,10 @@ const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command, H
 const ADOPTABLE: &[EntityKind] = &[Skill, Agent, Command, Hook];
 
 /// The harnesses that take a block of their own keys: `claude:`, `codex:`,
-/// `cursor:` and `pi:`.
-pub const HARNESS_BLOCKS: &[&str] = &["claude", "codex", "cursor", "pi"];
+/// `cursor:` and `pi:`, the rows with a plugin format. A test holds this list
+/// to [`crate::harness::with_plugin_format`] and to the [`Shape::HarnessBlock`]
+/// rows of [`KEYS`].
+pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.name];
 
 /// Harness block keys that say which thing a manifest describes. A plugin
 /// never takes one from the marketplace's block: each plugin has its own.
@@ -226,7 +330,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::String,
         inherits: false,
-        summary: "The human-facing name, Codex's `interface.displayName` and a Cursor plugin's `displayName`. A `cursor.displayName` overrides it for Cursor.",
+        summary: "The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor.",
     },
     KeySpec {
         key: "targets",
@@ -248,7 +352,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "allowed-tools",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::StringList,
+        shape: Shape::Words,
         inherits: false,
         summary: "Tools the skill may use without asking: a list, or one string separated by spaces or commas.",
     },
@@ -264,7 +368,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "metadata",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::StringMap,
+        shape: Shape::Mapping,
         inherits: false,
         summary: "Free-form fields, the Agent Skills field. Unknown keys are published here.",
     },
@@ -272,7 +376,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "argument-hint",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::String,
+        shape: Shape::Hint,
         inherits: false,
         summary: "The hint shown after the command name.",
     },
@@ -296,7 +400,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "user-invocable",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::Bool,
+        shape: Shape::Flag,
         inherits: false,
         summary: "False hides it from the slash menu. Defaults to true.",
     },
@@ -304,15 +408,23 @@ pub const KEYS: &[KeySpec] = &[
         key: "disable-model-invocation",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::Bool,
+        shape: Shape::Flag,
         inherits: false,
         summary: "True stops the model from calling it on its own.",
     },
     KeySpec {
         key: "tools",
-        kinds: COMPONENTS,
+        kinds: &[Skill, Command],
         owner: Owner::Spec,
-        shape: Shape::StringList,
+        shape: Shape::Words,
+        inherits: false,
+        summary: "A tool list, in the form an agent's `tools` takes. `allowed-tools` is the Agent Skills field.",
+    },
+    KeySpec {
+        key: "tools",
+        kinds: &[Agent],
+        owner: Owner::Spec,
+        shape: Shape::AgentTools,
         inherits: false,
         summary: "An agent's tool list.",
     },
@@ -405,7 +517,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "The timeout in seconds.",
     },
     KeySpec {
-        key: "claude",
+        key: CLAUDE.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -413,7 +525,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Claude Code reads, in its own key names, merged over what skillwright generates.",
     },
     KeySpec {
-        key: "codex",
+        key: CODEX.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -421,7 +533,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`.",
     },
     KeySpec {
-        key: "cursor",
+        key: CURSOR.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -429,7 +541,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Cursor reads, in its own key names.",
     },
     KeySpec {
-        key: "pi",
+        key: PI.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -463,11 +575,17 @@ impl Shape {
             Self::String => "string",
             Self::Url => "URL",
             Self::StringList => "list of strings",
+            Self::Words => "list of strings, or one string separated by spaces or commas",
+            Self::AgentTools => "list of strings, one string separated by commas, or a mapping",
+            Self::Hint => "string, or a list of strings read as `[a, b]`",
             Self::Bool => "boolean",
+            Self::Flag => "boolean, or `yes`, `no`, `on`, `off`, `1`, `0`",
             Self::Number => "number",
             Self::Person => "string or `{name, email, url}`",
-            Self::StringMap => "map of strings",
-            Self::Arguments => "list of arguments",
+            Self::Mapping => "mapping",
+            Self::Arguments => {
+                "list of arguments; with no namespace, a string or a list of strings is Claude's own key"
+            }
             Self::HarnessBlock => "harness block",
             Self::Adopted => "adopted block",
         }
@@ -487,7 +605,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 ## Reading the tables
 
-- **Value** is the kind of value the key takes. Some keys take more forms; see [Other accepted forms](#other-accepted-forms).
+- **Value** is the kind of value the key takes. [Other accepted forms](#other-accepted-forms) notes what the column cannot say.
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
@@ -501,18 +619,9 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 ## Other accepted forms
 
-Some keys take more forms than the Value column shows, because a harness's docs use them:
-
-| Key | Also takes |
-|---|---|
-| `allowed-tools` | One string of names separated by spaces or commas: `Read Grep` or `Read, Grep`. |
-| an agent's `tools` | One string of names separated by commas: `Read, Grep`. Or a mapping of tool names, as OpenCode writes it, which a Claude Code target refuses. |
-| `argument-hint` | A list of strings. An unquoted `[issue-number]` reads as the text `[issue-number]`. |
-| `arguments` | A string, or any list. |
-| `metadata` | Any mapping. |
-| `user-invocable`, `disable-model-invocation` | `yes`, `no`, `on`, `off`, `1` or `0`, in any case, quoted or not. A harness that gets the key receives `true` or `false`. |
-
-Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
+- Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
+- An agent's `tools` mapping is OpenCode's form. Claude Code refuses it.
+- `user-invocable` and `disable-model-invocation` read their words in any case, quoted or not. A harness that gets the key receives `true` or `false`.
 "#,
     );
     for (kind, heading) in REFERENCE_KINDS {
@@ -548,39 +657,28 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 - A key with no value is dropped. It does not clear a value the note inherits.
 "#,
     );
-    for harness in HARNESS_BLOCKS {
-        let Some(profile) = crate::harness::profile_named(harness) else {
-            continue;
-        };
-        out.push_str(&format!("\n### `{harness}:`\n\n"));
-        let list = |keys: &[&str]| {
-            let mut keys = keys.to_vec();
-            keys.sort_unstable();
-            keys.dedup();
-            let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
-            if keys.is_empty() {
-                "none".to_owned()
-            } else {
-                keys.join(", ")
-            }
-        };
-        let component = profile.accepted_override_keys();
-        let component: Vec<&str> = component.iter().map(String::as_str).collect();
-        out.push_str(&format!("- Component: {}\n", list(&component)));
-        let Some(format) = profile.plugin_format() else {
-            continue;
-        };
-        let mut plugin = component.clone();
-        plugin.extend(format.manifest_fields);
-        plugin.extend(format.entry_fields);
-        if *harness == "pi" {
-            plugin.push(crate::harness::manifest::NAMING_KEY);
+    let list = |keys: &std::collections::BTreeSet<String>| {
+        if keys.is_empty() {
+            return "none".to_owned();
         }
-        out.push_str(&format!("- Plugin: {}\n", list(&plugin)));
-        let mut marketplace = plugin.clone();
-        marketplace.extend(format.marketplace_fields);
-        marketplace.push(crate::harness::manifest::PACKS_KEY);
-        out.push_str(&format!("- Marketplace: {}\n", list(&marketplace)));
+        let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
+        keys.join(", ")
+    };
+    for profile in crate::harness::with_plugin_format() {
+        out.push_str(&format!("\n### `{}:`\n\n", profile.name));
+        for (kind, label) in [
+            (Skill, "Skill and command"),
+            (Plugin, "Plugin"),
+            (Marketplace, "Marketplace"),
+        ] {
+            let keys = profile
+                .block_keys(kind)
+                .expect("a plugin row checks these kinds' blocks");
+            out.push_str(&format!("- {label}: {}\n", list(keys)));
+            if kind == Skill {
+                out.push_str("- Agent: not checked.\n");
+            }
+        }
     }
     out
 }
@@ -682,6 +780,167 @@ mod tests {
                         a.key
                     );
                 }
+            }
+        }
+    }
+
+    /// Values every shape is asked about.
+    fn samples() -> Vec<Value> {
+        use serde_json::json;
+        vec![
+            Value::Null,
+            json!(true),
+            json!(false),
+            json!(0),
+            json!(1),
+            json!(2),
+            json!(1.5),
+            json!(""),
+            json!("a b"),
+            json!("yes"),
+            json!("Off"),
+            json!("https://x"),
+            json!([]),
+            json!(["a", "b"]),
+            json!([1]),
+            json!([{"name": "a"}]),
+            json!({}),
+            json!({"a": "b"}),
+            json!({"a": 1}),
+            json!({"name": "Ada"}),
+        ]
+    }
+
+    #[test]
+    fn every_shape_s_field_type_agrees_with_accepts() {
+        let shapes = [
+            Shape::String,
+            Shape::Url,
+            Shape::StringList,
+            Shape::Words,
+            Shape::AgentTools,
+            Shape::Hint,
+            Shape::Bool,
+            Shape::Flag,
+            Shape::Number,
+            Shape::Person,
+            Shape::Mapping,
+            Shape::Arguments,
+            Shape::HarnessBlock,
+            Shape::Adopted,
+        ];
+        for shape in shapes {
+            let Some(ty) = shape.field_type() else {
+                continue;
+            };
+            if shape == Shape::Arguments {
+                continue;
+            }
+            for value in samples() {
+                assert_eq!(
+                    shape.accepts(&value),
+                    ty.accepts(&value),
+                    "{shape:?} {value}"
+                );
+            }
+        }
+        // Ours is a list of argument objects; with no namespace, Claude's own
+        // `arguments` is a string or a list of strings.
+        let ty = Shape::Arguments.field_type().unwrap();
+        let words = serde_json::json!("a b");
+        assert!(ty.accepts(&words));
+        assert!(!Shape::Arguments.accepts(&words));
+        for value in samples().iter().filter(|v| Shape::Arguments.accepts(v)) {
+            assert!(ty.accepts(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn tools_has_one_row_per_kind() {
+        assert_eq!(lookup(Agent, "tools").unwrap().shape, Shape::AgentTools);
+        assert_eq!(lookup(Skill, "tools").unwrap().shape, Shape::Words);
+        assert_eq!(lookup(Command, "tools").unwrap().shape, Shape::Words);
+    }
+
+    /// The keys `field_reference` lists for `harness` on the line that starts
+    /// with `label`.
+    fn listed(reference: &str, harness: &str, label: &str) -> std::collections::BTreeSet<String> {
+        let section = reference
+            .split(&format!("### `{harness}:`\n"))
+            .nth(1)
+            .unwrap_or_else(|| panic!("no section for {harness}"));
+        let line = section
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("- {label}: ")))
+            .unwrap_or_else(|| panic!("no {label} line for {harness}"));
+        if line == "none" {
+            return std::collections::BTreeSet::new();
+        }
+        line.split(", ")
+            .map(|key| key.trim_matches('`').to_owned())
+            .collect()
+    }
+
+    /// The docs list, for each harness and kind, exactly what `check` takes.
+    #[test]
+    fn the_field_reference_lists_exactly_the_keys_check_accepts() {
+        use serde_json::{Map, Value, json};
+        let reference = field_reference();
+        for profile in crate::harness::with_plugin_format() {
+            let harness = profile.name;
+            assert!(
+                reference.contains(&format!("### `{harness}:`\n\n- Skill and command: ")),
+                "{harness}"
+            );
+            assert!(reference.contains("- Agent: not checked.\n"), "{harness}");
+            for (kind, label) in [
+                (Skill, "Skill and command"),
+                (Plugin, "Plugin"),
+                (Marketplace, "Marketplace"),
+            ] {
+                let keys = listed(&reference, harness, label);
+                assert_eq!(
+                    &keys,
+                    profile.block_keys(kind).unwrap(),
+                    "{harness} {label}"
+                );
+                let unknown = |key: &str| {
+                    let block: Map<String, Value> = Map::from_iter([(key.to_owned(), json!(1))]);
+                    let blocks = Map::from_iter([(harness.to_owned(), Value::Object(block))]);
+                    if kind == Skill {
+                        crate::discover::unknown_component_block_keys(&blocks)
+                    } else {
+                        crate::discover::unknown_container_block_keys(&blocks, kind)
+                    }
+                };
+                for key in &keys {
+                    assert_eq!(
+                        unknown(key),
+                        Vec::<String>::new(),
+                        "{harness} {label} {key}"
+                    );
+                }
+                // Every key another harness lists here, and this one does
+                // not, warns.
+                let others: std::collections::BTreeSet<&String> =
+                    crate::harness::with_plugin_format()
+                        .filter_map(|other| other.block_keys(kind))
+                        .flatten()
+                        .filter(|key| !keys.contains(*key))
+                        .collect();
+                assert!(!others.is_empty(), "{harness} {label}");
+                for key in others {
+                    assert_eq!(
+                        unknown(key),
+                        vec![format!("{harness}.{key}")],
+                        "{harness} {label} {key}"
+                    );
+                }
+                assert_eq!(
+                    unknown("zz-unknown"),
+                    vec![format!("{harness}.zz-unknown")],
+                    "{harness} {label}"
+                );
             }
         }
     }

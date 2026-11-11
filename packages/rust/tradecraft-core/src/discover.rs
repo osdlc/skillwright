@@ -119,7 +119,6 @@ use crate::error::CoreError;
 use crate::frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
 };
-use crate::model::member_block_keys;
 use crate::namespace::Namespace;
 use crate::publish::KNOWN_TARGETS;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
@@ -440,13 +439,14 @@ fn check_values(
 
 /// The keys in a skill's or command's harness blocks that harness does not
 /// read, as `<harness>.<key>`. They warn, and the build drops them.
-fn unknown_component_block_keys(blocks: &Map<String, Value>) -> Vec<String> {
+pub(crate) fn unknown_component_block_keys(blocks: &Map<String, Value>) -> Vec<String> {
     let mut unknown = Vec::new();
     for (declared, block) in blocks {
-        let Some(canonical) = crate::publish::canonical_target(declared) else {
+        let Some(accepted) = crate::harness::profile_for(declared)
+            .and_then(|profile| profile.block_keys(EntityKind::Skill))
+        else {
             continue;
         };
-        let accepted = crate::publish::accepted_override_keys(canonical);
         for key in block.as_object().into_iter().flat_map(|b| b.keys()) {
             if !accepted.contains(key) {
                 unknown.push(format!("{declared}.{key}"));
@@ -467,27 +467,13 @@ pub(crate) fn unknown_container_block_keys(
 ) -> Vec<String> {
     let mut unknown = Vec::new();
     for (harness, block) in blocks {
-        let Some(profile) = crate::harness::profile_named(harness) else {
+        let Some(accepted) =
+            crate::harness::profile_named(harness).and_then(|profile| profile.block_keys(kind))
+        else {
             continue;
         };
-        let Some(format) = profile.plugin.as_ref() else {
-            continue;
-        };
-        let members = member_block_keys(EntityKind::Skill, harness);
         for key in block.as_object().into_iter().flat_map(|b| b.keys()) {
-            let name = key.as_str();
-            let on_a_plugin = format.manifest_fields.contains(&name)
-                || format.entry_fields.contains(&name)
-                || (harness == "pi" && key == crate::harness::manifest::NAMING_KEY)
-                || members.contains(key);
-            let known = if kind == EntityKind::Marketplace {
-                format.marketplace_fields.contains(&name)
-                    || key == crate::harness::manifest::PACKS_KEY
-                    || (on_a_plugin && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&name))
-            } else {
-                on_a_plugin
-            };
-            if !known {
+            if !accepted.contains(key) {
                 unknown.push(format!("{harness}.{key}"));
             }
         }

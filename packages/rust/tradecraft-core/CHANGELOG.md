@@ -7,6 +7,31 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+API:
+
+- `Shape` gains `Words`, `AgentTools`, `Hint` and `Flag`, the types the check already took for `allowed-tools`, `tools`, `argument-hint`, `user-invocable` and `disable-model-invocation`. `Shape` is an exhaustive public enum, so a match on it needs the new arms.
+- `Shape::StringMap` is renamed `Shape::Mapping`, and accepts any mapping, as `metadata` always did.
+- `tools` is two `KEYS` rows: `Words` on a skill and a command, `AgentTools` on an agent.
+- `settings::MARKETPLACE_KEYS` is removed. `settings::marketplace_keys()` yields the key table's marketplace rows, less the harness blocks, in table order.
+- `PluginPolicy` gains `naming_choice` and `agent_only_overrides`. `PluginFormat` gains the same two fields and a private one, so neither can be built with a struct literal outside the crate.
+- `model::Plugin` and `model::Call` gain `prefixed_on`. The serialized model and the generated TS types are unchanged for a vault that sets no `naming`: the field is skipped when empty.
+
+### Added
+
+- `cursor: {naming: bare | prefixed}` on a marketplace or a plugin. `prefixed` publishes that plugin's Cursor skills as `<plugin>-<skill>`, in their folders, their frontmatter `name` and every call and mention of them. The plugin's value overrides the marketplace's. The default stays bare.
+- A Cursor catalog entry in `.cursor-plugin/marketplace.json` carries the plugin's `displayName`, right after `name`: its `cursor.displayName`, else its `display_name`. It is absent when neither is set.
+- `HarnessProfile::block_keys(kind)`: the keys a harness's block accepts on a note of `kind`. The check, the field reference, the cascade and the manifest merge all read it.
+- `keys::check_shape` and `keys::ShapeRefusal`: one shape check for a key of ours, shared by a note's read and the root file's.
+
+### Changed
+
+- The field reference states the types the check accepts. Its harness block lists drop the keys the check warns on, such as `permissionMode` on a `claude:` plugin or marketplace and `description` and `version` on a `codex:`, `cursor:` or `pi:` marketplace. Its component line reads "Skill and command", followed by "Agent: not checked.".
+- A cross-plugin name collision on Cursor or Pi names both notes, the published name, the harness and the `<harness>.naming` setting that prefixed the name. The token stays `path-collision`.
+- The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
+- A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.
+
 ## [0.49.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.0...tradecraft-core/v0.49.1) - 2026-11-10
 
 ### Added

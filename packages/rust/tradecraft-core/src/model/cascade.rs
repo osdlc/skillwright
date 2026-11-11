@@ -41,7 +41,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
@@ -53,7 +52,6 @@ use crate::frontmatter::EntityKind;
 use crate::harness::manifest::{inherited, plugin_block};
 use crate::keys;
 use crate::namespace::Namespace;
-use crate::publish::accepted_keys;
 use crate::vault::VaultNote;
 
 /// The containers above some notes, folded into one config.
@@ -278,7 +276,10 @@ impl Cascade {
             .iter()
             .filter(|harness| keys::inherits(kind, harness))
         {
-            let reaching = member_block_keys(kind, harness);
+            let Some(profile) = crate::harness::profile_named(harness) else {
+                continue;
+            };
+            let reaching = profile.member_block_keys(kind);
             for (key, value) in plugin_block(&self.config, plugin, harness) {
                 let merges = key == "metadata" && value.is_object();
                 if !reaching.contains(&key) || (!merges && note.frontmatter.own_keys.contains(&key))
@@ -325,50 +326,6 @@ fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<St
             }
         }
     }
-}
-
-/// The keys of `harness`'s block a note of `kind` takes from a container: the
-/// keys its kind accepts, less those a container's own manifests read and
-/// those the harness reads on a subagent alone.
-///
-/// Read from a table built once for every kind and every harness with a
-/// plugin format; any other name takes no key.
-pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> &'static BTreeSet<String> {
-    static TABLE: OnceLock<BTreeMap<&'static str, BTreeMap<EntityKind, BTreeSet<String>>>> =
-        OnceLock::new();
-    static NONE: BTreeSet<String> = BTreeSet::new();
-    let table = TABLE.get_or_init(|| {
-        crate::harness::with_plugin_format()
-            .map(|profile| {
-                let by_kind = EntityKind::ALL
-                    .into_iter()
-                    .map(|kind| (kind, compute_member_block_keys(kind, profile)))
-                    .collect();
-                (profile.name, by_kind)
-            })
-            .collect()
-    });
-    table
-        .get(harness)
-        .and_then(|by_kind| by_kind.get(&kind))
-        .unwrap_or(&NONE)
-}
-
-/// [`member_block_keys`] worked out for one harness with a plugin format,
-/// for the table.
-fn compute_member_block_keys(
-    kind: EntityKind,
-    profile: &crate::harness::HarnessProfile,
-) -> BTreeSet<String> {
-    let format = profile.format();
-    let agent_only = profile.agent_override_keys();
-    let mut keys = accepted_keys(kind, profile.name);
-    keys.retain(|key| {
-        !agent_only.contains(key)
-            && !format.manifest_fields.contains(&key.as_str())
-            && !format.entry_fields.contains(&key.as_str())
-    });
-    keys
 }
 
 /// The path of the note of the marketplace in `folder`.
@@ -491,21 +448,24 @@ mod tests {
     /// from, so it gives a member none, whatever its kind.
     #[test]
     fn a_harness_with_no_plugin_format_gives_a_member_no_block_keys() {
-        let without: Vec<&str> = crate::harness::PROFILES
+        let without: Vec<&crate::harness::HarnessProfile> = crate::harness::PROFILES
             .iter()
             .filter(|profile| profile.plugin.is_none())
-            .map(|profile| profile.name)
             .collect();
         assert!(!without.is_empty());
-        for harness in without {
+        for profile in without {
             for kind in EntityKind::ALL {
                 assert!(
-                    member_block_keys(kind, harness).is_empty(),
-                    "{harness} {kind:?}"
+                    profile.member_block_keys(kind).is_empty(),
+                    "{} {kind:?}",
+                    profile.name
                 );
             }
         }
-        assert!(member_block_keys(EntityKind::Skill, "no-such-harness").is_empty());
-        assert!(!member_block_keys(EntityKind::Skill, "claude").is_empty());
+        assert!(
+            !crate::harness::profile::CLAUDE
+                .member_block_keys(EntityKind::Skill)
+                .is_empty()
+        );
     }
 }

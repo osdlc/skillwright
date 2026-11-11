@@ -2553,6 +2553,52 @@ mod tests {
         check(&vfs, ".pi", "a", "a");
     }
 
+    /// A self-link renders through the harness's naming, so a plugin that
+    /// chooses its Cursor or Pi naming gets its own name back in each case.
+    #[test]
+    fn a_skills_link_to_itself_follows_the_chosen_naming() {
+        let vfs = MemVfs::new();
+        let folder = "/vault/marketplaces/house/plugins/tools/skills/a";
+        write(
+            &vfs,
+            &format!("{folder}/a.md"),
+            &note_with_body("a", &[], "# a\n\nPart of [[a]].\n"),
+        );
+        write(
+            &vfs,
+            &format!("{folder}/references/x.md"),
+            "Part of [[a]].\n",
+        );
+        let check = |vfs: &MemVfs, tree: &str, skill: &str, named: &str| {
+            let want = format!("Part of `{named}`.");
+            let body = skill_md(vfs, tree, skill);
+            assert!(body.contains(&want), "{tree}: {body}");
+            let reference = text_at(
+                vfs,
+                &format!("/market/{tree}/packs/tools/skills/{skill}/references/x.md"),
+            );
+            assert_eq!(reference, format!("{want}\n"), "{tree}");
+        };
+
+        let mut config = config();
+        config.blocks.insert(
+            "cursor".to_owned(),
+            serde_json::Map::from_iter([("naming".to_owned(), json!("prefixed"))]),
+        );
+        build_with(&vfs, config);
+        check(&vfs, ".cursor-plugin", "tools-a", "tools-a");
+
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/tools.md",
+            "---\nname: tools\ndescription: Tools.\nsw-pi:\n  naming: bare\n\
+             sw-cursor:\n  naming: prefixed\n---\n",
+        );
+        build(&vfs);
+        check(&vfs, ".cursor-plugin", "tools-a", "tools-a");
+        check(&vfs, ".pi", "a", "a");
+    }
+
     #[test]
     fn an_escaped_double_bracket_ships_as_written_in_each_harness() {
         let vfs = calls_vault("# a\n\nSee \\[[TODO later.\n");

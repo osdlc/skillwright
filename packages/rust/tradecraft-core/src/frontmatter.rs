@@ -40,7 +40,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
-use crate::keys::{Owner, Shape};
 use crate::namespace::Namespace;
 
 /// Which publishable unit a note is: what the folder it sits in names.
@@ -580,60 +579,11 @@ fn check_shapes(
     kind: EntityKind,
 ) -> Result<(), CoreError> {
     for (key, value) in ours {
-        if let Some(spec) = crate::keys::lookup(kind, ns.field(key))
-            && spec.owner == Owner::Skillwright
-            && !spec.shape.accepts(value)
-        {
-            return Err(CoreError::wrong_kind(
-                path,
-                shape_refusal(spec.shape, key, value),
-            ));
+        if let Err(refusal) = crate::keys::check_shape(kind, ns.field(key), value) {
+            return Err(CoreError::wrong_kind(path, refusal.sentence(key)));
         }
     }
     Ok(())
-}
-
-/// What a value of the wrong shape is told, naming the key as the note
-/// spelled it.
-fn shape_refusal(shape: Shape, key: &str, value: &Value) -> String {
-    let found = type_name(value);
-    match shape {
-        Shape::String => format!(
-            "`{key}` must be a string, not {found}{}",
-            quoting_hint(value)
-        ),
-        Shape::Url => match value.as_str() {
-            Some(text) => format!("`{key}` must be an http or https URL, not `{text}`"),
-            None => format!("`{key}` must be an http or https URL, not {found}"),
-        },
-        Shape::StringList => match value {
-            Value::Array(items) => format!(
-                "`{key}` must be a list of strings; one entry is {}",
-                items
-                    .iter()
-                    .find(|item| !item.is_string())
-                    .map_or("not a string", type_name)
-            ),
-            _ => format!(
-                "`{key}` must be a list, not {found}. \
-                 An empty list means nowhere; removing the key means everywhere"
-            ),
-        },
-        Shape::Person => {
-            format!("`{key}` must be a name or a `{{name, email, url}}` mapping, not {found}")
-        }
-        Shape::Arguments => format!("`{key}` must be a list of argument objects, not {found}"),
-        Shape::HarnessBlock => {
-            format!("`{key}` must be a mapping of that harness's own keys, not {found}")
-        }
-        Shape::Adopted => format!(
-            "`{key}` must be a mapping of {}, not {found}",
-            ADOPTED_FIELDS.join(", ")
-        ),
-        Shape::Bool | Shape::Number | Shape::StringMap => {
-            format!("`{key}` has the wrong shape: {found}")
-        }
-    }
 }
 
 /// Removes a harness block and returns it. `key: null` reads as no block.
@@ -1491,5 +1441,106 @@ mod tests {
         let (ours, foreign) = read(json!({"x-arguments": [{"name": "pr-number"}]})).unwrap();
         assert!(ours.arguments.is_empty());
         assert!(foreign.contains_key("x-arguments"));
+    }
+
+    /// Whether a note of `kind` with `value` at `key` reads, as the vault
+    /// reader takes it: our keys through [`VaultFrontmatter::take_from`],
+    /// then the spec keys left behind through [`crate::vault::check_spec_kinds`].
+    fn note_accepts(ns: &Namespace, kind: EntityKind, key: &str, value: Value) -> bool {
+        let mut map = fields(json!({ "description": "d", key: value }));
+        VaultFrontmatter::take_from(&mut map, Path::new(NOTE), ns, kind).is_ok()
+            && crate::vault::check_spec_kinds(&mut map, Path::new(NOTE), kind).is_ok()
+    }
+
+    /// The accept and refuse answers for the component keys whose type the
+    /// check widens past the key table's shape.
+    #[test]
+    fn component_key_values_keep_their_verdicts() {
+        use EntityKind::{Agent, Command, Plugin, Skill};
+        let bare = Namespace::bare();
+        let sw = Namespace::sw();
+        let cases: &[(&Namespace, EntityKind, &str, Value, bool)] = &[
+            (&bare, Skill, "allowed-tools", json!("Read Grep"), true),
+            (&bare, Skill, "allowed-tools", json!(["Read", "Grep"]), true),
+            (&bare, Skill, "allowed-tools", json!({"Read": true}), false),
+            (&bare, Skill, "allowed-tools", json!(5), false),
+            (&bare, Skill, "tools", json!("Read, Grep"), true),
+            (&bare, Skill, "tools", json!(["Read"]), true),
+            (&bare, Skill, "tools", json!({"read": true}), false),
+            (&bare, Command, "tools", json!("Read, Grep"), true),
+            (&bare, Command, "tools", json!({"read": true}), false),
+            (&bare, Agent, "tools", json!("Read, Grep"), true),
+            (&bare, Agent, "tools", json!(["Read"]), true),
+            (&bare, Agent, "tools", json!({"read": true}), true),
+            (&bare, Agent, "tools", json!(5), false),
+            (&bare, Skill, "argument-hint", json!("[pr]"), true),
+            (&bare, Skill, "argument-hint", json!(["pr"]), true),
+            (&bare, Skill, "argument-hint", json!(5), false),
+            (&bare, Skill, "arguments", json!("a b"), true),
+            (&bare, Skill, "arguments", json!(["a"]), true),
+            (&bare, Skill, "arguments", json!([{"name": "a"}]), true),
+            (&bare, Skill, "arguments", json!(5), false),
+            (&sw, Skill, "sw-arguments", json!("a b"), false),
+            (&sw, Skill, "sw-arguments", json!([{"name": "a"}]), true),
+            (&bare, Skill, "metadata", json!({"a": 1}), true),
+            (&bare, Skill, "metadata", json!("a"), false),
+            (&bare, Skill, "user-invocable", json!("yes"), true),
+            (&bare, Skill, "user-invocable", json!(true), true),
+            (&bare, Skill, "user-invocable", json!(2), false),
+            (&bare, Skill, "disable-model-invocation", json!("off"), true),
+            (
+                &bare,
+                Skill,
+                "disable-model-invocation",
+                json!("maybe"),
+                false,
+            ),
+            (&bare, Plugin, "version", json!(1), false),
+            (&bare, Plugin, "version", Value::Null, false),
+            (&bare, Plugin, "author", json!(5), false),
+            (&bare, Plugin, "author", Value::Null, true),
+            (&bare, Plugin, "repository", json!("ftp://x"), false),
+            (&bare, Plugin, "keywords", json!("a"), false),
+        ];
+        for (ns, kind, key, value, accepted) in cases {
+            assert_eq!(
+                note_accepts(ns, *kind, key, value.clone()),
+                *accepted,
+                "{kind:?} {key}: {value}"
+            );
+        }
+    }
+
+    /// The accept and refuse answers for the root file's marketplace keys.
+    #[test]
+    fn root_file_values_keep_their_verdicts() {
+        let cases: &[(&str, bool)] = &[
+            ("author: 5", false),
+            ("author: Ada", true),
+            ("author:", true),
+            ("owner: {email: x}", false),
+            ("owner: {name: x}", true),
+            ("repository: ftp://x", false),
+            ("repository: https://x", true),
+            ("homepage: 5", false),
+            ("version: 1", false),
+            ("version: '1'", true),
+            ("version:", true),
+            ("license: [a]", false),
+            ("targets: \"claude\"", false),
+            ("targets: [claude]", true),
+            ("targets: [nowhere]", false),
+            ("display_name: 5", false),
+            ("name: 5", false),
+            ("description: [a]", false),
+        ];
+        for (line, accepted) in cases {
+            let text = format!("---\n{line}\n---\n");
+            assert_eq!(
+                crate::settings::parse_root_file(&text).is_ok(),
+                *accepted,
+                "{line}"
+            );
+        }
     }
 }

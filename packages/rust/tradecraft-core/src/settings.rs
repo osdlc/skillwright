@@ -300,19 +300,18 @@ pub struct SettingsError {
     pub detail: String,
 }
 
-/// The marketplace fields the root file reads.
-pub const MARKETPLACE_KEYS: &[&str] = &[
-    "name",
-    "description",
-    "display_name",
-    "owner",
-    "author",
-    "license",
-    "version",
-    "targets",
-    "repository",
-    "homepage",
-];
+/// The marketplace fields the root file reads: the key table's marketplace
+/// keys, less the harness blocks, in table order.
+pub fn marketplace_keys() -> impl Iterator<Item = &'static str> {
+    crate::keys::KEYS
+        .iter()
+        .filter(|spec| {
+            spec.kinds
+                .contains(&crate::frontmatter::EntityKind::Marketplace)
+                && spec.shape != crate::keys::Shape::HarnessBlock
+        })
+        .map(|spec| spec.key)
+}
 
 /// The keys of the `build:` block.
 pub const BUILD_KEYS: &[&str] = &[
@@ -349,25 +348,6 @@ pub fn compose_root_file(name: &str, out: &str) -> String {
     map.insert(string("build"), Value::Mapping(build));
     let yaml = serde_yaml::to_string(&map).expect("a mapping of strings serializes");
     format!("---\n{yaml}---\n")
-}
-
-/// Refuses an `owner` or `author` that the key table's
-/// [`crate::keys::Shape::Person`] does not accept. Their fields are untyped,
-/// so nothing else would catch `author: 5` before it reached a manifest.
-fn check_person(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
-    let person = crate::keys::lookup(crate::frontmatter::EntityKind::Marketplace, key)
-        .is_some_and(|spec| spec.shape == crate::keys::Shape::Person);
-    if !person {
-        return Ok(());
-    }
-    match serde_json::to_value(value) {
-        Ok(json) if crate::keys::Shape::Person.accepts(&json) => Ok(()),
-        _ => Err(SettingsError {
-            key: key.to_owned(),
-            what: "a name or a `{name, email, url}` mapping",
-            detail: format!("{value:?}"),
-        }),
-    }
 }
 
 /// Whether a file split into `frontmatter` and `body` opened frontmatter it
@@ -459,8 +439,8 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         match key.as_str() {
             "workspace" => root.workspace = field(&key, &value, "true or false")?,
             "build" => root.build = build(&value, &mut root.warnings)?,
-            known if MARKETPLACE_KEYS.contains(&known) => {
-                check_person(known, &value)?;
+            known if marketplace_keys().any(|key| key == known) => {
+                check_shape(known, &value)?;
                 marketplace.insert(serde_yaml::Value::String(key), value);
             }
             harness if crate::keys::HARNESS_BLOCKS.contains(&harness) => {
@@ -509,21 +489,40 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             detail: format!("`{unknown}`"),
         });
     }
-    for (key, value) in [
-        ("repository", &root.marketplace.repository),
-        ("homepage", &root.marketplace.homepage),
-    ] {
-        if let Some(url) = value
-            && !crate::keys::is_url(url)
-        {
-            return Err(SettingsError {
-                key: key.to_owned(),
-                what: "an http or https URL",
-                detail: format!("`{url}`"),
-            });
-        }
-    }
     Ok(root)
+}
+
+/// Refuses a marketplace key whose value is not the shape the key table
+/// gives it, as a marketplace note's read does, or that has no JSON form to
+/// check, such as a mapping with a list for a key. A key set to nothing is
+/// unset, as [`field`] reads it.
+fn check_shape(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let json = serde_json::to_value(value).map_err(|err| SettingsError {
+        key: key.to_owned(),
+        what: "a value with a JSON form",
+        detail: err.to_string(),
+    })?;
+    crate::keys::check_shape(crate::frontmatter::EntityKind::Marketplace, key, &json).map_err(
+        |refusal| SettingsError {
+            key: key.to_owned(),
+            what: refusal.what,
+            detail: settings_detail(&refusal.detail),
+        },
+    )
+}
+
+/// A [`crate::keys::ShapeRefusal`]'s detail as it reads after `is not <what>:`:
+/// `, not a string` becomes `it is a string`.
+fn settings_detail(detail: &str) -> String {
+    let detail = detail.trim_start_matches([',', ';', ' ']);
+    let detail = detail.strip_prefix("but ").unwrap_or(detail);
+    match detail.strip_prefix("not ") {
+        Some(found) => format!("it is {found}"),
+        None => detail.to_owned(),
+    }
 }
 
 /// One value read as `T`, its error naming `key`. Null reads as `T`'s default
@@ -822,6 +821,107 @@ impl RootFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn root_file_refusals_say_what_the_value_is() {
+        for (line, said) in [
+            (
+                "owner: {email: x}",
+                "`owner` is not a name or a `{name, email, url}` mapping: it has no string `name`",
+            ),
+            (
+                "targets: \"claude\"",
+                "`targets` is not a list: it is a string.",
+            ),
+            (
+                "repository: ftp://x",
+                "`repository` is not an http or https URL: it is `ftp://x`",
+            ),
+            (
+                "targets: [1]",
+                "`targets` is not a list of strings: one entry is a number",
+            ),
+        ] {
+            let err = parse_root_file(&format!("---\n{line}\n---\n")).unwrap_err();
+            assert!(err.to_string().starts_with(said), "{line}: {err}");
+        }
+    }
+
+    /// A value with no JSON form, such as a mapping with a list for a key,
+    /// cannot be checked, so it is refused rather than passed.
+    #[test]
+    fn a_value_with_no_json_form_is_refused() {
+        let err = parse_root_file("---\nowner: {[a]: b}\n---\n").unwrap_err();
+        assert_eq!(err.key, "owner", "{err}");
+    }
+
+    #[test]
+    fn marketplace_keys_are_the_table_s_marketplace_rows() {
+        let keys: Vec<&str> = marketplace_keys().collect();
+        assert_eq!(
+            keys,
+            [
+                "name",
+                "description",
+                "version",
+                "author",
+                "owner",
+                "license",
+                "repository",
+                "homepage",
+                "display_name",
+                "targets",
+            ]
+        );
+    }
+
+    /// The root file and a workspace's marketplace note read one value of
+    /// ours alike, and a refusal names the key. The spec keys, `name` and
+    /// `description`, are left out: the root file reads them into strings and
+    /// refuses `name: 5`, while a note does not check their shape. So is a key
+    /// set to nothing, which the root file reads as unset and a note refuses.
+    #[test]
+    fn root_file_and_marketplace_note_refuse_the_same_values() {
+        use crate::frontmatter::{EntityKind, VaultFrontmatter};
+        let cases = [
+            ("author", "5"),
+            ("author", "Ada"),
+            ("owner", "{email: x}"),
+            ("owner", "{name: x}"),
+            ("repository", "ftp://x"),
+            ("repository", "https://x"),
+            ("homepage", "5"),
+            ("version", "1"),
+            ("version", "'1'"),
+            ("license", "[a]"),
+            ("license", "MIT"),
+            ("targets", "\"claude\""),
+            ("targets", "[claude]"),
+            ("display_name", "5"),
+            ("display_name", "Acme"),
+        ];
+        for (key, value) in cases {
+            let line = format!("{key}: {value}");
+            let root = parse_root_file(&format!("---\n{line}\n---\n"));
+            let yaml: serde_yaml::Value = serde_yaml::from_str(&line).unwrap();
+            let mut fields = match serde_json::to_value(yaml).unwrap() {
+                serde_json::Value::Object(map) => map,
+                other => panic!("{other}"),
+            };
+            let note = VaultFrontmatter::take_from(
+                &mut fields,
+                std::path::Path::new("/vault/marketplaces/m/skillwright.md"),
+                &crate::namespace::Namespace::bare(),
+                EntityKind::Marketplace,
+            );
+            assert_eq!(root.is_ok(), note.is_ok(), "{line}");
+            if let (Err(root), Err(note)) = (root, note) {
+                let named = format!("`{key}`");
+                assert!(root.to_string().contains(&named), "{line}: {root}");
+                assert!(note.to_string().contains(&named), "{line}: {note}");
+            }
+        }
+    }
 
     #[test]
     fn a_block_key_the_harness_does_not_read_warns() {
