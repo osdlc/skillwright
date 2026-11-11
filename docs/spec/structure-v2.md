@@ -270,19 +270,38 @@ elsewhere, has it. A name two plugins share is an error that names both.
 3. A bare `[[name]]` resolves in the linking file's component folder first.
    With no match there, it resolves among the plugin's shared folders and its
    components together. It never resolves outside the plugin. More than one
-   match in a step is an error that names each match. From `author.md`:
+   match in a step is an error that names each match.
+
+   An example. The plugin `tools` holds:
 
    ```text
    marketplaces/acme/plugins/tools/
-   ├── references/style.md          reached second: a shared folder
+   ├── references/
+   │   ├── guide.md                 shared
+   │   └── style.md                 shared
    └── skills/
        ├── author/
-       │   ├── author.md            the linking note
-       │   └── references/guide.md  reached first: its own folder
-       └── setup/setup.md           reached second: another component
-   marketplaces/acme/plugins/other/
-   └── skills/x/x.md                refused: another plugin
+       │   ├── author.md            the note that links
+       │   └── references/guide.md  author's own
+       └── setup/setup.md           another skill
    ```
+
+   `author.md` contains:
+
+   ```markdown
+   Follow [[guide]] and [[style]]. Then run [[setup]].
+   See [[x]].
+   ```
+
+   Each link resolves like this:
+
+   | Link | Step 1: `skills/author/` | Step 2: the plugin's shared folders and components | Result |
+   |---|---|---|---|
+   | `[[guide]]` | `references/guide.md` | not searched | author's own `guide.md`. The shared one is not used. |
+   | `[[style]]` | no match | `references/style.md` | the shared `style.md` |
+   | `[[setup]]` | no match | the `setup` skill | a link to the setup skill's `SKILL.md` |
+   | `[[x]]` | no match | no match | an error. A skill `x` in another plugin is never searched. |
+
 4. A link with a path resolves relative to the linking file. Its result must
    still fall in a row the table allows.
 5. An installed path is written relative to where the linking file lands in the
