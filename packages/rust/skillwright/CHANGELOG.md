@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.0...skillwright/v0.11.1) - 2026-11-10
+
 ### Added
 
 - Write `\[[` to keep a `[[` as text, such as `\[[TODO`. The build ships it as written, backslash included, and Markdown viewers show `[[TODO`. The error for a `[[` that is not a link now says so. ([#47](https://github.com/osdlc/skillwright/issues/47))

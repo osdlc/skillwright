@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.49.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.0...tradecraft-core/v0.49.1) - 2026-11-10
+
 ### Added
 
 - `workspace_file(dir)` is public and re-exported: where the workspace file above a marketplace folder would be, without reading it.
