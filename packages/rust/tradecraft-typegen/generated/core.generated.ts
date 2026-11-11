@@ -859,6 +859,15 @@ export type Segment =
       type: "literal";
       /** The block, fences included. */
       text: string;
+    }
+  /**
+   * A `${PLUGIN_ROOT}/<path>`, which each harness writes its own way
+   * (spec section 4 rules 15 to 20).
+   */
+  | {
+      type: "plugin-root";
+      /** The path. */
+      path: PluginRootPath;
     };
 
 /**
@@ -945,6 +954,24 @@ export interface SkillId {
 
   /** A skill or a command. */
   kind: EntityKind;
+}
+
+/**
+ * A `${PLUGIN_ROOT}/<path>` in text. Both paths are paths in a pack laid
+ * out as Claude Code's, as a [`ResolvedRef`]'s are.
+ */
+export interface PluginRootPath {
+  /** The file it names. */
+  path: string;
+
+  /** Where the text holding it lands. */
+  from: string;
+
+  /** The reference as written, for an error. */
+  written: string;
+
+  /** The file it is in, vault-relative, for an error. */
+  caller: string;
 }
 
 /** One file a component carries. */

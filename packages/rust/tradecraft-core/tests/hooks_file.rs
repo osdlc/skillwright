@@ -225,6 +225,7 @@ fn the_cursor_warning_fires_once_per_plugin() {
     let other = "/vault/marketplaces/house/plugins/extra";
     write(&vfs, &format!("{other}/extra.md"), "---\n---\n");
     write(&vfs, &format!("{other}/hooks/hooks.json"), &canonical());
+    write(&vfs, &format!("{other}/scripts/tool"), "#!/bin/sh\n");
     let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
     assert_eq!(
         cursor_warnings(&report),

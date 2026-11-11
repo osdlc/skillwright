@@ -34,7 +34,7 @@ use super::manifest::{
     pi_package_manifest, render_plugin_manifest,
 };
 use super::profile::PLUGIN_HOOKS_PATH;
-use super::profile::{HarnessProfile, PluginFormat, SkillNaming};
+use super::profile::{CliInvocation, HarnessProfile, PluginFormat, SkillNaming};
 use crate::compile::Closure;
 use crate::content::SkillProjection;
 use crate::error::CoreError;
@@ -42,7 +42,8 @@ use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 use crate::model::load::{admits, targets_name};
 use crate::model::{
-    Body, Call, Component, Marketplace, Plugin, ResolvedRef, ResourceContent, Segment,
+    Body, Call, Component, Marketplace, Plugin, PluginRootPath, ResolvedRef, ResourceContent,
+    Segment,
 };
 use crate::projection::{
     ProjectedFile, RedundantOverride, parse_runtime_target, project_agent, project_command,
@@ -243,16 +244,83 @@ pub(crate) trait HarnessTranslator: Sync {
         }
     }
 
+    /// Every file this harness's pack of `plugin` ships, at its path in a
+    /// pack laid out as Claude Code's.
+    fn shipped(&self, plugin: &Plugin) -> BTreeSet<String> {
+        let format = self.format();
+        let mut out: BTreeSet<String> = plugin.assets.iter().map(|a| a.dest.clone()).collect();
+        out.extend(plugin.references.iter().map(|r| r.path.clone()));
+        for skill in plugin.skills.iter().filter(|c| self.admits(c)) {
+            let base = format!("skills/{}", skill.name);
+            out.insert(format!("{base}/SKILL.md"));
+            if let Some(resolved) = &skill.resolved {
+                out.extend(
+                    resolved
+                        .resources
+                        .iter()
+                        .map(|r| format!("{base}/{}", r.path)),
+                );
+            }
+        }
+        if format.carries_commands {
+            for command in plugin.commands.iter().filter(|c| self.admits(c)) {
+                out.insert(format!("commands/{}.md", command.name));
+            }
+        }
+        if format.carries_hooks && plugin.hooks_file.is_some() {
+            out.insert(PLUGIN_HOOKS_PATH.to_owned());
+        }
+        out
+    }
+
+    /// A `${PLUGIN_ROOT}/<path>` of `plugin`, as this harness writes it
+    /// (spec section 4 rules 18 and 19). `shipped` is [`Self::shipped`].
+    ///
+    /// # Errors
+    ///
+    /// `refused: plugin-root-not-shipped` when the pack does not ship the
+    /// file (rules 17 and 20), and what naming a skill refuses.
+    fn render_plugin_root(
+        &self,
+        plugin: &Plugin,
+        shipped: &BTreeSet<String>,
+        root: &PluginRootPath,
+    ) -> Result<String, CoreError> {
+        if !shipped.contains(&root.path) {
+            return Err(crate::hooks_file::not_shipped(
+                &root.caller,
+                &root.written,
+                &root.path,
+                self.profile().label,
+            ));
+        }
+        match self.format().cli_invocation {
+            CliInvocation::PluginRootToken => {
+                Ok(format!("{}/{}", crate::hooks_file::CLAUDE_ROOT, root.path))
+            }
+            CliInvocation::SkillRelativePath => Ok(relative_path(
+                &self.installed(plugin, &root.from)?,
+                &self.installed(plugin, &root.path)?,
+            )),
+        }
+    }
+
     /// A resolved body of `plugin` as this harness reads it.
     ///
     /// # Errors
     ///
-    /// What [`Self::render_call`] and [`Self::render_link`] refuse.
+    /// What [`Self::render_call`], [`Self::render_link`] and
+    /// [`Self::render_plugin_root`] refuse.
     fn render_body(&self, plugin: &Plugin, body: &Body) -> Result<String, CoreError> {
+        let shipped = std::cell::OnceCell::new();
         write_body(
             body,
             |call| self.render_call(call),
             |link| self.render_link(plugin, link),
+            |root| {
+                let shipped = shipped.get_or_init(|| self.shipped(plugin));
+                self.render_plugin_root(plugin, shipped, root)
+            },
         )
     }
 
@@ -263,9 +331,10 @@ pub(crate) trait HarnessTranslator: Sync {
     ///
     /// # Errors
     ///
-    /// What [`project_plugin_hooks`] refuses.
+    /// `refused: plugin-root-not-shipped` for a hook's path to a file the
+    /// pack does not ship, and what [`project_plugin_hooks`] refuses.
     fn hooks(&self, plugin: &Plugin, base: &str, tree: &mut FileTree) -> Result<bool, CoreError> {
-        default_hooks(self.profile(), plugin, base, tree)
+        default_hooks(self.profile(), plugin, &self.shipped(plugin), base, tree)
     }
 
     /// The pack manifest, `skills` the names of the skills this harness
@@ -349,9 +418,8 @@ pub(crate) trait HarnessTranslator: Sync {
         if !plugin.carried_by(self.profile().name, |c| self.admits(c)) {
             return Ok(None);
         }
-        let siblings: BTreeSet<&str> = plugin.skills.iter().map(|s| s.name.as_str()).collect();
         for skill in &skills {
-            self.write_pack_skill(plugin, skill, &siblings, base, layout, tree)?;
+            self.write_pack_skill(plugin, skill, base, layout, tree)?;
         }
         for command in &commands {
             self.write_pack_command(plugin, command, base, layout, tree)?;
@@ -390,12 +458,10 @@ pub(crate) trait HarnessTranslator: Sync {
     /// # Errors
     ///
     /// `refused: published-name-invalid`, and what rendering refuses.
-    #[allow(clippy::too_many_arguments)]
     fn write_pack_skill(
         &self,
         plugin: &Plugin,
         skill: &Component,
-        siblings: &BTreeSet<&str>,
         base: &str,
         layout: Layout,
         tree: &mut FileTree,
@@ -405,10 +471,6 @@ pub(crate) trait HarnessTranslator: Sync {
         let published = self.published_name(plugin, &skill.name)?;
         let mut projection = projection_of(skill, |body| self.render_body(plugin, body))?;
         projection.content.name = published.clone();
-        if naming(profile, &plugin.bare_on) == SkillNaming::PluginPrefixed {
-            projection.content.body =
-                rewrite_sibling_paths(&projection.content.body, &plugin.name, siblings);
-        }
         if layout == Layout::Marketplace {
             mark_generated(&mut projection, &skill.path);
         }
@@ -541,6 +603,7 @@ pub fn write_component(
                 )
             },
             |link| Ok(link.markdown()),
+            |root| Ok(root.written.clone()),
         )
     })?;
     let runtime = [destination.runtime.to_owned()];
@@ -593,11 +656,12 @@ fn naming(profile: &HarnessProfile, bare_on: &[String]) -> SkillNaming {
 }
 
 /// A body's segments as text: each call through `call`, each link through
-/// `link`.
+/// `link`, each plugin-root path through `root`.
 fn write_body(
     body: &Body,
     call: impl Fn(&Call) -> Result<String, CoreError>,
     link: impl Fn(&ResolvedRef) -> Result<String, CoreError>,
+    root: impl Fn(&PluginRootPath) -> Result<String, CoreError>,
 ) -> Result<String, CoreError> {
     let mut out = String::new();
     for segment in &body.segments {
@@ -605,6 +669,7 @@ fn write_body(
             Segment::Text { text } | Segment::Literal { text } => out.push_str(text),
             Segment::Link { target } => out.push_str(&link(target)?),
             Segment::Call { call: site } => out.push_str(&call(site)?),
+            Segment::PluginRoot { path } => out.push_str(&root(path)?),
         }
     }
     Ok(out)
@@ -727,37 +792,13 @@ fn mark_generated(projection: &mut SkillProjection, path: &str) {
     );
 }
 
-/// Rewrites `${CLAUDE_PLUGIN_ROOT}/skills/<name>` to
-/// `${CLAUDE_PLUGIN_ROOT}/skills/<plugin>-<name>` for each `<name>` in
-/// `siblings`, so a body that addresses a skill's files through the plugin
-/// root still finds them under [`SkillNaming::PluginPrefixed`]. Any other
-/// name, and any `skills/` path not after the token, is left alone.
-pub(crate) fn rewrite_sibling_paths(body: &str, plugin: &str, siblings: &BTreeSet<&str>) -> String {
-    const NEEDLE: &str = "${CLAUDE_PLUGIN_ROOT}/skills/";
-    let mut out = String::with_capacity(body.len());
-    let mut rest = body;
-    while let Some(offset) = rest.find(NEEDLE) {
-        let (head, tail) = rest.split_at(offset + NEEDLE.len());
-        out.push_str(head);
-        let end = tail
-            .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_')))
-            .unwrap_or(tail.len());
-        if siblings.contains(&tail[..end]) {
-            out.push_str(plugin);
-            out.push('-');
-        }
-        rest = tail;
-    }
-    out.push_str(rest);
-    out
-}
-
 /// [`HarnessTranslator::hooks`]'s shared body: the hooks from the plugin's
 /// `hooks/hooks.json` this harness carries, each localized ([`crate::hooks_file::localize`]), written as the single
 /// `hooks/hooks.json` the plugin format defines.
 fn default_hooks(
     profile: &HarnessProfile,
     plugin: &Plugin,
+    shipped: &BTreeSet<String>,
     base: &str,
     tree: &mut FileTree,
 ) -> Result<bool, CoreError> {
@@ -769,7 +810,11 @@ fn default_hooks(
     }
     let runtime = parse_runtime_target(profile.runtime)?;
     let var = profile.format().plugin_root_var.map(|var| var.name);
-    let rendered: Vec<_> = crate::hooks_file::carried_hooks(&file.hooks, runtime)
+    let carried = crate::hooks_file::carried_hooks(&file.hooks, runtime);
+    crate::hooks_file::check_hook_paths(&carried, &file.path, profile.label, |path| {
+        shipped.contains(path)
+    })?;
+    let rendered: Vec<_> = carried
         .into_iter()
         .map(|hook| crate::hooks_file::localize(hook, profile.name, var))
         .collect();
@@ -931,18 +976,5 @@ mod tests {
                 assert!(namespaced, "{}", profile.name);
             }
         }
-    }
-
-    #[test]
-    fn sibling_paths_take_the_plugin_prefix_only_for_siblings() {
-        let siblings = BTreeSet::from(["a"]);
-        assert_eq!(
-            rewrite_sibling_paths(
-                "${CLAUDE_PLUGIN_ROOT}/skills/a/x ${CLAUDE_PLUGIN_ROOT}/skills/b/y",
-                "p",
-                &siblings
-            ),
-            "${CLAUDE_PLUGIN_ROOT}/skills/p-a/x ${CLAUDE_PLUGIN_ROOT}/skills/b/y"
-        );
     }
 }

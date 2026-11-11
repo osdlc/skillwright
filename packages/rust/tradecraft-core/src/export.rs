@@ -1490,7 +1490,6 @@ fn roll_back(vfs: &dyn Vfs, swapped: &[(usize, PathBuf, PathBuf)]) -> Result<(),
 
 #[cfg(test)]
 mod tests {
-    use crate::harness::translator::rewrite_sibling_paths;
     use std::cell::Cell;
 
     use serde_json::json;
@@ -2209,10 +2208,7 @@ mod tests {
 
     #[test]
     fn the_pi_root_writes_a_package_per_plugin_with_prefixed_names() {
-        let vfs = calls_vault(
-            "# a\n\nRun /[[b]], then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`. See [[b]].\n\n\
-             Read `${CLAUDE_PLUGIN_ROOT}/skills/b/ref.md` and `${CLAUDE_PLUGIN_ROOT}/skills/c/x`.\n",
-        );
+        let vfs = calls_vault("# a\n\nRun /[[b]]. See [[b]].\n");
         let mut request = request(ExportMode::Build);
         let report = export_skills(&vfs, &request).unwrap();
 
@@ -2244,27 +2240,8 @@ mod tests {
             "/vault/dist/house/.pi/packs/tools/skills/tools-a/SKILL.md",
         );
         assert!(
-            a.contains(
-                "Run `/skill:tools-b`, then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`. See \
-                 [b](../tools-b/SKILL.md)."
-            ),
+            a.contains("Run `/skill:tools-b`. See [b](../tools-b/SKILL.md)."),
             "{a}"
-        );
-        // A sibling's path follows its rename; another plugin's skill does not.
-        assert!(
-            a.contains(
-                "Read `${CLAUDE_PLUGIN_ROOT}/skills/tools-b/ref.md` and \
-                 `${CLAUDE_PLUGIN_ROOT}/skills/c/x`."
-            ),
-            "{a}"
-        );
-        let claude = text_at(
-            &vfs,
-            "/vault/dist/house/.claude-plugin/packs/tools/skills/a/SKILL.md",
-        );
-        assert!(
-            claude.contains("${CLAUDE_PLUGIN_ROOT}/skills/b/ref.md"),
-            "{claude}"
         );
         // No marketplace index, so no manifest unit either.
         assert!(!report.units.iter().any(|u| matches!(
@@ -2336,23 +2313,6 @@ mod tests {
             "/vault/dist/house/.agents/packs/tools/skills/review-guide/SKILL.md",
         );
         assert!(!text.contains("argument-hint"), "{text}");
-    }
-
-    #[test]
-    fn rewrite_sibling_paths_renames_only_whole_sibling_segments() {
-        let siblings: BTreeSet<&str> = ["pr", "pr-check"].into_iter().collect();
-        assert_eq!(
-            rewrite_sibling_paths(
-                "${CLAUDE_PLUGIN_ROOT}/skills/pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/pr \
-                 ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/tools/skills/pr/pr.md \
-                 .claude/skills/pr/ ${CLAUDE_PLUGIN_ROOT}/skills/",
-                "tools",
-                &siblings,
-            ),
-            "${CLAUDE_PLUGIN_ROOT}/skills/tools-pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/tools-pr \
-             ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/tools/skills/pr/pr.md \
-             .claude/skills/pr/ ${CLAUDE_PLUGIN_ROOT}/skills/"
-        );
     }
 
     #[test]

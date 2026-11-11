@@ -73,8 +73,9 @@ use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::guard::within;
+use crate::hooks_file::{CANONICAL_ROOT, RootKind, plugin_root_refs};
 use crate::layout::{Layout, LayoutFile, MARKETPLACES_DIR, PLUGINS_DIR, Place, SharedDir};
-use crate::model::{LinkForm, LinkedComponent, ResolvedRef};
+use crate::model::{LinkForm, LinkedComponent, PluginRootPath, ResolvedRef};
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vfs::{Vfs, normalize};
 
@@ -227,15 +228,16 @@ pub struct CallContext<'a> {
     pub hand_written: BTreeMap<String, String>,
     /// What the compile warned about, deduplicated.
     pub warnings: RefCell<Vec<DiscoveryWarning>>,
-    /// A compile done once for every harness: each call and each link is
-    /// written as a mark and its site recorded here, for a translator to
-    /// spell later. `render` is not called and nothing is refused for not
+    /// A compile done once for every harness: each call, link, inlined file
+    /// and plugin-root path is written as a mark and its site recorded here,
+    /// for a translator to spell later. `render` is not called and nothing is refused for not
     /// being shipped — which harness ships what is the translator's question.
     /// See [`crate::model`].
     pub record: Option<&'a RefCell<Recorded>>,
 }
 
-/// The calls and links a recording compile met, in the order it met them.
+/// The calls, links, inlined files and plugin-root paths a recording
+/// compile met, in the order it met them.
 /// The `n`th mark of each kind in the output names the `n`th entry here.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Recorded {
@@ -247,6 +249,8 @@ pub struct Recorded {
     /// fence and indent included. Its text ships as is: nothing in it is
     /// interpreted.
     pub literals: Vec<String>,
+    /// Every `${PLUGIN_ROOT}/<path>` (spec section 4 rule 15).
+    pub roots: Vec<PluginRootPath>,
 }
 
 /// One call, resolved: the skill it names, and what a refusal about it
@@ -266,8 +270,8 @@ pub struct CallSite {
 pub(crate) const MARK_OPEN: char = '\u{E000}';
 pub(crate) const MARK_CLOSE: char = '\u{E001}';
 
-/// The mark for the `index`th call (`kind` `c`), link (`l`) or literal
-/// (`v`).
+/// The mark for the `index`th call (`kind` `c`), link (`l`), literal (`v`)
+/// or plugin-root path (`p`).
 fn mark(kind: char, index: usize) -> String {
     format!("{MARK_OPEN}{kind}{index}{MARK_CLOSE}")
 }
@@ -1056,6 +1060,9 @@ impl<'a> Renderer<'a> {
     ) -> Result<String, CoreError> {
         let mut tokens = scan_wiki_tokens(body, true);
         tokens.extend(markdown_link_tokens(body));
+        if self.record().is_some() {
+            tokens.extend(plugin_root_tokens(body));
+        }
         self.check_literal_calls(body, source_path);
         tokens.sort_by_key(|token| token.start);
         // A token inside another, such as an escape in a link's alias, is
@@ -1113,6 +1120,9 @@ impl<'a> Renderer<'a> {
             }
             TokenKind::MarkdownLink => {
                 return self.replace_markdown_link(raw, source_path, output_path);
+            }
+            TokenKind::PluginRoot | TokenKind::ClaudeRoot => {
+                return self.replace_plugin_root(token, raw, source_path, output_path);
             }
             TokenKind::Link | TokenKind::Embed => {}
         }
@@ -1257,7 +1267,7 @@ impl<'a> Renderer<'a> {
             .or_default()
             .insert(label);
         let block = fenced_block(&content, extension_of_path(file).as_deref(), line);
-        let index = match self.call_context.and_then(|context| context.record) {
+        let index = match self.record() {
             Some(record) => {
                 let mut record = record.borrow_mut();
                 record.literals.push(block);
@@ -1269,6 +1279,53 @@ impl<'a> Renderer<'a> {
             }
         };
         Ok(mark('v', index))
+    }
+
+    /// The record of a recording compile.
+    fn record(&self) -> Option<&'a RefCell<Recorded>> {
+        self.call_context.and_then(|context| context.record)
+    }
+
+    /// A plugin-root variable, recorded as a mark for each harness to write
+    /// (spec section 4 rules 15 to 22). Called only by a recording compile.
+    fn replace_plugin_root(
+        &mut self,
+        token: &WikiToken<'_>,
+        written: &str,
+        source_path: &Path,
+        output_path: &str,
+    ) -> Result<String, CoreError> {
+        if token.kind == TokenKind::ClaudeRoot {
+            return Err(self.link_error(
+                "claude-plugin-root",
+                source_path,
+                written,
+                format_args!("is Claude Code's own; write `{CANONICAL_ROOT}`"),
+                "section 4 rule 22",
+            ));
+        }
+        if token.target.is_empty() {
+            return Err(self.link_error(
+                "plugin-root-no-path",
+                source_path,
+                written,
+                format_args!(
+                    "names no file, and only a path can be written for every harness; \
+                     write `{CANONICAL_ROOT}/<path>`"
+                ),
+                "section 4 rule 21",
+            ));
+        }
+        let site = PluginRootPath {
+            path: token.target.clone(),
+            from: self.pack_path_of(output_path),
+            written: written.to_owned(),
+            caller: self.relative_or_verbatim(source_path),
+        };
+        let record = self.record().expect("only a recording compile reads roots");
+        let mut record = record.borrow_mut();
+        record.roots.push(site);
+        Ok(mark('p', record.roots.len() - 1))
     }
 
     /// `text` with each literal mark written back as its block, for a
@@ -1994,6 +2051,10 @@ enum TokenKind {
     Escape,
     /// A Markdown link's destination, `x.md` in `[t](x.md)`.
     MarkdownLink,
+    /// `${PLUGIN_ROOT}`, its path in `target`, empty for none.
+    PluginRoot,
+    /// `${CLAUDE_PLUGIN_ROOT}`.
+    ClaudeRoot,
 }
 
 /// One `[[…]]`, `![[…]]` or `/[[…]]` occurrence (or one escape), with the
@@ -2198,6 +2259,30 @@ fn markdown_link_tokens(markdown: &str) -> Vec<WikiToken<'_>> {
                 kind: TokenKind::MarkdownLink,
                 destination,
                 target: String::new(),
+                fragment: None,
+                alias: None,
+            }
+        })
+        .collect()
+}
+
+/// A token for each `${PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` in
+/// `markdown`, code included (spec section 4 rules 15 and 25).
+fn plugin_root_tokens(markdown: &str) -> Vec<WikiToken<'_>> {
+    plugin_root_refs(markdown)
+        .into_iter()
+        .map(|found| {
+            let (kind, target) = match found.kind {
+                RootKind::Path(path) => (TokenKind::PluginRoot, path),
+                RootKind::Lone => (TokenKind::PluginRoot, ""),
+                RootKind::Claude => (TokenKind::ClaudeRoot, ""),
+            };
+            WikiToken {
+                start: found.start,
+                end: found.end,
+                kind,
+                destination: &markdown[found.start..found.end],
+                target: target.to_owned(),
                 fragment: None,
                 alias: None,
             }

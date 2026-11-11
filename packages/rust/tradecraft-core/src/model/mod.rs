@@ -14,9 +14,9 @@
 //! 1. **Read** every note into a node — [`load::read_notes`], over the
 //!    layout [`crate::layout::read_layout`] walked once.
 //! 2. **Resolve** every body: embeds expanded, every `[[link]]` and
-//!    `/[[call]]` checked and pointed at the node it names. A body becomes
-//!    [`Segment`]s, so a translator writes a call or a link without
-//!    re-reading the note it is in.
+//!    `/[[call]]` checked and pointed at the node it names, and every
+//!    `${PLUGIN_ROOT}/<path>` recorded. A body becomes [`Segment`]s, so a
+//!    translator writes each without re-reading the note it is in.
 //!
 //! Validation runs between and after the passes and carries every refusal the
 //! two pipelines raised, token and message unchanged.
@@ -240,6 +240,26 @@ pub enum Segment {
         /// The block, fences included.
         text: String,
     },
+    /// A `${PLUGIN_ROOT}/<path>`, which each harness writes its own way
+    /// (spec section 4 rules 15 to 20).
+    PluginRoot {
+        /// The path.
+        path: PluginRootPath,
+    },
+}
+
+/// A `${PLUGIN_ROOT}/<path>` in text. Both paths are paths in a pack laid
+/// out as Claude Code's, as a [`ResolvedRef`]'s are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PluginRootPath {
+    /// The file it names.
+    pub path: String,
+    /// Where the text holding it lands.
+    pub from: String,
+    /// The reference as written, for an error.
+    pub written: String,
+    /// The file it is in, vault-relative, for an error.
+    pub caller: String,
 }
 
 /// A resolved link: where it is written, the file it reaches, and how it is
@@ -413,6 +433,8 @@ pub struct Asset {
 /// A plugin's `hooks/hooks.json`, parsed. See [`crate::hooks_file`].
 #[derive(Debug, Clone)]
 pub struct HooksFile {
+    /// The file, vault-relative, for an error.
+    pub path: String,
     /// The hooks it declares.
     pub hooks: Vec<agent_adapt::Hook>,
 }
@@ -441,6 +463,9 @@ pub(crate) fn segments(text: &str, record: &Recorded) -> Body {
                 },
                 'v' => Segment::Literal {
                     text: record.literals.get(index).cloned()?,
+                },
+                'p' => Segment::PluginRoot {
+                    path: record.roots.get(index).cloned()?,
                 },
                 _ => return None,
             };
@@ -530,6 +555,7 @@ mod tests {
                 caller: "b.md".into(),
             }],
             literals: vec!["```\n[[y]]\n```".into()],
+            roots: Vec::new(),
         }
     }
 

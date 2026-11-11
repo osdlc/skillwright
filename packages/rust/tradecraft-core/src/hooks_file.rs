@@ -8,9 +8,12 @@
 //! A hook a harness cannot carry does not stop the build: it is left out of
 //! that harness's file.
 //!
-//! A command names the plugin's own files as `${PLUGIN_ROOT}/…`. Each pack's
-//! copy names its harness's own variable instead ([`localize`]), because a
-//! hook runs in the session's working directory, not the plugin's. Two
+//! A command names the plugin's own files as `${PLUGIN_ROOT}/…`, and each
+//! such path must name a file the pack ships (`check_hook_paths`). Each
+//! pack's copy names its harness's own variable instead ([`localize`]),
+//! because a hook runs in the session's working directory, not the
+//! plugin's. The same scanner, `plugin_root_refs`, reads plugin-root paths
+//! in Markdown. Two
 //! placeholders are filled per pack: `{{harness}}`, the root's name, and
 //! `{{event}}`, the event the hook is registered under, spelled as in the
 //! file. Any other `{{…}}`, or an unclosed `{{`, is refused when the file is
@@ -36,11 +39,112 @@ pub struct PluginRootVar {
     pub url: &'static str,
 }
 
-/// The token a hooks file names the plugin root by.
-const CANONICAL_ROOT: &str = "${PLUGIN_ROOT}";
+/// The token source text names the plugin root by (spec section 4 rule 15).
+pub(crate) const CANONICAL_ROOT: &str = "${PLUGIN_ROOT}";
 
-/// Claude Code's own variable, which a hooks file must not write.
-const CLAUDE_ROOT: &str = "${CLAUDE_PLUGIN_ROOT}";
+/// Claude Code's own variable, which source must not write (rule 22).
+pub(crate) const CLAUDE_ROOT: &str = "${CLAUDE_PLUGIN_ROOT}";
+
+/// One plugin-root variable in a text, `start..end` its bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RootRef<'a> {
+    pub start: usize,
+    pub end: usize,
+    pub kind: RootKind<'a>,
+}
+
+/// What a [`RootRef`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RootKind<'a> {
+    /// `${PLUGIN_ROOT}/<path>`, the path without its trailing `.`s.
+    Path(&'a str),
+    /// `${PLUGIN_ROOT}` with no path after it.
+    Lone,
+    /// `${CLAUDE_PLUGIN_ROOT}`.
+    Claude,
+}
+
+/// Every `${PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` in `text`, in order. A
+/// path runs to the first character that is not a letter, digit, `.`, `_`,
+/// `-` or `/`, and a `.` at its end is not part of it (spec section 4 rule
+/// 16).
+pub(crate) fn plugin_root_refs(text: &str) -> Vec<RootRef<'_>> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(found) = text[at..].find("${") {
+        let start = at + found;
+        let rest = &text[start..];
+        if rest.starts_with(CLAUDE_ROOT) {
+            let end = start + CLAUDE_ROOT.len();
+            out.push(RootRef {
+                start,
+                end,
+                kind: RootKind::Claude,
+            });
+            at = end;
+        } else if rest.starts_with(CANONICAL_ROOT) {
+            let after = start + CANONICAL_ROOT.len();
+            let tail = text[after..].strip_prefix('/').unwrap_or("");
+            let len = tail
+                .find(|c: char| !(c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/')))
+                .unwrap_or(tail.len());
+            let path = tail[..len].trim_end_matches('.');
+            let (end, kind) = if path.is_empty() {
+                (after, RootKind::Lone)
+            } else {
+                (after + 1 + path.len(), RootKind::Path(path))
+            };
+            out.push(RootRef { start, end, kind });
+            at = end;
+        } else {
+            at = start + 2;
+        }
+    }
+    out
+}
+
+/// Refuses a hook command's `${PLUGIN_ROOT}/<path>` that names a file the
+/// `label` pack does not ship (spec section 4 rules 17 and 23). A lone
+/// `${PLUGIN_ROOT}` is allowed: the variable is kept.
+///
+/// # Errors
+///
+/// `refused: plugin-root-not-shipped`, naming `from` and the path as
+/// written.
+pub(crate) fn check_hook_paths(
+    hooks: &[Hook],
+    from: &str,
+    label: &str,
+    ships: impl Fn(&str) -> bool,
+) -> Result<(), CoreError> {
+    for command in hooks.iter().filter_map(|hook| hook.command.as_deref()) {
+        for found in plugin_root_refs(command) {
+            if let RootKind::Path(path) = found.kind
+                && !ships(path)
+            {
+                return Err(not_shipped(
+                    from,
+                    &command[found.start..found.end],
+                    path,
+                    label,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The refusal for a plugin-root path naming nothing the `label` pack
+/// ships.
+pub(crate) fn not_shipped(from: &str, written: &str, path: &str, label: &str) -> CoreError {
+    CoreError::refused(
+        "plugin-root-not-shipped",
+        format!(
+            "{from}: `{written}` names `{path}`, which the {label} pack does not contain \
+             (section 4 rules 17 and 20)"
+        ),
+    )
+}
 
 /// The placeholders a hook command may carry; [`localize`] pairs them with
 /// their values by position.

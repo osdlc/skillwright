@@ -1054,7 +1054,10 @@ fn load_hooks_files(
                 }
             }
         }
-        group.hooks_file = Some(HooksFile { hooks });
+        group.hooks_file = Some(HooksFile {
+            path: file.rel.clone(),
+            hooks,
+        });
         let cursor_built = roots.iter().any(|root| {
             root.name == "cursor" && group.carried_by(root.name, |c| admits(&c.discovered, root))
         });
