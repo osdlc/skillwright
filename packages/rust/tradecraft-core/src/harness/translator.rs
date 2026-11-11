@@ -41,7 +41,9 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 use crate::model::load::{admits, targets_name};
-use crate::model::{Body, Call, Component, Marketplace, Plugin, ResourceContent, Segment};
+use crate::model::{
+    Body, Call, Component, Marketplace, Plugin, ResolvedRef, ResourceContent, Segment,
+};
 use crate::projection::{
     ProjectedFile, RedundantOverride, parse_runtime_target, project_agent, project_command,
     project_plugin_hooks, project_skill_reporting,
@@ -176,13 +178,75 @@ pub(crate) trait HarnessTranslator: Sync {
         )
     }
 
-    /// A resolved body as this harness reads it.
+    /// A link of `plugin`, written from where its text lands in this
+    /// harness's pack to where its file lands.
     ///
     /// # Errors
     ///
-    /// What [`Self::render_call`] refuses.
-    fn render_body(&self, body: &Body) -> Result<String, CoreError> {
-        write_body(body, |call| self.render_call(call))
+    /// `refused: link-not-shipped` when this harness's pack does not contain
+    /// the component the link reaches into (spec section 4 rule 6), and what
+    /// naming a skill refuses.
+    fn render_link(&self, plugin: &Plugin, link: &ResolvedRef) -> Result<String, CoreError> {
+        if let Some(component) = &link.component {
+            let members = match component.kind {
+                EntityKind::Skill => plugin.skills.as_slice(),
+                EntityKind::Command => plugin.commands.as_slice(),
+                _ => &[],
+            };
+            let carried = members
+                .iter()
+                .find(|member| member.name == component.name)
+                .is_some_and(|member| self.admits(member));
+            if !carried {
+                return Err(CoreError::refused(
+                    "link-not-shipped",
+                    format!(
+                        "{}: `{}` links to {} `{}`, which the {} pack does not contain \
+                         (section 4 rule 6)",
+                        link.caller,
+                        link.written,
+                        component.kind.as_str(),
+                        component.name,
+                        self.profile().label
+                    ),
+                ));
+            }
+        }
+        let from = self.installed(plugin, &link.from)?;
+        let to = self.installed(plugin, &link.to)?;
+        Ok(link.markdown_at(&from, &to))
+    }
+
+    /// A path in a pack laid out as Claude Code's, `skills/<s>/…`, moved to
+    /// this harness's folder for skill `<s>`.
+    ///
+    /// # Errors
+    ///
+    /// What [`Self::published_name`] refuses.
+    fn installed(&self, plugin: &Plugin, path: &str) -> Result<String, CoreError> {
+        match path
+            .strip_prefix("skills/")
+            .and_then(|rest| rest.split_once('/'))
+        {
+            Some((skill, rest)) => Ok(format!(
+                "skills/{}/{rest}",
+                self.published_name(plugin, skill)?
+            )),
+            None => Ok(path.to_owned()),
+        }
+    }
+
+    /// A resolved body of `plugin` as this harness reads it.
+    ///
+    /// # Errors
+    ///
+    /// What [`Self::render_call`] and [`Self::render_link`] refuse.
+    fn render_body(&self, plugin: &Plugin, body: &Body) -> Result<String, CoreError> {
+        write_body(
+            body,
+            |call| self.render_call(call),
+            |link| self.render_link(plugin, link),
+        )
     }
 
     /// The plugin's hooks file, written into `tree` under `base`. Returns
@@ -283,7 +347,18 @@ pub(crate) trait HarnessTranslator: Sync {
             self.write_pack_skill(plugin, skill, &siblings, base, layout, tree)?;
         }
         for command in &commands {
-            self.write_pack_command(command, base, layout, tree)?;
+            self.write_pack_command(plugin, command, base, layout, tree)?;
+        }
+        for reference in &plugin.references {
+            let bytes = match &reference.content {
+                ResourceContent::Body { body } => self.render_body(plugin, body)?.into_bytes(),
+                ResourceContent::Bytes { bytes } => bytes.clone(),
+            };
+            tree.insert(
+                &format!("{base}/{}", reference.path),
+                bytes,
+                reference.executable,
+            );
         }
         let wrote_hooks = self.hooks(plugin, base, tree)?;
         for asset in &plugin.assets {
@@ -321,7 +396,7 @@ pub(crate) trait HarnessTranslator: Sync {
         let profile = self.profile();
         let format = self.format();
         let published = self.published_name(plugin, &skill.name)?;
-        let mut projection = projection_of(skill, |body| self.render_body(body))?;
+        let mut projection = projection_of(skill, |body| self.render_body(plugin, body))?;
         projection.content.name = published.clone();
         if naming(profile, &plugin.bare_on) == SkillNaming::PluginPrefixed {
             projection.content.body =
@@ -376,13 +451,14 @@ pub(crate) trait HarnessTranslator: Sync {
     /// What rendering refuses.
     fn write_pack_command(
         &self,
+        plugin: &Plugin,
         command: &Component,
         base: &str,
         layout: Layout,
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
-        let mut projection = projection_of(command, |body| self.render_body(body))?;
+        let mut projection = projection_of(command, |body| self.render_body(plugin, body))?;
         if layout == Layout::Marketplace {
             mark_generated(&mut projection, &command.path);
         }
@@ -446,14 +522,18 @@ pub fn write_component(
     let projection = projection_of(component, |body| {
         // A skill published on its own has no plugin, so a call to another
         // skill is the runtime's form without a namespace.
-        write_body(body, |call| {
-            render_call(
-                call,
-                destination.canonical,
-                destination.calls,
-                SkillNaming::Bare,
-            )
-        })
+        write_body(
+            body,
+            |call| {
+                render_call(
+                    call,
+                    destination.canonical,
+                    destination.calls,
+                    SkillNaming::Bare,
+                )
+            },
+            |link| Ok(link.markdown()),
+        )
     })?;
     let runtime = [destination.runtime.to_owned()];
     let mut tree = FileTree::default();
@@ -474,8 +554,7 @@ pub fn write_component(
 }
 
 /// A call at `canonical`, written in `runtime`'s syntax, a skill of a plugin
-/// named by `naming`. A mention is the skill's name as that harness
-/// qualifies it, with no call sigil.
+/// named by `naming`.
 fn render_call(
     call: &Call,
     canonical: &str,
@@ -486,22 +565,11 @@ fn render_call(
     let Some(runtime) = runtime else {
         return Ok(call.skill.name.clone());
     };
-    let rendered = match &call.skill.plugin {
+    match &call.skill.plugin {
         Some(plugin) => {
-            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)?
+            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)
         }
-        None => crate::export::checked_skill_call(runtime, None, &call.skill.name)?,
-    };
-    if !call.mention {
-        return Ok(rendered);
-    }
-    let prefix = runtime.skill_call_syntax().prefix;
-    match rendered.strip_prefix(prefix) {
-        Some(name) => Ok(name.to_owned()),
-        None => Err(CoreError::refused(
-            "skill-call-invalid",
-            format!("the {runtime:?} call `{rendered}` does not start with `{prefix}`"),
-        )),
+        None => crate::export::checked_skill_call(runtime, None, &call.skill.name),
     }
 }
 
@@ -518,21 +586,37 @@ fn naming(profile: &HarnessProfile, bare_on: &[String]) -> SkillNaming {
         .map_or(SkillNaming::Bare, |f| f.naming)
 }
 
-/// A body's segments as text: each call through `call`, each link as its
-/// markdown.
+/// A body's segments as text: each call through `call`, each link through
+/// `link`.
 fn write_body(
     body: &Body,
     call: impl Fn(&Call) -> Result<String, CoreError>,
+    link: impl Fn(&ResolvedRef) -> Result<String, CoreError>,
 ) -> Result<String, CoreError> {
     let mut out = String::new();
     for segment in &body.segments {
         match segment {
             Segment::Text { text } => out.push_str(text),
-            Segment::Link { target } => out.push_str(&target.markdown()),
+            Segment::Link { target } => out.push_str(&link(target)?),
             Segment::Call { call: site } => out.push_str(&call(site)?),
         }
     }
     Ok(out)
+}
+
+/// The path from the folder of the file `from` to `to`, both `/`-separated
+/// and relative to one root. A file's path to itself is its name.
+pub(crate) fn relative_path(from: &str, to: &str) -> String {
+    let from: Vec<&str> = from.split('/').filter(|s| !s.is_empty()).collect();
+    let folder = &from[..from.len().saturating_sub(1)];
+    let to: Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();
+    let shared = folder.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut out: Vec<&str> = vec![".."; folder.len() - shared];
+    out.extend(&to[shared..]);
+    if out.is_empty() {
+        return to.last().copied().unwrap_or_default().to_owned();
+    }
+    out.join("/")
 }
 
 /// Refuses two skills of different plugins that publish under one name on a

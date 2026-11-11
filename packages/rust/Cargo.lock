@@ -489,19 +489,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "markdown-vault-fs"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20e01ebb088ba2abfa09093419234ca0b6db4f57f8ce296f4017c766efaebe7d"
-dependencies = [
- "path-guard",
- "regex",
- "serde_json",
- "vfs-seam",
- "vfs-walk",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -948,7 +935,6 @@ dependencies = [
  "frontmatter-lossless",
  "markdown-contract",
  "markdown-link",
- "markdown-vault-fs",
  "path-guard",
  "serde",
  "serde_json",

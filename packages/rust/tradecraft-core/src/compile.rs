@@ -1,18 +1,13 @@
 //! The compile pass — a note's body flattened for publication.
 //!
-//! Steps 1–3 of the vault spec's five:
-//!
 //! 1. `![[embed]]` of a markdown note expands to that note's *body* in place,
 //!    recursively, with a `#heading` or `#^block` fragment selecting the
 //!    addressed slice. A cycle is refused naming the cycle path.
-//! 2. Every surviving `[[link]]` becomes a relative markdown link to where the
-//!    linked file will land in the published skill directory, and the file is
-//!    collected as a resource. Collection is transitive: a collected markdown
-//!    file's own body is compiled the same way, and *its* references collected.
-//!    A `/[[call]]` instead becomes the target harness's invocation of the
-//!    named skill, and copies nothing — see [`CallContext`]. A plain link to
-//!    a skill from a skill or command, or from a file it ships, names that
-//!    skill instead, the skill being compiled included.
+//! 2. Every surviving `[[link]]`, and every relative Markdown link, is
+//!    resolved in the scope of spec section 4 and pointed at where its file
+//!    lands in the pack. Nothing is copied for a link: every file a link may
+//!    reach ships on its own. A `/[[call]]` becomes the target harness's
+//!    invocation of the named skill — see [`CallContext`].
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a destination has no resolver to
 //!    give it meaning. A `[[` after an odd run of `\` is escaped: it is neither a
@@ -27,48 +22,37 @@
 //! its body and resources with the compiled forms, so what
 //! [`crate::projection::project_skill`] renders is the flattened skill.
 //!
-//! # Where resources land
+//! # Where a link resolves
 //!
-//! Three placements, in precedence order, all forward-slashed and relative to
-//! the published skill directory:
-//!
-//! | Source | Output |
-//! |---|---|
-//! | The entry note itself | `SKILL.md` |
-//! | A file under the bundle root | its bundle-relative path, unchanged |
-//! | Any other vault file | `references/vault/<vault-relative>` (document extensions) or `assets/vault/<vault-relative>` (everything else) |
-//!
-//! Keying the vault copies by their full vault-relative path is what makes two
-//! linked notes sharing a basename land at two paths instead of refusing —
-//! the disambiguation the compile spec promises. A genuine collision (two
-//! sources claiming one output path) is still possible across the placements,
-//! and it is refused `path-collision` naming the skill, because any winner
-//! would silently drop the loser.
+//! A name, `[[guide]]`, is looked up first in the linking file's component
+//! folder, at any depth, then in the plugin's shared `references/`,
+//! `scripts/` and `assets/` and among its components by name. A file with no
+//! component, such as a shared reference, starts at the second step. A link
+//! with a path resolves relative to the linking file. Either way the file
+//! must be one the layout read, in the linking file's plugin, and not in a
+//! never-ship folder. A link is recorded with the pack path of the file it is
+//! written in and of the file it reaches, laid out as Claude Code's pack, so
+//! a translator writes it for its own folder names.
 //!
 //! # What a skill carries comes from the layout
 //!
-//! With a [`CompileSource::layout`], a skill's `references/`, `scripts/` and
-//! `assets/` are seeded as resources at their paths in the skill's folder,
-//! as the layout walk classified them ([`crate::layout::Place::Shared`]).
-//! Markdown under `references/` is compiled; every other file ships byte for
-//! byte (spec section 9 rule 8). Never-ship folders are not seeded, and a
-//! link into one is refused. Without a layout only what the body reaches
-//! through links is collected.
+//! A skill's `references/`, `scripts/` and `assets/` are seeded as resources
+//! at their paths in the skill's folder, as the layout walk classified them
+//! ([`crate::layout::Place::Shared`]). Markdown under `references/` is
+//! compiled; every other file ships byte for byte (spec section 9 rule 8).
 //!
 //! # What comes from the shared crates, and what stays here
 //!
 //! The links come from `markdown-link`: its scanner finds each `[[link]]` and
-//! `![[embed]]` (code by [`CodeRules::SkillExport`], so this pass keeps
-//! matching `skill-export`'s renderer; links in HTML comments skipped;
-//! `[[#Heading]]` a link to the note it is in), its `LinkIndex::resolve_strict`
-//! resolves them, and its `relative_link` and `escape_label` write them back
-//! out. `markdown-contract`'s `select` cuts a `#heading` or `#^block` out of an
-//! embedded note.
+//! `![[embed]]` (code by [`CodeRules::SkillExport`]; links in HTML comments
+//! skipped; `[[#Heading]]` a link to the note it is in), and its
+//! `escape_label` and URI encoders write them back out. `markdown-contract`'s
+//! `select` cuts a `#heading` or `#^block` out of an embedded note.
 //!
-//! What stays here is skillwright's own: `/[[call]]` calls and `\/[[x]]`
-//! escapes, read as a layer over `markdown-link`'s links and found in code
-//! too; the `\[[` escape; hand-written calls; where resources land; and the
-//! validation that no Obsidian syntax survives.
+//! What stays here is skillwright's own: link scope, `/[[call]]` calls and
+//! `\/[[x]]` escapes, read as a layer over `markdown-link`'s links and found
+//! in code too; the `\[[` escape; hand-written calls; and the validation that
+//! no Obsidian syntax survives.
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
@@ -76,10 +60,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
-use markdown_link::{
-    AbandonReason, BodyLinkKind, LinkIndex, ResolveError, ScanOptions, parse_inner_self,
-    scan_body_with,
-};
+use markdown_link::{AbandonReason, BodyLinkKind, ScanOptions, parse_inner_self, scan_body_with};
 use sha2::{Digest, Sha256};
 
 use crate::content::SkillProjection;
@@ -87,53 +68,42 @@ use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::guard::within;
-use crate::layout::{Layout, Place, SharedDir};
+use crate::layout::{Layout, LayoutFile, MARKETPLACES_DIR, PLUGINS_DIR, Place, SharedDir};
+use crate::model::{LinkForm, LinkedComponent, ResolvedRef};
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vfs::{Vfs, normalize};
 
-/// Where a compile reads from: the vault that resolves its links, the note
-/// being compiled, its folder, and the layout that says what the skill
-/// carries. Paths are absolute; `entry_path` and `bundle_root`
-/// must lie under `vault_root`.
+/// Where a compile reads from: the vault, the note being compiled, and the
+/// layout that says what the skill carries and what a link may reach. Paths
+/// are absolute; `entry_path` must lie under `vault_root` and be a file of
+/// the layout.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct CompileSource<'a> {
-    /// The root every link resolves against and every `…/vault/<relative>`
-    /// output path is derived from.
+    /// The vault root.
     pub vault_root: &'a Path,
     /// The note whose body is being compiled. Its own output is `SKILL.md`.
     pub entry_path: &'a Path,
-    /// The entry's own folder: a file under it lands at its path from here.
-    pub bundle_root: Option<&'a Path>,
     /// The skill's name, used only to say *which* skill a refusal is about.
     pub skill_name: &'a str,
     /// How `/[[x]]` calls render. Without one, every call renders its target
-    /// as written, in backticks, and nothing is refused. A target that
-    /// resolves by path is recorded in [`RelatedSplit::calls`], skill or not;
-    /// one that does not is recorded unresolved, since there is no index for
-    /// the by-name fallback. A plain `[[x]]` stays a link.
+    /// as written, in backticks, is recorded unresolved, and no call is
+    /// refused.
     pub calls: Option<&'a CallContext<'a>>,
-    /// The vault's files, indexed for link resolution, when the caller has
-    /// them: a load passes the index of the walk it read the vault with.
-    /// `None` walks `vault_root` for them, leaving out tooling folders
-    /// (`.obsidian`, `.trash`, `node_modules`).
-    pub links: Option<&'a LinkIndex>,
-    /// The vault's layout, when the caller read one: it says which files a
-    /// skill carries and which never ship. See the module doc.
+    /// The vault's layout, when the caller read one. `None` reads it from
+    /// `vault_root`.
     pub layout: Option<&'a Layout>,
 }
 
 impl<'a> CompileSource<'a> {
     /// Compile the note at `entry_path`, named `skill_name`, against
-    /// `vault_root`. No bundle, call context or link index; set them after.
+    /// `vault_root`. No call context or layout; set them after.
     pub fn new(vault_root: &'a Path, entry_path: &'a Path, skill_name: &'a str) -> Self {
         Self {
             vault_root,
             entry_path,
-            bundle_root: None,
             skill_name,
             calls: None,
-            links: None,
             layout: None,
         }
     }
@@ -187,12 +157,20 @@ impl SkillIndex {
         self.by_path.get(path)
     }
 
-    /// Every skill whose `name` is exactly `name`.
-    fn by_name(&self, name: &str) -> NameMatch<'_> {
+    /// Every skill a call target names: by `name`, or, for a target with a
+    /// `/`, by the trailing folders of its note's path.
+    fn by_name(&self, target: &str) -> NameMatch<'_> {
+        let note = Path::new(target).with_extension("md");
         let mut hits: Vec<&IndexedSkill> = self
             .by_path
             .values()
-            .filter(|skill| skill.name == name)
+            .filter(|skill| {
+                if target.contains('/') {
+                    skill.entry_path.ends_with(&note)
+                } else {
+                    skill.name == target
+                }
+            })
             .collect();
         match hits.len() {
             0 => NameMatch::None,
@@ -297,13 +275,12 @@ impl<'a> SkillSource<'a> {
 pub struct CallContext<'a> {
     /// Where the skills a body may name come from.
     pub skills: SkillSource<'a>,
-    /// What this target writes for a skill, without backticks: its call, or
-    /// with `true` its name (see [`CallSite::mention`]).
-    pub render: &'a dyn Fn(&IndexedSkill, bool) -> Result<String, CoreError>,
+    /// What this target writes for a call to a skill, without backticks.
+    pub render: &'a dyn Fn(&IndexedSkill) -> Result<String, CoreError>,
     /// The destination's name, for a refusal about what it does not ship.
     pub target: &'a str,
-    /// The body is a skill's or a command's, where a plain `[[x]]` to a skill
-    /// names the skill rather than copying it.
+    /// The body is a skill's or a command's, whose hand-written calls are
+    /// checked.
     pub implicit: bool,
     /// What the compile warned about, deduplicated.
     pub warnings: RefCell<Vec<DiscoveryWarning>>,
@@ -322,7 +299,7 @@ pub struct Recorded {
     /// Every call, resolved to the skill it names.
     pub calls: Vec<CallSite>,
     /// Every surviving link, resolved to where its file lands.
-    pub links: Vec<LinkSite>,
+    pub links: Vec<ResolvedRef>,
 }
 
 /// One call, resolved: the skill it names, and what a refusal about it
@@ -333,37 +310,8 @@ pub struct CallSite {
     pub skill: IndexedSkill,
     /// The call's target as the author wrote it, fragment and all.
     pub destination: String,
-    /// A plain `[[skill]]`: written as the skill's published name, not as an
-    /// invocation.
-    pub mention: bool,
     /// The note the call is in, as a refusal names it.
     pub caller: String,
-}
-
-/// One link, resolved: the markdown it renders as, and the file it reaches.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LinkSite {
-    /// The link's text, escaped for markdown.
-    pub label: String,
-    /// The relative path from the emitting file to the linked file's output,
-    /// encoded, with its fragment.
-    pub href: String,
-    /// Rendered as an image (`![…](…)`) rather than a link.
-    pub image: bool,
-    /// The linked file, vault-relative.
-    pub target: String,
-}
-
-impl LinkSite {
-    /// The markdown this link renders as — the bytes an unrecorded compile
-    /// writes in its place.
-    pub fn markdown(&self) -> String {
-        if self.image {
-            format!("![{}]({})", self.label, self.href)
-        } else {
-            format!("[{}]({})", self.label, self.href)
-        }
-    }
 }
 
 /// Opens and closes a recording compile's mark. Private-use code points, so
@@ -431,9 +379,9 @@ pub struct Closure {
     /// One of `contributing_notes`, not necessarily the first, since they are
     /// sorted. [`Closure::hash`] reads the whole file for this note.
     pub owner: String,
-    /// Link targets in this file that resolved to nothing, as written and
-    /// sorted. Recorded rather than refused, because a note appearing at one
-    /// of these names later changes the output while leaving the hash over
+    /// Call targets in this file that named no skill, as written and sorted:
+    /// only where calls are not refused. A skill appearing at one of these
+    /// names later changes the output while leaving the hash over
     /// `contributing_notes` identical.
     pub unresolved: Vec<String>,
     /// Skills this file calls, as `plugin:name` (or `name`), sorted. Nothing
@@ -502,18 +450,19 @@ impl Closure {
 /// * `refused: cycle` — the embeds form a cycle, named in vault-relative hops.
 /// * `refused: fragment-unresolved` — a `#heading` or `#^block` selected
 ///   nothing, naming the source file and the fragment.
-/// * `refused: link-ambiguous` — a link resolved to several files this pass
-///   refuses to choose between. A link resolving to nothing is not refused:
-///   it is left as written.
-/// * `refused: unsafe-path` — an absolute or `..`-carrying link target.
+/// * `refused: link-ambiguous` — a name matched several files.
+/// * `refused: link-unresolved` — a link or embed reached nothing.
+/// * `refused: link-out-of-scope` — a link left the marketplace or reached
+///   another plugin.
+/// * `refused: excluded-link` — a link reached a file that never ships.
+/// * `refused: unsafe-path` — an absolute link target.
 /// * `refused: path-collision` — two sources claim one output path.
 /// * `refused: unresolved-syntax` — the validation pass found Obsidian syntax
 ///   in an emitted markdown file's body, or a link in a string of a
 ///   resource's frontmatter.
-/// * `refused: skill-call-not-skill` / `skill-call-unresolved` /
-///   `skill-call-ambiguous` / `skill-call-not-shipped` — with a
-///   [`CallContext`], a call named a note that is not a skill, nothing,
-///   several skills by name, or a skill the destination does not carry. A
+/// * `refused: skill-call-unresolved` / `skill-call-ambiguous` /
+///   `skill-call-not-shipped` — with a [`CallContext`], a call named no
+///   skill, several skills, or a skill the destination does not carry. A
 ///   broken call sends the reader to a command that does not exist, so unlike
 ///   a link it blocks.
 /// * `refused: literal-skill-call` — a skill or command body, or a note
@@ -529,7 +478,7 @@ pub fn compile_note(
     body: &str,
 ) -> Result<CompiledNote, CoreError> {
     let mut renderer = Renderer::new(vfs, source)?;
-    renderer.seed_bundle_resources()?;
+    renderer.seed_bundle_resources();
 
     // The entry is on the transclusion stack from the start, so a note that
     // embeds itself is a cycle of one hop rather than a stack overflow.
@@ -669,15 +618,12 @@ pub struct RelatedSplit {
     pub embeds: Vec<String>,
     /// Files a surviving `[[link]]` resolved to — notes and attachments both,
     /// since a non-markdown embed is rewritten as a link too. Never the entry
-    /// itself: a self-link without a fragment names the skill, and one with
-    /// a fragment, or `[[#Heading]]`, is left out here.
+    /// itself.
     pub links: Vec<String>,
-    /// Notes this note calls or names. With a [`CallContext`] these are skills; without
-    /// one, whatever note each `/[[…]]` resolved to by path. A call copies
-    /// nothing, so a called note is never also in [`Self::links`] for that
-    /// call.
+    /// Skills this note calls. A call copies nothing, so a called note is
+    /// never also in [`Self::links`] for that call.
     pub calls: Vec<String>,
-    /// Link targets that resolved to nothing, as written.
+    /// Call targets that named no skill, as written.
     pub unresolved: Vec<String>,
     /// The skill's own files the layout seeds, whether or not the body
     /// mentions them. Empty without a [`CompileSource::layout`].
@@ -694,8 +640,7 @@ pub struct RelatedSplit {
 /// is in [`RelatedSplit::embeds`] for the same reason it is in the closure.
 ///
 /// Calls are tolerant here. A call that names nothing, or several skills, is
-/// in [`RelatedSplit::unresolved`]; one that names a note that is not a skill
-/// is in [`RelatedSplit::calls`]. A call to a skill the destination does not
+/// in [`RelatedSplit::unresolved`]. A call to a skill the destination does not
 /// ship, or with a fragment that selects nothing, is a call like any other.
 /// The view shows what a note reaches; a broken call is a row to fix, and a
 /// note that shows the notation in code must still have a view.
@@ -703,8 +648,8 @@ pub struct RelatedSplit {
 /// # Errors
 ///
 /// The subset of [`compile_note`]'s refusals the walk itself can raise:
-/// `cycle`, `fragment-unresolved` (from an embed), `link-ambiguous`,
-/// `unsafe-path` and `path-collision`. `unresolved-syntax` and the
+/// `cycle`, `fragment-unresolved` (from an embed), the `link-*` tokens,
+/// `excluded-link`, `unsafe-path` and `path-collision`. `unresolved-syntax` and the
 /// `skill-call-*` tokens cannot appear.
 pub fn related_of(
     vfs: &dyn Vfs,
@@ -713,7 +658,7 @@ pub fn related_of(
 ) -> Result<RelatedSplit, CoreError> {
     let mut renderer = Renderer::new(vfs, source)?;
     renderer.tolerant_calls = true;
-    renderer.seed_bundle_resources()?;
+    renderer.seed_bundle_resources();
     // Snapshotted before the walk: after it, the two resource maps also hold
     // everything the body linked to, and a bundle peer is not a link.
     let seeded: Vec<PathBuf> = renderer
@@ -794,81 +739,50 @@ const IMAGE_EXTENSIONS: &[&str] = &[
     ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp",
 ];
 
-/// Document-shaped files land under `references/`, everything else under
-/// `assets/`. `.md` is in it because a linked note is a
-/// reference by definition.
-const REFERENCE_EXTENSIONS: &[&str] = &[
-    ".csv", ".doc", ".docx", ".html", ".json", ".md", ".odt", ".pdf", ".rtf", ".tsv", ".txt",
-    ".xls", ".xlsx", ".yaml", ".yml",
-];
-
-/// Directories the vault index never descends into — tooling and trash, not
-/// notes.
-pub(crate) const EXCLUDED_VAULT_DIRECTORIES: &[&str] =
-    &[".git", ".obsidian", ".trash", "node_modules"];
-
-/// The walk compile indexes a vault with, for a caller that must see the
-/// same files: every file, dot-named ones too, except under `.git`,
-/// `.obsidian`, `.trash` and `node_modules`. A symlink is listed, and a folder
-/// that cannot be listed fails the walk.
-pub fn vault_walk_options() -> markdown_vault_fs::walk::WalkOptions {
-    crate::walk::vault_walk(EXCLUDED_VAULT_DIRECTORIES)
-}
-
-/// What a walk with [`vault_walk_options`] cannot read under `vault_root`:
-/// each folder it cannot list and each file it cannot stat, in walk order.
-/// For a caller that walks with `propagate_errors` off and must say what the
-/// walk passed over.
-pub fn vault_walk_errors(vfs: &dyn Vfs, vault_root: &Path) -> Vec<crate::vfs::VfsError> {
-    crate::walk::vault_walk_errors(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)
-}
-
-/// Every file under `vault_root`, by vault-relative path, indexed for link
-/// resolution, leaving out [`EXCLUDED_VAULT_DIRECTORIES`].
-pub(crate) fn vault_link_index(vfs: &dyn Vfs, vault_root: &Path) -> Result<LinkIndex, CoreError> {
-    let files = crate::walk::vault_files(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)?;
-    link_index(vault_root, &files)
-}
-
-/// `files`, by their path relative to `vault_root`, indexed for link
-/// resolution.
-pub(crate) fn link_index(vault_root: &Path, files: &[PathBuf]) -> Result<LinkIndex, CoreError> {
-    let mut paths = Vec::new();
-    for path in files {
-        let relative = path
-            .strip_prefix(vault_root)
-            .map(forward_slashed)
-            .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
-        paths.push(relative);
-    }
-    Ok(LinkIndex::build(&paths))
-}
-
 // --- The renderer -----------------------------------------------------------
 
-/// One skill's compile state: the vault's link index, and the resources
+/// Where a component's note lands in a pack laid out as Claude Code's.
+fn component_note_path(kind: EntityKind, name: &str) -> String {
+    match kind {
+        EntityKind::Skill => format!("skills/{name}/SKILL.md"),
+        EntityKind::Command => format!("commands/{name}.md"),
+        EntityKind::Agent => format!("agents/{name}.md"),
+        _ => format!("{name}.md"),
+    }
+}
+
+/// Where a linked file lands, and the component whose folder holds it.
+struct PackTarget {
+    /// Its path in a pack laid out as Claude Code's.
+    path: String,
+    component: Option<LinkedComponent>,
+    /// It is the component's note.
+    note: bool,
+}
+
+/// One compile's state: the layout links resolve in, and the resources
 /// claimed so far.
 struct Renderer<'a> {
     vfs: &'a dyn Vfs,
     vault_root: PathBuf,
     entry_path: PathBuf,
-    bundle_root: Option<PathBuf>,
     skill_name: &'a str,
-    layout: Option<&'a Layout>,
-    /// Every file in the vault, by vault-relative path, for link
-    /// resolution. Built once per compile — the vault is the resolution
-    /// universe, and walking it lazily would make "not found" depend on what
-    /// happened to have been walked.
-    index: Cow<'a, LinkIndex>,
-    /// Per emitted file, the notes it consumed and the links it could not
+    layout: Cow<'a, Layout>,
+    /// The entry's marketplace and plugin: a link resolves inside them.
+    market: String,
+    plugin: Option<String>,
+    /// Where the entry lands in a pack laid out as Claude Code's:
+    /// `skills/<s>/SKILL.md`, `commands/<c>.md`, or a shared file's own path.
+    entry_pack: String,
+    /// `skills/<s>`, where a skill's own files land.
+    skill_base: Option<String>,
+    /// Per emitted file, the notes it consumed and the calls it could not
     /// resolve. Accumulated as the walk runs; the walk is the only place that
     /// knows either.
     contributing: BTreeMap<String, BTreeSet<String>>,
     unresolved: BTreeMap<String, BTreeSet<String>>,
-    /// Every file a surviving link resolved to, as the walk met it. The
-    /// resource maps cannot answer this on their own: a bundle peer is in them
-    /// before the body is read, so "linked" and "shipped" are different facts.
-    /// Read only by [`related_of`]; a compile has no use for it.
+    /// Every file a surviving link resolved to, as the walk met it. Read only
+    /// by [`related_of`].
     linked: BTreeSet<PathBuf>,
     call_context: Option<&'a CallContext<'a>>,
     /// [`related_of`]'s mode: a call that fails a `skill-call-*` check, or
@@ -883,52 +797,61 @@ struct Renderer<'a> {
     literal_calls: Vec<String>,
     /// Each `/[[x]]` an escape wrote out as text, which validation accepts.
     shown_notation: BTreeSet<String>,
+    /// Source path → output path, for compiled Markdown.
     markdown_resources: BTreeMap<PathBuf, String>,
     /// Source path → output path, for files copied verbatim.
     binary_resources: BTreeMap<PathBuf, String>,
-    /// Output path → source path — the collision check. Seeded with
-    /// `SKILL.md` so nothing else can claim the entry's own output.
-    destinations: BTreeMap<String, PathBuf>,
 }
 
 impl<'a> Renderer<'a> {
     fn new(vfs: &'a dyn Vfs, source: &CompileSource<'a>) -> Result<Self, CoreError> {
-        // Normalised up front so `==` against index paths (built the same way)
-        // means location equality, not spelling equality.
+        // Normalised up front so `==` against layout paths (built the same
+        // way) means location equality, not spelling equality.
         let vault_root = normalize(source.vault_root);
         let entry_path = normalize(source.entry_path);
-        let bundle_root = source.bundle_root.map(normalize);
-        // Containment is checked before anything resolves: every output path
-        // under `…/vault/` is derived by stripping `vault_root`, and an entry
-        // outside it would fail that derivation somewhere deep in a walk with
-        // a worse message than this one. Both rules: the derivation strips
-        // `vault_root` as spelled, and a path linked out of the vault is
-        // outside it on disk.
-        let inside = |path: &Path| -> Result<bool, CoreError> {
-            Ok(path.starts_with(&vault_root) && within(vfs, &vault_root, path)?)
-        };
-        if !inside(&entry_path)? {
+        if !(entry_path.starts_with(&vault_root) && within(vfs, &vault_root, &entry_path)?) {
             return Err(CoreError::PathEscapesRoot(entry_path));
         }
-        if let Some(root) = &bundle_root
-            && !inside(root)?
-        {
-            return Err(CoreError::PathEscapesRoot(root.clone()));
-        }
-        let index = match source.links {
-            Some(index) => Cow::Borrowed(index),
-            None => Cow::Owned(vault_link_index(vfs, &vault_root)?),
+        let layout = match source.layout {
+            Some(layout) => Cow::Borrowed(layout),
+            None => Cow::Owned(crate::layout::read_layout(vfs, &vault_root)?),
         };
-        let mut destinations = BTreeMap::new();
-        destinations.insert("SKILL.md".to_owned(), entry_path.clone());
+        let Some(entry) = layout.file(&entry_path) else {
+            return Err(CoreError::refused(
+                "layout",
+                format!(
+                    "{} is not a component note or a shared file under `{MARKETPLACES_DIR}/`",
+                    entry_path.display()
+                ),
+            ));
+        };
+        let (entry_pack, skill_base) = match &entry.place {
+            Place::ComponentNote { kind, name } => (
+                component_note_path(*kind, name),
+                (*kind == EntityKind::Skill).then(|| format!("skills/{name}")),
+            ),
+            Place::Shared {
+                skill: Some(skill),
+                path,
+                ..
+            } => (
+                format!("skills/{skill}/{path}"),
+                Some(format!("skills/{skill}")),
+            ),
+            Place::Shared { path, .. } => (path.clone(), None),
+            _ => (entry.rel.clone(), None),
+        };
+        let (market, plugin) = (entry.marketplace.clone(), entry.plugin.clone());
         Ok(Renderer {
             vfs,
             vault_root,
             entry_path,
-            bundle_root,
             skill_name: source.skill_name,
-            layout: source.layout,
-            index,
+            layout,
+            market,
+            plugin,
+            entry_pack,
+            skill_base,
             contributing: BTreeMap::new(),
             unresolved: BTreeMap::new(),
             linked: BTreeSet::new(),
@@ -940,129 +863,57 @@ impl<'a> Renderer<'a> {
             shown_notation: BTreeSet::new(),
             markdown_resources: BTreeMap::new(),
             binary_resources: BTreeMap::new(),
-            destinations,
         })
     }
 
     /// Seeds the skill's `references/`, `scripts/` and `assets/` from the
     /// layout, linked or not, each at its path in the skill's folder.
     /// Markdown under `references/` is compiled; everything else is copied.
-    fn seed_bundle_resources(&mut self) -> Result<(), CoreError> {
-        let Some(layout) = self.layout else {
-            return Ok(());
-        };
-        let Some(entry) = layout.file(&self.entry_path) else {
-            return Ok(());
+    fn seed_bundle_resources(&mut self) {
+        let Some(entry) = self.layout.file(&self.entry_path) else {
+            return;
         };
         let Place::ComponentNote {
             kind: EntityKind::Skill,
             name,
         } = &entry.place
         else {
-            return Ok(());
+            return;
         };
-        let carried = layout
+        let carried: Vec<(PathBuf, String, bool)> = self
+            .layout
             .files_of(&entry.marketplace)
-            .filter(|file| file.plugin == entry.plugin);
-        for file in carried {
-            let Place::Shared {
-                skill: Some(skill),
-                dir,
-                path,
-            } = &file.place
-            else {
-                continue;
-            };
-            if skill != name {
-                continue;
-            }
-            self.claim_destination(path, &file.path)?;
-            if *dir == SharedDir::References && path.to_lowercase().ends_with(".md") {
-                self.markdown_resources
-                    .insert(file.path.clone(), path.clone());
+            .filter(|file| file.plugin == entry.plugin)
+            .filter_map(|file| match &file.place {
+                Place::Shared {
+                    skill: Some(skill),
+                    dir,
+                    path,
+                } if skill == name => Some((
+                    file.path.clone(),
+                    path.clone(),
+                    *dir == SharedDir::References && path.to_lowercase().ends_with(".md"),
+                )),
+                _ => None,
+            })
+            .collect();
+        for (source, output, markdown) in carried {
+            if markdown {
+                self.markdown_resources.insert(source, output);
             } else {
-                self.binary_resources
-                    .insert(file.path.clone(), path.clone());
+                self.binary_resources.insert(source, output);
             }
         }
-        Ok(())
     }
 
-    /// One output path, one source — anything else drops bytes silently.
-    fn claim_destination(
-        &mut self,
-        output_path: &str,
-        source_path: &Path,
-    ) -> Result<(), CoreError> {
-        if let Some(existing) = self.destinations.get(output_path)
-            && existing != source_path
-        {
-            return Err(CoreError::refused(
-                "path-collision",
-                format!(
-                    "resource collision in {}: {} is claimed by both {} and {}",
-                    self.skill_name,
-                    output_path,
-                    existing.display(),
-                    source_path.display(),
-                ),
-            ));
+    /// Where the output `output_path` lands in a pack laid out as Claude
+    /// Code's.
+    fn pack_path_of(&self, output_path: &str) -> String {
+        match (&self.skill_base, output_path) {
+            (_, "SKILL.md") => self.entry_pack.clone(),
+            (Some(base), _) => format!("{base}/{output_path}"),
+            (None, _) => output_path.to_owned(),
         }
-        self.destinations
-            .insert(output_path.to_owned(), source_path.to_path_buf());
-        Ok(())
-    }
-
-    /// Where `source_path` lands in the published skill. See the module doc's
-    /// placement table.
-    fn output_path_for(&self, source_path: &Path) -> Result<String, CoreError> {
-        if source_path == self.entry_path {
-            return Ok("SKILL.md".to_owned());
-        }
-        if let Some(bundle_root) = &self.bundle_root
-            && let Ok(relative) = source_path.strip_prefix(bundle_root)
-        {
-            return Ok(forward_slashed(relative));
-        }
-        let category = match extension_of_path(source_path) {
-            Some(ext) if REFERENCE_EXTENSIONS.contains(&ext.as_str()) => "references",
-            _ => "assets",
-        };
-        Ok(format!(
-            "{category}/vault/{}",
-            self.vault_relative(source_path)?
-        ))
-    }
-
-    fn ensure_markdown_resource(&mut self, source_path: &Path) -> Result<String, CoreError> {
-        // The entry never becomes a resource of itself; a link that reaches it
-        // (see `skill_mention`) is a link to SKILL.md.
-        if source_path == self.entry_path {
-            return Ok("SKILL.md".to_owned());
-        }
-        if let Some(existing) = self
-            .markdown_resources
-            .get(source_path)
-            .or_else(|| self.binary_resources.get(source_path))
-        {
-            return Ok(existing.clone());
-        }
-        let output_path = self.output_path_for(source_path)?;
-        self.claim_destination(&output_path, source_path)?;
-        self.markdown_resources
-            .insert(source_path.to_path_buf(), output_path.clone());
-        Ok(output_path)
-    }
-
-    fn ensure_binary_resource(&mut self, source_path: &Path) -> Result<String, CoreError> {
-        if let Some(existing) = self.binary_resources.get(source_path) {
-            return Ok(existing.clone());
-        }
-        let output_path = self.output_path_for(source_path)?;
-        self.claim_destination(&output_path, source_path)?;
-        self.binary_resources
-            .insert(source_path.to_path_buf(), output_path.clone());
-        Ok(output_path)
     }
 
     fn vault_relative(&self, path: &Path) -> Result<String, CoreError> {
@@ -1081,15 +932,13 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// The heart of the pass: every wiki token in `body` replaced — embeds of
+    /// The heart of the pass: every token in `body` replaced — embeds of
     /// markdown by their (recursively transformed) bodies, calls by the
-    /// harness's invocation, everything else by a relative markdown link to
-    /// its collected resource.
+    /// harness's invocation, links by a link to where their file lands.
     ///
     /// `output_path` is where the text being built will land, because a
     /// relative link's spelling depends on where it is written *from* — the
-    /// same note embedded into two resources links its references
-    /// differently in each.
+    /// same note embedded into two resources links differently in each.
     fn transform_body(
         &mut self,
         body: &str,
@@ -1097,22 +946,20 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         stack: &mut Vec<TransclusionHop>,
     ) -> Result<String, CoreError> {
-        self.check_markdown_links(body, source_path)?;
         let mut tokens = scan_wiki_tokens(body, true);
-        let escapes = self.check_literal_calls(body, source_path, output_path)?;
-        if !escapes.is_empty() {
-            // An escape inside a wiki token is part of that token's text.
-            let free: Vec<WikiToken<'_>> = escapes
-                .into_iter()
-                .filter(|escape| {
-                    !tokens
-                        .iter()
-                        .any(|token| token.start <= escape.start && escape.start < token.end)
-                })
-                .collect();
-            tokens.extend(free);
-            tokens.sort_by_key(|token| token.start);
-        }
+        tokens.extend(markdown_link_tokens(body));
+        tokens.extend(self.check_literal_calls(body, source_path, output_path)?);
+        tokens.sort_by_key(|token| token.start);
+        // A token inside another, such as an escape in a link's alias, is
+        // part of that token's text.
+        let mut end = 0;
+        tokens.retain(|token| {
+            let free = token.start >= end;
+            if free {
+                end = token.end;
+            }
+            free
+        });
         if tokens.is_empty() {
             return Ok(body.to_owned());
         }
@@ -1163,32 +1010,14 @@ impl<'a> Renderer<'a> {
             TokenKind::Call { in_code } => {
                 return self.replace_call(token, source_path, output_path, in_code);
             }
+            TokenKind::MarkdownLink => {
+                return self.replace_markdown_link(raw, source_path, output_path);
+            }
             TokenKind::Link | TokenKind::Embed => {}
         }
-        if token.kind == TokenKind::Link
-            && let Some(call) = self.skill_mention(token, source_path, output_path)?
-        {
-            return Ok(call);
-        }
         let embed = token.kind == TokenKind::Embed;
-        // A bundle skill's entry is `x/SKILL.md`, which `[[x#Steps]]` names
-        // but does not resolve to.
-        let resolved = self.resolve(token, source_path)?.or_else(|| {
-            (!embed && self.names_the_entry(&token.target))
-                .then(|| (self.entry_path.clone(), token.fragment.clone()))
-        });
-        let Some((resolved, fragment)) = resolved else {
-            // The name is kept so status can see a note appearing at it later,
-            // and the reader is left the words rather than a dangling
-            // `[[…]]`, which step 3 would refuse as surviving Obsidian syntax.
-            self.unresolved
-                .entry(output_path.to_owned())
-                .or_default()
-                .insert(token.target.clone());
-            return Ok(text_alias(token.alias.as_deref())
-                .unwrap_or(&token.target)
-                .to_owned());
-        };
+        let (resolved, target) = self.resolve_wiki(token, raw, source_path)?;
+        let fragment = token.fragment.clone();
         let extension = extension_of_path(&resolved).unwrap_or_default();
 
         if embed && extension == ".md" {
@@ -1217,11 +1046,10 @@ impl<'a> Renderer<'a> {
             // a read, not a rewrite, so strictness buys nothing here.
             let (_, note_body) = split_frontmatter(&raw);
             let label = self.vault_relative(&resolved)?;
-            // The closure grows here and nowhere else: a *linked* note gets
-            // its own emitted file and its own entry, so its edits are already
-            // caught by that file's own comparison. Only embedding folds one
-            // note's bytes into another's output and hides them behind the
-            // other's hash.
+            // The closure grows here and nowhere else: a *linked* file has
+            // its own emitted file, so its edits are caught by that file's
+            // own comparison. Only embedding folds one note's bytes into
+            // another's output and hides them behind the other's hash.
             self.contributing
                 .entry(output_path.to_owned())
                 .or_default()
@@ -1233,29 +1061,125 @@ impl<'a> Renderer<'a> {
             return Ok(expanded.trim().to_owned());
         }
 
-        self.linked.insert(resolved.clone());
-        let resource_output = if extension == ".md" {
-            self.ensure_markdown_resource(&resolved)?
+        let suffix = fragment
+            .as_deref()
+            .map(|fragment| format!("#{}", markdown_link::encode_uri_fragment(fragment)))
+            .unwrap_or_default();
+        let form = if embed && IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+            LinkForm::Image
         } else {
-            self.ensure_binary_resource(&resolved)?
+            LinkForm::Link
         };
-        let site = LinkSite {
-            label: markdown_link::escape_label(&display_label(token.alias.as_deref(), &resolved)),
-            href: markdown_link::relative_link(output_path, &resource_output, fragment.as_deref()),
-            image: embed && IMAGE_EXTENSIONS.contains(&extension.as_str()),
-            target: String::new(),
+        let label = markdown_link::escape_label(&display_label(token));
+        self.write_link(
+            raw,
+            &resolved,
+            target,
+            source_path,
+            output_path,
+            suffix,
+            form,
+            label,
+        )
+    }
+
+    /// A Markdown link's destination, `written`: a relative path is resolved
+    /// like a wikilink with a path and rewritten to where its file lands; a
+    /// URL with a scheme and a `#fragment` ship as written; an absolute path
+    /// and a `file:` URL are refused.
+    fn replace_markdown_link(
+        &mut self,
+        written: &str,
+        source_path: &Path,
+        output_path: &str,
+    ) -> Result<String, CoreError> {
+        let (path, suffix) = written.split_at(written.find(['#', '?']).unwrap_or(written.len()));
+        if path.is_empty() {
+            return Ok(written.to_owned());
+        }
+        let scheme = path
+            .split_once(':')
+            .filter(|(before, _)| !before.contains('/'))
+            .map(|(before, _)| before);
+        if scheme.is_some_and(|scheme| !scheme.eq_ignore_ascii_case("file")) {
+            return Ok(written.to_owned());
+        }
+        if scheme.is_some() || path.starts_with('/') {
+            return Err(self.link_error(
+                "unsafe-path",
+                source_path,
+                written,
+                "names a path outside the vault",
+                "section 4, the link table",
+            ));
+        }
+        let decoded = markdown_link::percent_decode(path);
+        let resolved = self.resolve_path(source_path, &decoded, written, false)?;
+        let target = self.pack_target(source_path, &resolved, written)?;
+        self.write_link(
+            written,
+            &resolved,
+            target,
+            source_path,
+            output_path,
+            suffix.to_owned(),
+            LinkForm::Href,
+            String::new(),
+        )
+    }
+
+    /// A resolved link, written as its markdown or, in a recording compile,
+    /// as a mark. A link from one component to another's note warns, since
+    /// a call was more likely meant (section 4 rule 7).
+    #[allow(clippy::too_many_arguments)]
+    fn write_link(
+        &mut self,
+        written: &str,
+        resolved: &Path,
+        target: PackTarget,
+        source_path: &Path,
+        output_path: &str,
+        suffix: String,
+        form: LinkForm,
+        label: String,
+    ) -> Result<String, CoreError> {
+        self.linked.insert(resolved.to_path_buf());
+        let caller = self.relative_or_verbatim(source_path);
+        if let (Some(context), Some(component), true) =
+            (self.call_context, &target.component, target.note)
+            && matches!(component.kind, EntityKind::Skill | EntityKind::Command)
+            && self.component_folder(source_path) != resolved.parent().map(Path::to_path_buf)
+        {
+            context.warn(
+                caller.clone(),
+                "link-not-call",
+                format!(
+                    "`{written}` links to the note of {} `{}` and ships as a file link. Did \
+                     you mean to call /[[{}]]?",
+                    component.kind.as_str(),
+                    component.name,
+                    component.name
+                ),
+            );
+        }
+        let link = ResolvedRef {
+            path: self.vault_relative(resolved)?,
+            label,
+            from: self.pack_path_of(output_path),
+            to: target.path,
+            suffix,
+            form,
+            component: target.component,
+            written: written.to_owned(),
+            caller,
         };
         match self.call_context.and_then(|context| context.record) {
             Some(record) => {
-                let site = LinkSite {
-                    target: self.vault_relative(&resolved)?,
-                    ..site
-                };
                 let mut record = record.borrow_mut();
-                record.links.push(site);
+                record.links.push(link);
                 Ok(mark('l', record.links.len() - 1))
             }
-            None => Ok(site.markdown()),
+            None => Ok(link.markdown()),
         }
     }
 
@@ -1268,10 +1192,9 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         in_code: bool,
     ) -> Result<String, CoreError> {
-        let resolved = self.resolve(token, source_path)?;
         let target = token.target.as_str();
         if let Some(context) = self.call_context {
-            match self.render_call(context, token, resolved.clone(), source_path, output_path) {
+            match self.render_call(context, token, source_path, output_path) {
                 Ok(call) => return Ok(format_call(&call, in_code)),
                 Err(CoreError::Refused(reason))
                     if self.tolerant_calls && reason.starts_with("skill-call-") => {}
@@ -1279,150 +1202,57 @@ impl<'a> Renderer<'a> {
             }
         }
         // Without a context, or in the related view, a call that names no
-        // skill is still a row: the note it resolved to by path, or the name
-        // as written.
-        match resolved {
-            Some((path, _)) => {
-                self.called_notes.insert(path);
-            }
-            None => {
-                self.unresolved
-                    .entry(output_path.to_owned())
-                    .or_default()
-                    .insert(target.to_owned());
-            }
-        }
+        // skill is still a row: the name as written.
+        self.unresolved
+            .entry(output_path.to_owned())
+            .or_default()
+            .insert(target.to_owned());
         Ok(format_call(target, in_code))
     }
 
-    /// The invocation a call renders as, or the `skill-call-*` refusal.
+    /// The invocation a call renders as, or the `skill-call-*` refusal. A
+    /// call names a skill of the marketplace by its name or the end of its
+    /// note's path.
     fn render_call(
         &mut self,
         context: &CallContext<'_>,
         token: &WikiToken<'_>,
-        resolved: Option<(PathBuf, Option<String>)>,
         source_path: &Path,
         output_path: &str,
     ) -> Result<String, CoreError> {
-        let (target, written_fragment) = (token.target.as_str(), token.fragment.clone());
         let skills = context.skills.get()?;
         let caller = self.relative_or_verbatim(source_path);
-        let (skill, fragment) = match resolved {
-            Some((path, fragment)) => match skills.by_path(&path) {
-                Some(skill) => (skill, fragment),
-                None => {
-                    return Err(CoreError::refused(
-                        "skill-call-not-skill",
-                        format!(
-                            "call in {caller} names {}, which is not a skill: /[[{}]]",
-                            self.relative_or_verbatim(&path),
-                            token.destination
-                        ),
-                    ));
-                }
-            },
-            // A path that resolves to no note may still be a skill's name: a
-            // bundle skill's entry is `x/SKILL.md`, which `[[x]]` never
-            // resolves to.
-            None => match skills.by_name(basename(target)) {
-                NameMatch::One(skill) => (skill, written_fragment),
-                NameMatch::None => {
-                    return Err(CoreError::refused(
-                        "skill-call-unresolved",
-                        format!(
-                            "call in {caller} names no skill: /[[{}]]",
-                            token.destination
-                        ),
-                    ));
-                }
-                NameMatch::Many(candidates) => {
-                    let candidates: Vec<String> = candidates
-                        .iter()
-                        .map(|skill| self.relative_or_verbatim(&skill.entry_path))
-                        .collect();
-                    return Err(CoreError::refused(
-                        "skill-call-ambiguous",
-                        format!(
-                            "call in {caller} names several skills: /[[{}]] could be {}; \
-                             write the path of the one meant",
-                            token.destination,
-                            candidates.join(", ")
-                        ),
-                    ));
-                }
-            },
+        let skill = match skills.by_name(&token.target) {
+            NameMatch::One(skill) => skill,
+            NameMatch::None => {
+                return Err(CoreError::refused(
+                    "skill-call-unresolved",
+                    format!(
+                        "call in {caller} names no skill: /[[{}]]",
+                        token.destination
+                    ),
+                ));
+            }
+            NameMatch::Many(candidates) => {
+                let candidates: Vec<String> = candidates
+                    .iter()
+                    .map(|skill| self.relative_or_verbatim(&skill.entry_path))
+                    .collect();
+                return Err(CoreError::refused(
+                    "skill-call-ambiguous",
+                    format!(
+                        "call in {caller} names several skills: /[[{}]] could be {}; \
+                         write the path of the one meant",
+                        token.destination,
+                        candidates.join(", ")
+                    ),
+                ));
+            }
         };
         self.check_call_shipped(context, skill, &caller, token.destination)?;
-        self.check_call_fragment(skill, fragment.as_deref())?;
-        self.record_call(skill, output_path, true);
-        render_or_mark(context, skill, token.destination, caller, false)
-    }
-
-    /// A plain `[[x]]` in a skill or command body, or in a file it ships,
-    /// that names a skill is written as that skill's published name: copying
-    /// one skill into another is never what was meant, and `/[[x]]` is the
-    /// call. That holds for the skill being compiled too. `None` leaves the
-    /// token to the link path, as does a name several skills share, or an
-    /// index that cannot be built: the reading is a heuristic, so a fault
-    /// elsewhere in the vault must not block a link. An author's `|alias`
-    /// stays as the words and the name follows in parentheses; a `#fragment`
-    /// is checked and then ignored. The exception is a fragment on a link to
-    /// the skill being compiled: its heading ships in `SKILL.md`, so that
-    /// link stays a link.
-    fn skill_mention(
-        &mut self,
-        token: &WikiToken<'_>,
-        source_path: &Path,
-        output_path: &str,
-    ) -> Result<Option<String>, CoreError> {
-        let Some(context) = self.call_context.filter(|context| context.implicit) else {
-            return Ok(None);
-        };
-        let (target, written_fragment) = (token.target.as_str(), token.fragment.clone());
-        let resolved = self.resolve(token, source_path)?;
-        let Some(skills) = context.skills.get_or_none() else {
-            return Ok(None);
-        };
-        let (skill, fragment) = match resolved {
-            Some((path, fragment)) => (skills.by_path(&path), fragment),
-            None => match skills.by_name(basename(target)) {
-                NameMatch::One(skill) => (Some(skill), written_fragment),
-                NameMatch::None | NameMatch::Many(_) => (None, None),
-            },
-        };
-        let Some(skill) = skill else {
-            return Ok(None);
-        };
-        let self_link = skill.entry_path == self.entry_path;
-        if self_link && fragment.is_some() {
-            return Ok(None);
-        }
-        let caller = self.relative_or_verbatim(source_path);
-        self.check_call_shipped(context, skill, &caller, token.destination)?;
-        self.check_call_fragment(skill, fragment.as_deref())?;
-        self.record_call(skill, output_path, !self_link);
-        let name = render_or_mark(context, skill, token.destination, caller, true)?;
-        let name = format_call(&name, false);
-        Ok(Some(match text_alias(token.alias.as_deref()) {
-            Some(alias) => format!("{alias} ({name})"),
-            None => name,
-        }))
-    }
-
-    /// Whether `target`, which resolved to no file, is the name of the skill
-    /// being compiled. Only with an implicit context, as for a mention.
-    fn names_the_entry(&self, target: &str) -> bool {
-        let Some(skills) = self
-            .call_context
-            .filter(|context| context.implicit)
-            .and_then(|context| context.skills.get_or_none())
-        else {
-            return false;
-        };
-        matches!(
-            skills.by_name(basename(target)),
-            NameMatch::One(skill) if skill.entry_path == self.entry_path
-        )
+        self.check_call_fragment(skill, token.fragment.as_deref())?;
+        self.record_call(skill, output_path, skill.entry_path != self.entry_path);
+        render_or_mark(context, skill, token.destination, caller)
     }
 
     /// A call to a skill the destination does not carry would name a command
@@ -1610,109 +1440,254 @@ impl<'a> Renderer<'a> {
         ))
     }
 
-    /// One destination string to one vault file, in order:
-    /// vault-relative exact match, then relative to the linking file, then a
-    /// unique basename match across the vault, then the one match under the
-    /// linking file's folder (see [`own_folder_candidate`]).
-    ///
-    /// `Ok(None)` is a link that resolved to nothing — a reportable fact, not
-    /// a refusal. A tie is refused `link-ambiguous`: picking one would
-    /// publish bytes the author may not have meant, which is a different
-    /// failure from a name that is simply not there yet.
-    fn resolve(
+    /// A wikilink's file, and where it lands. `[[#Heading]]` is the file it
+    /// is in; a target with a `/` is a path from the linking file; a name is
+    /// looked up in the two steps of section 4 rule 3.
+    fn resolve_wiki(
         &self,
         token: &WikiToken<'_>,
+        written: &str,
         from_file: &Path,
-    ) -> Result<Option<(PathBuf, Option<String>)>, CoreError> {
-        let (destination, target) = (token.destination, token.target.as_str());
-        let fragment = token.fragment.clone();
-        if target.is_empty() {
-            // `[[#Heading]]` — a self-reference; the fragment addresses the
-            // note it appears in.
-            return Ok(Some((from_file.to_path_buf(), fragment)));
-        }
-        if target.starts_with('/') || target.split(['/', '\\']).any(|segment| segment == "..") {
-            return Err(CoreError::refused(
+    ) -> Result<(PathBuf, PackTarget), CoreError> {
+        let decoded = markdown_link::percent_decode(&token.target);
+        let target = decoded.as_str();
+        let path = if target.is_empty() {
+            from_file.to_path_buf()
+        } else if target.starts_with('/') {
+            return Err(self.link_error(
                 "unsafe-path",
-                format!(
-                    "unsafe Obsidian link in {}: {destination}",
-                    self.relative_or_verbatim(from_file)
-                ),
+                from_file,
+                written,
+                "names a path outside the vault",
+                "section 4, the link table",
+            ));
+        } else if target.contains('/') {
+            self.resolve_path(from_file, target, written, true)?
+        } else {
+            self.resolve_name(from_file, target, written)?
+        };
+        let pack = self.pack_target(from_file, &path, written)?;
+        Ok((path, pack))
+    }
+
+    /// `relative` from the folder of `from_file`. It must stay inside the
+    /// marketplace (containment rule 1) and name a file the layout read; a
+    /// wikilink's path may leave out `.md`.
+    fn resolve_path(
+        &self,
+        from_file: &Path,
+        relative: &str,
+        written: &str,
+        wiki: bool,
+    ) -> Result<PathBuf, CoreError> {
+        let folder = from_file.parent().unwrap_or(from_file);
+        let joined = normalize(&folder.join(relative));
+        let market = self.vault_root.join(MARKETPLACES_DIR).join(&self.market);
+        if !joined.starts_with(&market) {
+            return Err(self.link_error(
+                "link-out-of-scope",
+                from_file,
+                written,
+                format!("resolves outside `{MARKETPLACES_DIR}/{}/`", self.market),
+                "section 4 containment rule 1",
             ));
         }
+        let with_md = PathBuf::from(format!("{}.md", joined.display()));
+        let mut candidates = vec![joined];
+        if wiki {
+            candidates.push(with_md);
+        }
+        candidates
+            .into_iter()
+            .find(|path| self.layout.file(path).is_some())
+            .ok_or_else(|| self.missing(from_file, written))
+    }
 
-        // `markdown-link`'s resolver, refusing to guess: an exact path, the
-        // path from the linking note's folder, or the only file the name
-        // matches; then the only match under the linking note's folder. A
-        // bare name addresses a note (`[[photo]]` is not `photo.jpg`); a name
-        // with an extension addresses that file.
-        let from = self.vault_relative(from_file).unwrap_or_default();
-        let resolved = match self.index.resolve_strict(target, &from) {
-            Err(ResolveError::Ambiguous(candidates)) => own_folder_candidate(candidates, &from),
-            other => other.map(str::to_owned),
+    /// A name-only link: the linking file's component folder at any depth,
+    /// then the plugin's shared folders and its components by name.
+    fn resolve_name(
+        &self,
+        from_file: &Path,
+        name: &str,
+        written: &str,
+    ) -> Result<PathBuf, CoreError> {
+        let wanted = name.to_lowercase();
+        let wanted_md = format!("{wanted}.md");
+        let named = |file: &LayoutFile| {
+            file.path
+                .file_name()
+                .map(|found| found.to_string_lossy().to_lowercase())
+                .is_some_and(|found| found == wanted || found == wanted_md)
         };
-        match resolved {
-            Ok(hit) => {
-                let path = self.vault_root.join(hit);
-                self.refuse_never_shipped(from_file, &path, destination)?;
-                Ok(Some((path, fragment)))
+        if let Some(folder) = self.component_folder(from_file) {
+            let hits: Vec<&LayoutFile> = self
+                .layout
+                .files_of(&self.market)
+                .filter(|file| file.path.starts_with(&folder) && named(file))
+                .collect();
+            if let Some(found) = self.one_match(&hits, from_file, written)? {
+                return Ok(found);
             }
-            // Not a refusal. The compile spec rules that an unresolved link
-            // is reported and the rest of the skill builds; the name is
-            // recorded in the manifest's `unresolved` list so a note
-            // appearing there later counts as a change. Refusing here would also make the manifest's own field
-            // unreachable — nothing could ever be written into it.
-            Err(ResolveError::NotFound) => Ok(None),
-            Err(ResolveError::Ambiguous(candidates)) => Err(CoreError::refused(
-                "link-ambiguous",
-                format!(
-                    "ambiguous Obsidian link from {}: {destination} ({})",
-                    self.relative_or_verbatim(from_file),
-                    candidates.join(", ")
-                ),
+        }
+        let hits: Vec<&LayoutFile> = self
+            .layout
+            .files_of(&self.market)
+            .filter(|file| file.plugin == self.plugin)
+            .filter(|file| match &file.place {
+                Place::Shared { skill: None, .. } => named(file),
+                Place::ComponentNote { name: found, .. } => found.eq_ignore_ascii_case(name),
+                _ => false,
+            })
+            .collect();
+        self.one_match(&hits, from_file, written)?
+            .ok_or_else(|| self.missing(from_file, written))
+    }
+
+    /// The one file of `hits`, `None` for none, or the error naming each.
+    fn one_match(
+        &self,
+        hits: &[&LayoutFile],
+        from_file: &Path,
+        written: &str,
+    ) -> Result<Option<PathBuf>, CoreError> {
+        match hits {
+            [] => Ok(None),
+            [one] => Ok(Some(one.path.clone())),
+            _ => {
+                let named: Vec<&str> = hits.iter().map(|file| file.rel.as_str()).collect();
+                Err(self.link_error(
+                    "link-ambiguous",
+                    from_file,
+                    written,
+                    format!("matches {}", named.join(" and ")),
+                    "section 4 rule 3",
+                ))
+            }
+        }
+    }
+
+    /// The folder of the component `file` belongs to, if any: a component
+    /// note's folder, or the skill folder holding one of its files.
+    fn component_folder(&self, file: &Path) -> Option<PathBuf> {
+        let found = self.layout.file(file)?;
+        match &found.place {
+            Place::ComponentNote { .. } => found.path.parent().map(Path::to_path_buf),
+            Place::Shared {
+                skill: Some(skill), ..
+            } => Some(
+                self.vault_root
+                    .join(MARKETPLACES_DIR)
+                    .join(&found.marketplace)
+                    .join(PLUGINS_DIR)
+                    .join(found.plugin.as_deref()?)
+                    .join("skills")
+                    .join(skill),
+            ),
+            _ => None,
+        }
+    }
+
+    /// Where the file `to`, linked from `from_file`, lands: it must be in the
+    /// linking file's plugin, in a folder that ships, and a file a link may
+    /// reach (section 4, scope of a link).
+    fn pack_target(
+        &self,
+        from_file: &Path,
+        to: &Path,
+        written: &str,
+    ) -> Result<PackTarget, CoreError> {
+        let Some(file) = self.layout.file(to) else {
+            return Err(self.missing(from_file, written));
+        };
+        if file.marketplace != self.market {
+            return Err(self.link_error(
+                "link-out-of-scope",
+                from_file,
+                written,
+                format!("resolves outside `{MARKETPLACES_DIR}/{}/`", self.market),
+                "section 4 containment rule 1",
+            ));
+        }
+        if file.plugin != self.plugin {
+            return Err(self.link_error(
+                "link-out-of-scope",
+                from_file,
+                written,
+                format!("names a file in another plugin, {}", file.rel),
+                "section 4, scope of a link",
+            ));
+        }
+        let component = |kind: EntityKind, name: &str| {
+            Some(LinkedComponent {
+                kind,
+                name: name.to_owned(),
+            })
+        };
+        match &file.place {
+            Place::ComponentNote { kind, name } => Ok(PackTarget {
+                path: component_note_path(*kind, name),
+                component: component(*kind, name),
+                note: true,
+            }),
+            Place::Shared {
+                skill: Some(skill),
+                path,
+                ..
+            } => Ok(PackTarget {
+                path: format!("skills/{skill}/{path}"),
+                component: component(EntityKind::Skill, skill),
+                note: false,
+            }),
+            Place::Shared { path, .. } => Ok(PackTarget {
+                path: path.clone(),
+                component: None,
+                note: false,
+            }),
+            Place::NeverShip { .. } => Err(self.link_error(
+                "excluded-link",
+                from_file,
+                written,
+                format!("links to {}, which never ships", file.rel),
+                "section 4 rule 10",
+            )),
+            _ => Err(self.link_error(
+                "link-out-of-scope",
+                from_file,
+                written,
+                format!("names {}, which no link may reach", file.rel),
+                "section 4, scope of a link",
             )),
         }
     }
 
-    /// Refuses a link from `from_file` to a file that never ships, however
-    /// the link is spelled: it is in a never-ship folder and the linking note
-    /// is not ([`Layout::links_into_never_ship`]).
-    fn refuse_never_shipped(
-        &self,
-        from_file: &Path,
-        path: &Path,
-        destination: &str,
-    ) -> Result<(), CoreError> {
-        if self
-            .layout
-            .is_some_and(|layout| layout.links_into_never_ship(from_file, path))
-        {
-            return Err(CoreError::refused(
-                "excluded-link",
-                format!(
-                    "{} links to {}, which never ships: {destination}",
-                    self.relative_or_verbatim(from_file),
-                    self.relative_or_verbatim(path),
-                ),
-            ));
-        }
-        Ok(())
+    /// A link to nothing (section 4 rule 11).
+    fn missing(&self, from_file: &Path, written: &str) -> CoreError {
+        self.link_error(
+            "link-unresolved",
+            from_file,
+            written,
+            "links to nothing",
+            "section 4 rule 11",
+        )
     }
 
-    /// [`Self::refuse_never_shipped`] over `body`'s relative Markdown links,
-    /// the spelling the wiki tokens do not cover.
-    fn check_markdown_links(&self, body: &str, source_path: &Path) -> Result<(), CoreError> {
-        let folder = source_path.parent().unwrap_or(source_path);
-        for destination in markdown_destinations(body) {
-            let Some(relative) = local_file(destination) else {
-                continue;
-            };
-            let path = normalize(&folder.join(relative));
-            if self.vfs.exists(&path) {
-                self.refuse_never_shipped(source_path, &path, destination)?;
-            }
-        }
-        Ok(())
+    /// A link error naming the linking file, the link as written and the
+    /// rule it broke (section 4 rule 14).
+    fn link_error(
+        &self,
+        token: &str,
+        from_file: &Path,
+        written: &str,
+        what: impl std::fmt::Display,
+        rule: &str,
+    ) -> CoreError {
+        CoreError::refused(
+            token,
+            format!(
+                "{}: `{written}` {what} ({rule})",
+                self.relative_or_verbatim(from_file)
+            ),
+        )
     }
 
     /// For messages only: the vault-relative spelling when there is one, the
@@ -1721,30 +1696,6 @@ impl<'a> Renderer<'a> {
     fn relative_or_verbatim(&self, path: &Path) -> String {
         self.vault_relative(path)
             .unwrap_or_else(|_| path.display().to_string())
-    }
-}
-
-/// The one of `candidates` under the folder of `from`, the linking file's
-/// vault-relative path, compared without case. So a bare link from a skill's
-/// entry resolves to the match in its own bundle. With exactly one match under
-/// that folder, this agrees with `markdown-link`'s `prefer_in_folder`. None
-/// there, or several, is [`ResolveError::Ambiguous`]: several names only those. In those cases
-/// `prefer_in_folder` still picks one: the first match under the folder, or
-/// with none there, the shortest match overall.
-fn own_folder_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
-    let Some((folder, _)) = from.rsplit_once('/') else {
-        return Err(ResolveError::Ambiguous(candidates));
-    };
-    let prefix = format!("{}/", folder.to_lowercase());
-    let mut within: Vec<String> = candidates
-        .iter()
-        .filter(|path| path.to_lowercase().starts_with(&prefix))
-        .cloned()
-        .collect();
-    match within.len() {
-        0 => Err(ResolveError::Ambiguous(candidates)),
-        1 => Ok(within.remove(0)),
-        _ => Err(ResolveError::Ambiguous(within)),
     }
 }
 
@@ -1880,15 +1831,16 @@ pub(crate) fn basename(path: &str) -> &str {
 }
 
 /// What a rewritten link displays: the alias when it is text (see
-/// [`text_alias`]), otherwise the resolved file's name.
-fn display_label(alias: Option<&str>, resolved: &Path) -> String {
-    if let Some(alias) = text_alias(alias) {
+/// [`text_alias`]), otherwise the target as written, or the fragment of a
+/// link to the file it is in.
+fn display_label(token: &WikiToken<'_>) -> String {
+    if let Some(alias) = text_alias(token.alias.as_deref()) {
         return alias.to_owned();
     }
-    resolved
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
+    if token.target.is_empty() {
+        return token.fragment.clone().unwrap_or_default();
+    }
+    token.target.clone()
 }
 
 /// The alias as words to display, or `None` when there is none or it is an
@@ -1916,6 +1868,8 @@ enum TokenKind {
     /// The `\` of an escaped hand-written call to a known skill, such as
     /// `\/plugin:skill`: dropped, so the call is written as it stands.
     LiteralEscape,
+    /// A Markdown link's destination, `x.md` in `[t](x.md)`.
+    MarkdownLink,
 }
 
 /// One `[[…]]`, `![[…]]` or `/[[…]]` occurrence (or one `\/` escape), with
@@ -2096,6 +2050,26 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
     (tokens, leftovers)
 }
 
+/// A token for the destination of each live Markdown link in `markdown`.
+fn markdown_link_tokens(markdown: &str) -> Vec<WikiToken<'_>> {
+    markdown_destinations(markdown)
+        .into_iter()
+        .map(|destination| {
+            // Each destination is a slice of `markdown`.
+            let start = destination.as_ptr() as usize - markdown.as_ptr() as usize;
+            WikiToken {
+                start,
+                end: start + destination.len(),
+                kind: TokenKind::MarkdownLink,
+                destination,
+                target: String::new(),
+                fragment: None,
+                alias: None,
+            }
+        })
+        .collect()
+}
+
 /// The destination of each inline Markdown link and reference definition in
 /// `markdown` that is live: not in code, not in an HTML comment.
 fn markdown_destinations(markdown: &str) -> Vec<&str> {
@@ -2134,18 +2108,6 @@ fn markdown_destinations(markdown: &str) -> Vec<&str> {
             }
         })
         .collect()
-}
-
-/// The file a Markdown link's destination names relative to its note, decoded
-/// and without its fragment or query; `None` for a URL, an absolute path or a
-/// link to a place in the same note.
-fn local_file(destination: &str) -> Option<String> {
-    let path = destination.split(['#', '?']).next().unwrap_or_default();
-    let scheme = path
-        .split_once(':')
-        .is_some_and(|(before, _)| !before.contains('/'));
-    (!path.is_empty() && !path.starts_with('/') && !scheme)
-        .then(|| markdown_link::percent_decode(path))
 }
 
 /// Whether the `[` at byte `at` opens a Markdown link: its brackets balance
@@ -2356,30 +2318,27 @@ fn code_token(
     ))
 }
 
-/// A call's invocation, or with `mention` the skill's name: `render`'s, or
-/// in a recording compile the mark standing in for it.
+/// A call's invocation: `render`'s, or in a recording compile the mark
+/// standing in for it.
 fn render_or_mark(
     context: &CallContext<'_>,
     skill: &IndexedSkill,
     destination: &str,
     caller: String,
-    mention: bool,
 ) -> Result<String, CoreError> {
     let Some(record) = context.record else {
-        return (context.render)(skill, mention);
+        return (context.render)(skill);
     };
     let mut record = record.borrow_mut();
     record.calls.push(CallSite {
         skill: skill.clone(),
         destination: destination.to_owned(),
-        mention,
         caller,
     });
     Ok(mark('c', record.calls.len() - 1))
 }
 
-/// A call or skill name as written into output: bare in code, in backticks
-/// in prose.
+/// A call as written into output: bare in code, in backticks in prose.
 fn format_call(call: &str, in_code: bool) -> String {
     if in_code {
         call.to_owned()
@@ -2540,73 +2499,37 @@ mod tests {
     use super::*;
     use crate::vfs::MemVfs;
 
-    /// Writes one file, creating its directories — the shape every vault
-    /// fixture below is built from.
+    /// Writes one file, creating its directories, and the root, marketplace
+    /// and plugin notes a v2 vault needs.
     fn write(vfs: &MemVfs, path: &str, content: &[u8]) {
+        for (note, text) in [
+            ("/vault/skillwright.md", "---\n---\n"),
+            ("/vault/marketplaces/m/m.md", "---\n---\n"),
+            ("/vault/marketplaces/m/plugins/p/p.md", "---\n---\n"),
+        ] {
+            let note = Path::new(note);
+            if !vfs.exists(note) {
+                vfs.create_dir_all(note.parent().unwrap()).unwrap();
+                vfs.write_file(note, text.as_bytes()).unwrap();
+            }
+        }
         let path = Path::new(path);
         vfs.create_dir_all(path.parent().unwrap()).unwrap();
         vfs.write_file(path, content).unwrap();
     }
 
-    /// The layout a v2 walk gives the skill at `entry` whose folder is
-    /// `bundle`: its shared folders carried, its never-ship folders marked.
-    fn bundle_layout(vfs: &dyn Vfs, entry: &Path, bundle: &Path) -> &'static Layout {
-        let name = bundle.file_name().unwrap().to_string_lossy().into_owned();
-        let file = |path: PathBuf, place| crate::layout::LayoutFile {
-            rel: path.display().to_string(),
-            path,
-            marketplace: "m".to_owned(),
-            plugin: Some("p".to_owned()),
-            place,
-        };
-        let mut files = vec![file(
-            normalize(entry),
-            Place::ComponentNote {
-                kind: EntityKind::Skill,
-                name: name.clone(),
-            },
-        )];
-        for found in crate::walk::readable_files(vfs, bundle, &[]) {
-            let first = found.rel.split('/').next().unwrap_or_default();
-            let place = if let Some(dir) = SharedDir::named(first) {
-                Place::Shared {
-                    skill: Some(name.clone()),
-                    dir,
-                    path: found.rel.clone(),
-                }
-            } else if ["docs", "tests", "fixtures", "src"].contains(&first) {
-                Place::NeverShip {
-                    folder: bundle.join(first).display().to_string(),
-                }
-            } else {
-                continue;
-            };
-            files.push(file(normalize(&found.abs), place));
-        }
-        Box::leak(Box::new(Layout {
-            root: PathBuf::from("/vault"),
-            files,
-            marketplaces: vec!["m".to_owned()],
-        }))
+    /// [`source`]: the skill folder is read from the layout.
+    fn bundled<'a>(_vfs: &dyn Vfs, _bundle: &'a Path) -> CompileSource<'a> {
+        source(None)
     }
 
-    /// [`source`] for the skill whose folder is `bundle`, with its layout.
-    fn bundled<'a>(vfs: &dyn Vfs, bundle: &'a Path) -> CompileSource<'a> {
-        let mut value = source(Some(bundle));
-        value.layout = Some(bundle_layout(vfs, value.entry_path, bundle));
-        value
-    }
-
-    fn source<'a>(bundle_root: Option<&'a Path>) -> CompileSource<'a> {
-        {
-            let mut value = CompileSource::new(
-                Path::new("/vault"),
-                Path::new("/vault/plugins/demo/demo.md"),
-                "demo",
-            );
-            value.bundle_root = bundle_root;
-            value
-        }
+    /// The compile of skill `demo`, its layout read from the vault.
+    fn source<'a>(_bundle_root: Option<&'a Path>) -> CompileSource<'a> {
+        CompileSource::new(
+            Path::new("/vault"),
+            Path::new("/vault/marketplaces/m/plugins/p/skills/demo/demo.md"),
+            "demo",
+        )
     }
 
     /// A demo vault reused by several tests below.
@@ -2614,43 +2537,57 @@ mod tests {
         let vfs = MemVfs::new();
         write(
             &vfs,
-            "/vault/plugins/demo/demo.md",
+            "/vault/marketplaces/m/plugins/p/skills/demo/demo.md",
             b"---\ndescription: d\n---\n\n# Demo\n",
         );
         write(
             &vfs,
-            "/vault/Shared.md",
+            "/vault/marketplaces/m/plugins/p/references/Shared.md",
             b"---\ntag: fragment\n---\n\n## Shared instructions\n\n- Preserve this list.\n",
         );
         write(
             &vfs,
-            "/vault/Sections.md",
+            "/vault/marketplaces/m/plugins/p/references/Sections.md",
             b"# Other\n\nIgnore this.\n\n## Chosen\n\nKeep this section.\n\n### Nested\n\nKeep the nested section too.\n\n## Later\n\nDo not include this.\n",
         );
         write(
             &vfs,
-            "/vault/Blocks.md",
+            "/vault/marketplaces/m/plugins/p/references/Blocks.md",
             b"Before.\n\nBlock content for export. ^example\n\nAfter.\n",
         );
         write(
             &vfs,
-            "/vault/plugins/demo/references/local.md",
+            "/vault/marketplaces/m/plugins/p/skills/demo/references/local.md",
             b"# Local\n\n![[Shared]]\n",
         );
         write(
             &vfs,
-            "/vault/plugins/demo/scripts/tool.sh",
+            "/vault/marketplaces/m/plugins/p/skills/demo/scripts/tool.sh",
             b"#!/bin/sh\necho ok\n",
         );
-        vfs.set_executable(Path::new("/vault/plugins/demo/scripts/tool.sh"), true)
-            .unwrap();
-        write(&vfs, "/vault/Docs/manual.pdf", b"%PDF-test");
-        write(&vfs, "/vault/Media/pic.png", b"PNG-test");
+        vfs.set_executable(
+            Path::new("/vault/marketplaces/m/plugins/p/skills/demo/scripts/tool.sh"),
+            true,
+        )
+        .unwrap();
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Docs/manual.pdf",
+            b"%PDF-test",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Media/pic.png",
+            b"PNG-test",
+        );
         vfs
     }
 
     /// The demo entry body.
-    const DEMO_BODY: &str = "# Demo\n\n![[Shared]]\n\n![[Sections#Chosen]]\n\n![[Blocks#^example]]\n\nRead [[references/local|Local reference]].\n\n![[Docs/manual.pdf#page=2]]\n\n![[Media/pic.png|100]]\n\nKeep `![[Missing inline example]]` unchanged.\n\n```md\n![[Missing fenced example]]\n```\n";
+    const DEMO_BODY: &str = "# Demo\n\n![[Shared]]\n\n![[Sections#Chosen]]\n\n![[Blocks#^example]]\n\nRead [[references/local|Local reference]].\n\n![[manual.pdf#page=2]]\n\n![[pic.png|100]]\n\nKeep `![[Missing inline example]]` unchanged.\n\n```md\n![[Missing fenced example]]\n```\n";
+
+    /// What the layout seeds for the demo skill.
+    const SEEDED: [&str; 2] = ["references/local.md", "scripts/tool.sh"];
 
     fn resource<'a>(compiled: &'a CompiledNote, path: &str) -> &'a (String, Vec<u8>, bool) {
         compiled
@@ -2677,7 +2614,10 @@ mod tests {
 
         assert_eq!(
             compiled.closures["SKILL.md"].contributing_notes,
-            vec!["Shared.md".to_owned(), "plugins/demo/demo.md".to_owned()]
+            vec![
+                "marketplaces/m/plugins/p/references/Shared.md".to_owned(),
+                "marketplaces/m/plugins/p/skills/demo/demo.md".to_owned()
+            ]
         );
     }
 
@@ -2688,7 +2628,7 @@ mod tests {
     #[test]
     fn a_linked_note_gets_its_own_closure_rather_than_joining_the_skills() {
         let vfs = demo_vault();
-        let bundle = Path::new("/vault/plugins/demo");
+        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
         let compiled = compile_note(
             &vfs,
             &bundled(&vfs, bundle),
@@ -2697,9 +2637,12 @@ mod tests {
         .unwrap();
 
         let skill = &compiled.closures["SKILL.md"].contributing_notes;
-        assert_eq!(skill, &vec!["plugins/demo/demo.md".to_owned()]);
+        assert_eq!(
+            skill,
+            &vec!["marketplaces/m/plugins/p/skills/demo/demo.md".to_owned()]
+        );
         assert!(
-            !skill.contains(&"plugins/demo/references/local.md".to_owned()),
+            !skill.contains(&"marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned()),
             "a linked note must not join the linking file's closure: {skill:?}"
         );
 
@@ -2708,8 +2651,8 @@ mod tests {
         assert_eq!(
             local,
             &vec![
-                "Shared.md".to_owned(),
-                "plugins/demo/references/local.md".to_owned()
+                "marketplaces/m/plugins/p/references/Shared.md".to_owned(),
+                "marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned()
             ]
         );
     }
@@ -2717,17 +2660,25 @@ mod tests {
     #[test]
     fn embedding_is_transitive_through_the_closure() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/Deep.md", b"Deepest.\n");
-        write(&vfs, "/vault/Middle.md", b"Middle.\n\n![[Deep]]\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Deep.md",
+            b"Deepest.\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Middle.md",
+            b"Middle.\n\n![[Deep]]\n",
+        );
 
         let compiled = compile_note(&vfs, &source(None), "# Demo\n\n![[Middle]]\n").unwrap();
 
         assert_eq!(
             compiled.closures["SKILL.md"].contributing_notes,
             vec![
-                "Deep.md".to_owned(),
-                "Middle.md".to_owned(),
-                "plugins/demo/demo.md".to_owned()
+                "marketplaces/m/plugins/p/references/Deep.md".to_owned(),
+                "marketplaces/m/plugins/p/references/Middle.md".to_owned(),
+                "marketplaces/m/plugins/p/skills/demo/demo.md".to_owned()
             ]
         );
     }
@@ -2737,7 +2688,7 @@ mod tests {
     #[test]
     fn every_emitted_file_has_a_closure_holding_at_least_its_own_owner() {
         let vfs = demo_vault();
-        let bundle = Path::new("/vault/plugins/demo");
+        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
         let compiled = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
 
         for (path, _, _) in &compiled.resources {
@@ -2752,56 +2703,30 @@ mod tests {
         }
         assert_eq!(
             compiled.closures["scripts/tool.sh"].contributing_notes,
-            vec!["plugins/demo/scripts/tool.sh".to_owned()]
-        );
-    }
-
-    // Recorded against the file it appears in, not against the skill as a
-    // whole — that is what lets the cause be named.
-    #[test]
-    fn an_unresolved_name_is_recorded_against_the_file_it_appears_in() {
-        let vfs = demo_vault();
-        let bundle = Path::new("/vault/plugins/demo");
-        write(
-            &vfs,
-            "/vault/plugins/demo/references/local.md",
-            b"# Local\n\nSee [[AlsoMissing]].\n",
-        );
-
-        let compiled = compile_note(
-            &vfs,
-            &bundled(&vfs, bundle),
-            "# Demo\n\nSee [[Missing]]. Read [[references/local]].\n",
-        )
-        .unwrap();
-
-        assert_eq!(
-            compiled.closures["SKILL.md"].unresolved,
-            vec!["Missing".to_owned()]
-        );
-        assert_eq!(
-            compiled.closures["references/local.md"].unresolved,
-            vec!["AlsoMissing".to_owned()]
+            vec!["marketplaces/m/plugins/p/skills/demo/scripts/tool.sh".to_owned()]
         );
     }
 
     #[test]
     fn related_separates_an_embed_from_a_link_and_keeps_the_name_that_resolved_to_nothing() {
         let vfs = demo_vault();
-        let bundle = Path::new("/vault/plugins/demo");
+        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
         let related = related_of(
             &vfs,
             &bundled(&vfs, bundle),
-            "# Demo\n\n![[Shared]]\n\nRead [[references/local]] and [[Sections]], then [[Missing]].\n",
+            "# Demo\n\n![[Shared]]\n\nRead [[references/local]] and [[Sections]], then /[[Missing]].\n",
         )
         .unwrap();
 
-        assert_eq!(related.embeds, vec!["Shared.md".to_owned()]);
+        assert_eq!(
+            related.embeds,
+            vec!["marketplaces/m/plugins/p/references/Shared.md".to_owned()]
+        );
         assert_eq!(
             related.links,
             vec![
-                "Sections.md".to_owned(),
-                "plugins/demo/references/local.md".to_owned()
+                "marketplaces/m/plugins/p/references/Sections.md".to_owned(),
+                "marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned()
             ]
         );
         assert_eq!(related.unresolved, vec!["Missing".to_owned()]);
@@ -2813,14 +2738,25 @@ mod tests {
     #[test]
     fn related_embeds_reach_two_hops_deep() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/Deep.md", b"Deepest.\n");
-        write(&vfs, "/vault/Middle.md", b"Middle.\n\n![[Deep]]\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Deep.md",
+            b"Deepest.\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Middle.md",
+            b"Middle.\n\n![[Deep]]\n",
+        );
 
         let related = related_of(&vfs, &source(None), "# Demo\n\n![[Middle]]\n").unwrap();
 
         assert_eq!(
             related.embeds,
-            vec!["Deep.md".to_owned(), "Middle.md".to_owned()]
+            vec![
+                "marketplaces/m/plugins/p/references/Deep.md".to_owned(),
+                "marketplaces/m/plugins/p/references/Middle.md".to_owned()
+            ]
         );
     }
 
@@ -2829,14 +2765,14 @@ mod tests {
     #[test]
     fn related_lists_bundle_peers_as_resources_and_never_as_links() {
         let vfs = demo_vault();
-        let bundle = Path::new("/vault/plugins/demo");
+        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
         let related = related_of(&vfs, &bundled(&vfs, bundle), "# Demo\n").unwrap();
 
         assert_eq!(
             related.resources,
             vec![
-                "plugins/demo/references/local.md".to_owned(),
-                "plugins/demo/scripts/tool.sh".to_owned()
+                "marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned(),
+                "marketplaces/m/plugins/p/skills/demo/scripts/tool.sh".to_owned()
             ]
         );
         assert!(related.links.is_empty(), "{:?}", related.links);
@@ -2847,7 +2783,7 @@ mod tests {
     #[test]
     fn a_demo_skill_compiles_end_to_end() {
         let vfs = demo_vault();
-        let bundle = Path::new("/vault/plugins/demo");
+        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
         let compiled = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
 
         // A whole-note embed pulls the body, never the frontmatter.
@@ -2872,28 +2808,25 @@ mod tests {
         assert!(
             compiled
                 .body
-                .contains("[manual.pdf](references/vault/Docs/manual.pdf#page=2)")
+                .contains("[manual.pdf](../../references/Docs/manual.pdf#page=2)")
         );
         // An image embed renders as an image; a size-spec alias is geometry,
         // not a label.
         assert!(
             compiled
                 .body
-                .contains("![pic.png](assets/vault/Media/pic.png)")
+                .contains("![pic.png](../../references/Media/pic.png)")
         );
         // Code is content: inline and fenced Obsidian syntax survives
         // untouched and does not fail validation.
         assert!(compiled.body.contains("`![[Missing inline example]]`"));
         assert!(compiled.body.contains("![[Missing fenced example]]"));
 
-        // The bundle markdown resource is itself compiled — its embed
-        // expanded — and the external files land under their category roots.
+        // The bundle markdown resource is itself compiled, its embed
+        // expanded. A linked shared file is not copied: it ships on its own.
         let (_, local, _) = resource(&compiled, "references/local.md");
         assert!(String::from_utf8_lossy(local).contains("## Shared instructions"));
-        let (_, pdf, _) = resource(&compiled, "references/vault/Docs/manual.pdf");
-        assert_eq!(pdf, b"%PDF-test");
-        let (_, png, _) = resource(&compiled, "assets/vault/Media/pic.png");
-        assert_eq!(png, b"PNG-test");
+        assert_eq!(paths(&compiled), SEEDED);
         // The execute bit survives the copy.
         let (_, _, executable) = resource(&compiled, "scripts/tool.sh");
         assert!(executable);
@@ -2906,7 +2839,6 @@ mod tests {
         let entry = root.join(
             "marketplaces/house/plugins/tools/skills/workflow-checklist/workflow-checklist.md",
         );
-        let bundle = root.join("marketplaces/house/plugins/tools/skills/workflow-checklist");
         let vfs = crate::vfs::NativeVfs;
         let layout = crate::layout::read_layout(&vfs, &root).unwrap();
 
@@ -2914,7 +2846,6 @@ mod tests {
         let (_, body) = split_frontmatter(&raw);
         let compile_source = {
             let mut value = CompileSource::new(&root, &entry, "workflow-checklist");
-            value.bundle_root = Some(&bundle);
             value.layout = Some(&layout);
             value
         };
@@ -2931,67 +2862,51 @@ mod tests {
         );
     }
 
-    /// An entry or bundle root must be inside the vault both as spelled and
-    /// on disk: one linked out of the vault, or spelled through an alias of
-    /// it, is refused before the walk.
+    /// An entry must be inside the vault both as spelled and on disk: one
+    /// linked out of the vault, or spelled through an alias of it, is
+    /// refused before the walk.
     #[cfg(unix)]
     #[test]
-    fn an_entry_or_bundle_root_outside_the_vault_by_link_or_spelling_is_refused() {
+    fn an_entry_outside_the_vault_by_link_or_spelling_is_refused() {
         let tmp = tempfile::tempdir().unwrap();
         let vault = tmp.path().join("vault");
         let outside = tmp.path().join("outside");
         std::fs::create_dir_all(vault.join("skills/demo")).unwrap();
         std::fs::create_dir_all(outside.join("demo")).unwrap();
-        std::fs::write(vault.join("skills/demo/demo.md"), "# Demo\n").unwrap();
         std::fs::write(outside.join("demo/demo.md"), "# Demo\n").unwrap();
+        std::fs::write(vault.join("skills/demo/demo.md"), "# Demo\n").unwrap();
         std::os::unix::fs::symlink(&outside, vault.join("linked")).unwrap();
         let alias = tmp.path().join("alias");
         std::os::unix::fs::symlink(&vault, &alias).unwrap();
 
         let vfs = crate::vfs::NativeVfs;
-        let inside_entry = vault.join("skills/demo/demo.md");
-        let inside_bundle = vault.join("skills/demo");
-        let linked_entry = vault.join("linked/demo/demo.md");
-        let linked_bundle = vault.join("linked/demo");
-        let aliased_entry = alias.join("skills/demo/demo.md");
-        let aliased_bundle = alias.join("skills/demo");
-        let cases: [(&Path, Option<&Path>); 4] = [
-            (&linked_entry, None),
-            (&aliased_entry, None),
-            (&inside_entry, Some(&linked_bundle)),
-            (&inside_entry, Some(&aliased_bundle)),
-        ];
-        for (entry, bundle) in cases {
-            let compile_source = {
-                let mut value = CompileSource::new(&vault, entry, "demo");
-                value.bundle_root = bundle;
-                value
-            };
+        for entry in [
+            vault.join("linked/demo/demo.md"),
+            alias.join("skills/demo/demo.md"),
+        ] {
+            let compile_source = CompileSource::new(&vault, &entry, "demo");
             let err = compile_note(&vfs, &compile_source, "# Demo\n").unwrap_err();
-            // The early check names the root it refused; a later failure in
-            // the walk would name a file under it instead.
-            let expected = bundle.unwrap_or(entry);
             assert!(
-                matches!(&err, CoreError::PathEscapesRoot(p) if p == expected),
-                "{} / {bundle:?}: {err}",
+                matches!(&err, CoreError::PathEscapesRoot(p) if *p == entry),
+                "{}: {err}",
                 entry.display()
             );
         }
-
-        // The same tree, spelled inside the vault, compiles.
-        let compile_source = {
-            let mut value = CompileSource::new(&vault, &inside_entry, "demo");
-            value.bundle_root = Some(&inside_bundle);
-            value
-        };
-        compile_note(&vfs, &compile_source, "# Demo\n").unwrap();
     }
 
     #[test]
     fn a_transclusion_cycle_is_refused_naming_the_cycle() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/A.md", b"![[B]]\n");
-        write(&vfs, "/vault/B.md", b"![[A]]\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/A.md",
+            b"![[B]]\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/B.md",
+            b"![[A]]\n",
+        );
 
         let err = compile_note(&vfs, &source(None), "# Demo\n\n![[A]]\n").unwrap_err();
         let message = err.to_string();
@@ -2999,18 +2914,25 @@ mod tests {
         assert!(message.contains("cycle"), "{message}");
         assert!(message.contains("demo"), "{message}");
         // The loop, spelt in vault-relative hops from its first repeat.
-        assert!(message.contains("A.md -> B.md -> A.md"), "{message}");
+        assert!(
+            message.contains("A.md -> marketplaces/m/plugins/p/references/B.md -> marketplaces/m/plugins/p/references/A.md"),
+            "{message}"
+        );
     }
 
     #[test]
     fn a_cycle_through_a_heading_ending_in_a_hash_names_the_whole_heading() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/A.md", b"# Learn C#\n\n![[A#Learn C#]]\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/A.md",
+            b"# Learn C#\n\n![[A#Learn C#]]\n",
+        );
 
         let err = compile_note(&vfs, &source(None), "![[A#Learn C#]]\n").unwrap_err();
         let message = err.to_string();
         assert!(
-            message.contains("A.md#Learn C# -> A.md#Learn C#"),
+            message.contains("A.md#Learn C# -> marketplaces/m/plugins/p/references/A.md#Learn C#"),
             "{message}"
         );
     }
@@ -3022,7 +2944,7 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("cycle"), "{message}");
         assert!(
-            message.contains("plugins/demo/demo.md -> plugins/demo/demo.md"),
+            message.contains("skills/demo/demo.md -> marketplaces/m/plugins/p/skills/demo/demo.md"),
             "{message}"
         );
     }
@@ -3030,8 +2952,16 @@ mod tests {
     #[test]
     fn an_ambiguous_link_is_refused_naming_every_candidate() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/One/Shared2.md", b"One.\n");
-        write(&vfs, "/vault/Two/Shared2.md", b"Two.\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/One/Shared2.md",
+            b"One.\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Two/Shared2.md",
+            b"Two.\n",
+        );
 
         let err = compile_note(&vfs, &source(None), "![[Shared2]]\n").unwrap_err();
         let message = err.to_string();
@@ -3040,173 +2970,53 @@ mod tests {
         assert!(message.contains("Two/Shared2.md"), "{message}");
     }
 
-    #[test]
-    fn an_exact_path_beats_the_basename_ladder() {
-        // Root-level Shared.md and One/Shared.md share a stem, but the exact
-        // vault-relative match answers before the basename map is consulted —
-        // so no ambiguity refusal, and no guessing either.
-        let vfs = demo_vault();
-        write(&vfs, "/vault/One/Shared.md", b"The nested one.\n");
-
-        let compiled =
-            compile_note(&vfs, &source(None), "![[Shared]]\n\n![[One/Shared]]\n").unwrap();
-        assert!(
-            compiled.body.contains("Preserve this list."),
-            "{}",
-            compiled.body
-        );
-        assert!(
-            compiled.body.contains("The nested one."),
-            "{}",
-            compiled.body
-        );
-    }
-
     // --- Resolution at the edges, as `resolve_strict` reads them ------------
 
     #[test]
-    fn a_partial_path_names_the_one_file_whose_path_ends_with_it() {
-        // The bare name `x` is shared, but only one path ends with `sub/x`.
+    fn a_name_prefers_the_skill_folder_and_a_path_is_relative_to_the_linking_note() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/One/sub/x.md", b"One sub.\n");
-        write(&vfs, "/vault/Two/x.md", b"Two.\n");
-        let compiled = compile_note(&vfs, &source(None), "![[sub/x]]\n").unwrap();
-        assert_eq!(compiled.body, "One sub.\n");
-
-        // Two paths ending with it are still ambiguous.
-        write(&vfs, "/vault/Two/sub/x.md", b"Two sub.\n");
-        let message = compile_note(&vfs, &source(None), "![[sub/x]]\n")
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("link-ambiguous"), "{message}");
-        assert!(
-            message.contains("(One/sub/x.md, Two/sub/x.md)"),
-            "{message}"
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/near.md",
+            b"Shared.\n",
         );
-    }
-
-    #[test]
-    fn a_dot_slash_target_is_relative_to_the_linking_note() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/near.md", b"At the root.\n");
-        write(&vfs, "/vault/plugins/demo/near.md", b"Beside the entry.\n");
-        let compiled = compile_note(&vfs, &source(None), "![[near]]\n\n![[./near]]\n").unwrap();
-        // The bare name is the exact vault path; `./` is the linking note's
-        // folder.
-        assert_eq!(compiled.body, "At the root.\n\nBeside the entry.\n");
-    }
-
-    #[test]
-    fn a_dot_dot_target_is_refused_before_it_resolves() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/up.md", b"One up.\n");
-        let message = compile_note(&vfs, &source(None), "![[../up]]\n")
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("unsafe-path"), "{message}");
-        assert!(message.contains("../up"), "{message}");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/demo/references/near.md",
+            b"Beside the entry.\n",
+        );
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "![[near]]\n\n![[../../references/near]]\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "Beside the entry.\n\nShared.\n");
     }
 
     #[test]
     fn a_percent_encoded_target_is_decoded() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/My Note.md", b"Spaced.\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/My Note.md",
+            b"Spaced.\n",
+        );
         let compiled = compile_note(&vfs, &source(None), "![[My%20Note]]\n").unwrap();
         assert_eq!(compiled.body, "Spaced.\n");
     }
 
     #[test]
-    fn ambiguous_candidates_are_listed_shortest_path_first() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/Deep/er/Shared2.md", b"Deep.\n");
-        write(&vfs, "/vault/Two/Shared2.md", b"Two.\n");
-        let message = compile_note(&vfs, &source(None), "[[Shared2]]\n")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            message.contains("(Two/Shared2.md, Deep/er/Shared2.md)"),
-            "{message}"
-        );
-    }
-
-    /// A bare name several folders match resolves to the one match under
-    /// the linking note's folder.
-    #[test]
-    fn an_ambiguous_name_takes_the_one_match_under_the_linking_note() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/references/near.md", b"Ours.\n");
-        write(
-            &vfs,
-            "/vault/plugins/other/references/near.md",
-            b"Theirs.\n",
-        );
-        let compiled = compile_note(&vfs, &source(None), "![[near]]\n").unwrap();
-        assert_eq!(compiled.body, "Ours.\n");
-    }
-
-    /// No match under the linking note's folder, or two there, is still
-    /// refused. Two there names only those two.
-    #[test]
-    fn no_single_match_under_the_linking_note_is_refused() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/one/far.md", b"One.\n");
-        write(&vfs, "/vault/elsewhere/far.md", b"Elsewhere.\n");
-        let message = compile_note(&vfs, &source(None), "![[far]]\n")
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("link-ambiguous"), "{message}");
-
-        write(&vfs, "/vault/plugins/demo/a/near.md", b"A.\n");
-        write(&vfs, "/vault/plugins/demo/b/near.md", b"B.\n");
-        write(&vfs, "/vault/plugins/other/near.md", b"Other.\n");
-        let message = compile_note(&vfs, &source(None), "![[near]]\n")
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("link-ambiguous"), "{message}");
-        assert!(
-            message.contains("(plugins/demo/a/near.md, plugins/demo/b/near.md)"),
-            "{message}"
-        );
-    }
-
-    // The compile spec: "An unresolved link is not a blocker, and that is
-    // deliberate. The rest of the skill publishes. The name is reported
-    // against the note it appears in and recorded in the manifest's
-    // `unresolved` list."
-    #[test]
-    fn a_link_to_nothing_is_recorded_rather_than_refused() {
-        let vfs = demo_vault();
-        let compiled = compile_note(&vfs, &source(None), "See [[Nope]].\n").unwrap();
-
-        assert_eq!(compiled.body, "See Nope.\n");
-        assert_eq!(
-            compiled.closures["SKILL.md"].unresolved,
-            vec!["Nope".to_owned()]
-        );
-    }
-
-    #[test]
-    fn an_unresolved_link_keeps_its_alias_as_the_words_on_the_page() {
-        let vfs = demo_vault();
-        let compiled =
-            compile_note(&vfs, &source(None), "See [[Nope|the house style]].\n").unwrap();
-
-        assert_eq!(compiled.body, "See the house style.\n");
-        // The recorded name is the target, not the alias: it is the name a
-        // note would have to appear under to change this output.
-        assert_eq!(
-            compiled.closures["SKILL.md"].unresolved,
-            vec!["Nope".to_owned()]
-        );
-    }
-
-    #[test]
     fn an_unsafe_link_target_is_refused() {
         let vfs = demo_vault();
-        for body in ["[[../escape]]\n", "[[/etc/passwd]]\n", "![[a/../../b]]\n"] {
+        for (body, token) in [
+            ("[[/etc/passwd]]\n", "unsafe-path"),
+            ("[[../../../../../../escape]]\n", "link-out-of-scope"),
+            ("![[a/../../../../../../../b]]\n", "link-out-of-scope"),
+        ] {
             let err = compile_note(&vfs, &source(None), body).unwrap_err();
             let message = err.to_string();
-            assert!(message.contains("unsafe-path"), "{body}: {message}");
+            assert!(message.contains(token), "{body}: {message}");
         }
     }
 
@@ -3217,86 +3027,47 @@ mod tests {
         let err = compile_note(&vfs, &source(None), "![[Sections#Missing]]\n").unwrap_err();
         let message = err.to_string();
         assert!(message.contains("fragment-unresolved"), "{message}");
-        assert!(message.contains("Sections.md"), "{message}");
+        assert!(
+            message.contains("marketplaces/m/plugins/p/references/Sections.md"),
+            "{message}"
+        );
         assert!(message.contains("Missing"), "{message}");
 
         let err = compile_note(&vfs, &source(None), "![[Blocks#^nope]]\n").unwrap_err();
         let message = err.to_string();
         assert!(message.contains("fragment-unresolved"), "{message}");
-        assert!(message.contains("Blocks.md"), "{message}");
+        assert!(
+            message.contains("marketplaces/m/plugins/p/references/Blocks.md"),
+            "{message}"
+        );
         assert!(message.contains("^nope"), "{message}");
     }
 
     // --- Resources, collisions, wiring --------------------------------------
 
     #[test]
-    fn resource_discovery_is_transitive() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/One.md", b"See [[Two]].\n");
-        write(&vfs, "/vault/Two.md", b"See [[Three]].\n");
-        write(&vfs, "/vault/Three.md", b"End.\n");
-
-        let compiled = compile_note(&vfs, &source(None), "Start at [[One]].\n").unwrap();
-        // Each hop was collected, and each collected body was compiled: One's
-        // link to Two is already a relative markdown link, spelt from One's
-        // own output directory.
-        let (_, one, _) = resource(&compiled, "references/vault/One.md");
-        assert!(String::from_utf8_lossy(one).contains("[Two.md](Two.md)"));
-        let (_, two, _) = resource(&compiled, "references/vault/Two.md");
-        assert!(String::from_utf8_lossy(two).contains("[Three.md](Three.md)"));
-        assert!(paths(&compiled).contains(&"references/vault/Three.md"));
-    }
-
-    #[test]
-    fn bundle_root_none_collects_only_what_links_reach() {
-        let vfs = demo_vault();
-        let compiled = compile_note(&vfs, &source(None), "Read [[Blocks]].\n").unwrap();
-        // No seeded bundle files — not local.md, not tool.sh — only the
-        // linked note.
-        assert_eq!(paths(&compiled), vec!["references/vault/Blocks.md"]);
-    }
-
-    #[test]
     fn markdown_resources_keep_their_frontmatter_and_execute_bits() {
         let vfs = demo_vault();
         write(
             &vfs,
-            "/vault/Extra.md",
+            "/vault/marketplaces/m/plugins/p/skills/demo/references/Extra.md",
             b"---\ntag: x\n---\nExtra body with [[Blocks]].\n",
         );
-        vfs.set_executable(Path::new("/vault/Extra.md"), true)
-            .unwrap();
+        vfs.set_executable(
+            Path::new("/vault/marketplaces/m/plugins/p/skills/demo/references/Extra.md"),
+            true,
+        )
+        .unwrap();
 
         let compiled = compile_note(&vfs, &source(None), "See [[Extra]].\n").unwrap();
-        let (_, extra, executable) = resource(&compiled, "references/vault/Extra.md");
+        let (_, extra, executable) = resource(&compiled, "references/Extra.md");
         // The author's frontmatter travels byte-for-byte; only the body's
         // links were rewritten.
         assert_eq!(
             String::from_utf8_lossy(extra),
-            "---\ntag: x\n---\nExtra body with [Blocks.md](Blocks.md).\n"
+            "---\ntag: x\n---\nExtra body with [Blocks](../../../references/Blocks.md).\n"
         );
         assert!(executable);
-    }
-
-    #[test]
-    fn two_sources_claiming_one_output_path_are_refused() {
-        // A bundle file that happens to sit at references/vault/X.md collides
-        // with the vault-collected copy of a root-level X.md — one path, two
-        // sources, and either winner drops the other's bytes.
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/plugins/demo/references/vault/X.md",
-            b"bundled\n",
-        );
-        write(&vfs, "/vault/X.md", b"vault-wide\n");
-
-        let bundle = Path::new("/vault/plugins/demo");
-        let err = compile_note(&vfs, &bundled(&vfs, bundle), "See [[X]].\n").unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("path-collision"), "{message}");
-        assert!(message.contains("demo"), "{message}");
-        assert!(message.contains("references/vault/X.md"), "{message}");
     }
 
     #[test]
@@ -3307,23 +3078,23 @@ mod tests {
         let vfs = demo_vault();
         write(
             &vfs,
-            "/vault/plugins/demo/tests/fixtures/case/some-note.md",
+            "/vault/marketplaces/m/plugins/p/skills/demo/tests/fixtures/case/some-note.md",
             b"---\nid: X\n---\n\n[[not-a-real-note]]\n",
         );
         write(
             &vfs,
-            "/vault/plugins/demo/tests/run_evals.test.ts",
+            "/vault/marketplaces/m/plugins/p/skills/demo/tests/run_evals.test.ts",
             b"// not a vault note either\n",
         );
         // A directory named `fixtures` directly under the bundle root, not
         // only nested under `tests/`, is excluded the same way.
         write(
             &vfs,
-            "/vault/plugins/demo/fixtures/other.md",
+            "/vault/marketplaces/m/plugins/p/skills/demo/fixtures/other.md",
             b"[[also-not-real]]\n",
         );
 
-        let bundle = Path::new("/vault/plugins/demo");
+        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
         let compiled = compile_note(&vfs, &bundled(&vfs, bundle), "# Demo\n").unwrap();
         for (path, _, _) in &compiled.resources {
             assert!(!path.starts_with("tests/"), "{path} shipped from tests/");
@@ -3335,67 +3106,9 @@ mod tests {
     }
 
     #[test]
-    fn compile_projection_feeds_project_skill_with_compiled_output() {
-        // The wiring: vault read → compile → projection. What lands at the
-        // destination is the flattened body, the collected references, and
-        // the bundle files with their bits — through the same project_skill
-        // every publish already uses.
-        use crate::projection::project_skill;
-        use crate::vault::read_vault_skill;
-
-        let vfs = MemVfs::new();
-        write(
-            &vfs,
-            "/vault/skills/demo.md",
-            b"---\ndescription: d\n---\nIntro.\n\n![[Shared]]\n\nSee [[Ref]].\n",
-        );
-        write(&vfs, "/vault/Shared.md", b"Shared body.\n");
-        write(&vfs, "/vault/Ref.md", b"Ref body.\n");
-        write(&vfs, "/vault/skills/demo/scripts/run.sh", b"#!/bin/sh\n");
-        vfs.set_executable(Path::new("/vault/skills/demo/scripts/run.sh"), true)
-            .unwrap();
-
-        let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md")).unwrap();
-        let name = note.projection.content.name.clone();
-        let compile_source = {
-            let mut value = CompileSource::new(
-                Path::new("/vault"),
-                Path::new("/vault/skills/demo.md"),
-                &name,
-            );
-            // The vault-canonical peer folder is this note's bundle root.
-            value.bundle_root = Some(Path::new("/vault/skills/demo"));
-            value.layout = Some(bundle_layout(
-                &vfs,
-                Path::new("/vault/skills/demo.md"),
-                Path::new("/vault/skills/demo"),
-            ));
-            value
-        };
-        compile_projection(&vfs, &compile_source, &mut note.projection).unwrap();
-
-        let files = project_skill(&note.projection, &["claude-code".to_owned()]).unwrap();
-        let by_path: std::collections::BTreeMap<&str, &crate::projection::ProjectedFile> = files
-            .iter()
-            .map(|f| (f.relative_path.as_str(), f))
-            .collect();
-
-        let skill_md =
-            String::from_utf8(by_path[".claude/skills/demo/SKILL.md"].content.clone()).unwrap();
-        assert!(skill_md.contains("Shared body."), "{skill_md}");
-        assert!(
-            skill_md.contains("[Ref.md](references/vault/Ref.md)"),
-            "{skill_md}"
-        );
-        assert!(!skill_md.contains("![["), "{skill_md}");
-        assert!(by_path.contains_key(".claude/skills/demo/references/vault/Ref.md"));
-        assert!(by_path[".claude/skills/demo/scripts/run.sh"].executable);
-    }
-
-    #[test]
     fn compiling_twice_yields_identical_output() {
         let vfs = demo_vault();
-        let bundle = Path::new("/vault/plugins/demo");
+        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
         let first = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
         let second = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
         assert_eq!(first, second);
@@ -3409,7 +3122,7 @@ mod tests {
         let compiled = compile_note(
             &vfs,
             &source(None),
-            "See [[Docs/manual.pdf|notes \\ 3]].\n\n![[Media/pic.png|Diagram]]\n\n![[Media/pic.png|640x480]]\n",
+            "See [[manual.pdf|notes \\ 3]].\n\n![[pic.png|Diagram]]\n\n![[pic.png|640x480]]\n",
         )
         .unwrap();
         // A `\` in an alias is escaped so the label cannot break the link
@@ -3418,7 +3131,7 @@ mod tests {
         assert!(
             compiled
                 .body
-                .contains("[notes \\\\ 3](references/vault/Docs/manual.pdf)"),
+                .contains("[notes \\\\ 3](../../references/Docs/manual.pdf)"),
             "{}",
             compiled.body
         );
@@ -3426,12 +3139,12 @@ mod tests {
         assert!(
             compiled
                 .body
-                .contains("![Diagram](assets/vault/Media/pic.png)")
+                .contains("![Diagram](../../references/Media/pic.png)")
         );
         assert!(
             compiled
                 .body
-                .contains("![pic.png](assets/vault/Media/pic.png)")
+                .contains("![pic.png](../../references/Media/pic.png)")
         );
     }
 
@@ -3475,8 +3188,16 @@ mod tests {
     #[test]
     fn an_escaped_double_bracket_ships_as_written() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/note.md", b"# Note\n");
-        write(&vfs, "/vault/photo.png", b"PNG");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/note.md",
+            b"# Note\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/photo.png",
+            b"PNG",
+        );
         for body in [
             "See \\[[TODO later.\n",
             "See \\![[TODO later.\n",
@@ -3489,11 +3210,7 @@ mod tests {
         ] {
             let compiled = compile_with_calls(&vfs, &call_index("called"), body);
             assert_eq!(compiled.body, body);
-            assert!(
-                compiled.resources.is_empty(),
-                "{body:?}: {:?}",
-                paths(&compiled)
-            );
+            assert_eq!(paths(&compiled), SEEDED, "{body:?}");
             let closure = &compiled.closures["SKILL.md"];
             assert!(closure.unresolved.is_empty(), "{body:?}: {closure:?}");
             assert!(closure.calls.is_empty(), "{body:?}: {closure:?}");
@@ -3504,19 +3221,22 @@ mod tests {
         let compiled = compile_with_calls(&vfs, &call_index("called"), "A \\[[[Shared]] B\n");
         assert_eq!(
             compiled.body,
-            "A \\[[Shared.md](references/vault/Shared.md) B\n"
+            "A \\[[Shared](../../references/Shared.md) B\n"
         );
 
         // In a bundle resource's body as well.
         write(
             &vfs,
-            "/vault/plugins/demo/references/x.md",
+            "/vault/marketplaces/m/plugins/p/skills/demo/references/x.md",
             b"See \\[[TODO and \\[[note]].\n",
         );
         let compiled = compile_source_with_calls(
             &vfs,
             &call_index("called"),
-            bundled(&vfs, Path::new("/vault/plugins/demo")),
+            bundled(
+                &vfs,
+                Path::new("/vault/marketplaces/m/plugins/p/skills/demo"),
+            ),
             "# Demo\n",
         )
         .unwrap();
@@ -3533,7 +3253,7 @@ mod tests {
         let compiled = compile_note(&vfs, &source(None), "A \\\\[[Shared]] B\n").unwrap();
         assert_eq!(
             compiled.body,
-            "A \\\\[Shared.md](references/vault/Shared.md) B\n"
+            "A \\\\[Shared](../../references/Shared.md) B\n"
         );
         let err = compile_note(&vfs, &source(None), "A \\\\[[TODO\n")
             .unwrap_err()
@@ -3637,12 +3357,16 @@ mod tests {
     ) -> Result<(String, CompiledNote), CoreError> {
         let vfs = demo_vault();
         let note = format!("---\n{frontmatter}\n---\n{body}");
-        write(&vfs, "/vault/Fm.md", note.as_bytes());
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/demo/references/Fm.md",
+            note.as_bytes(),
+        );
         compile_note(&vfs, &source(None), "See [[Fm]].\n").map(|compiled| (note, compiled))
     }
 
     const FM_LINK: &str = "refused: unresolved-syntax: compiled skill demo has a link in the \
-                           frontmatter of references/vault/Fm.md";
+                           frontmatter of references/Fm.md";
     const FM_WHY: &str = "; frontmatter ships as written, so the link is not resolved; \
                           move it into the body";
 
@@ -3651,7 +3375,7 @@ mod tests {
         for frontmatter in ["tags: [[a]]", "matrix: [[1, 2], [3]]"] {
             let (note, compiled) = compile_with_frontmatter(frontmatter).unwrap();
             assert_eq!(
-                resource(&compiled, "references/vault/Fm.md").1,
+                resource(&compiled, "references/Fm.md").1,
                 note.as_bytes(),
                 "{frontmatter}"
             );
@@ -3661,7 +3385,7 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("in references/vault/Fm.md: [[TODO (not a link"),
+            err.contains("in references/Fm.md: [[TODO (not a link"),
             "{err}"
         );
     }
@@ -3709,7 +3433,7 @@ mod tests {
         for frontmatter in ["note: \"\\[[x]]\"", "related: [[Blocks]] ]"] {
             let (note, compiled) = compile_with_frontmatter(frontmatter).unwrap();
             assert_eq!(
-                resource(&compiled, "references/vault/Fm.md").1,
+                resource(&compiled, "references/Fm.md").1,
                 note.as_bytes(),
                 "{frontmatter}"
             );
@@ -3725,7 +3449,7 @@ mod tests {
         assert!(
             compiled
                 .body
-                .contains("[`/\\[\\[called\\]\\]`](references/vault/Shared.md)"),
+                .contains("[`/\\[\\[called\\]\\]`](../../references/Shared.md)"),
             "{}",
             compiled.body
         );
@@ -3737,8 +3461,10 @@ mod tests {
         let message = compile_note(&vfs, &source(None), "| [[../up\\|Up]] |\n")
             .unwrap_err()
             .to_string();
-        assert!(message.contains("unsafe-path"), "{message}");
-        assert!(message.ends_with("../up"), "{message}");
+        assert!(
+            message.contains("`[[../up\\|Up]]` links to nothing"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -3753,7 +3479,7 @@ mod tests {
         assert!(
             compiled
                 .body
-                .contains("| [the shared note](references/vault/Shared.md) |"),
+                .contains("| [the shared note](../../references/Shared.md) |"),
             "{}",
             compiled.body
         );
@@ -3769,7 +3495,11 @@ mod tests {
     #[test]
     fn paths_and_fragments_are_percent_encoded() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/My Note.md", b"# A B\n\nText.\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/My Note.md",
+            b"# A B\n\nText.\n",
+        );
 
         let compiled = compile_note(
             &vfs,
@@ -3780,7 +3510,7 @@ mod tests {
         assert!(
             compiled
                 .body
-                .contains("[My Note.md](references/vault/My%20Note.md#A%20B)"),
+                .contains("[My Note](../../references/My%20Note.md#A%20B)"),
             "{}",
             compiled.body
         );
@@ -3789,7 +3519,7 @@ mod tests {
         assert!(
             compiled
                 .body
-                .contains("[Sections.md](references/vault/Sections.md#Chosen%23Nested)"),
+                .contains("[Sections](../../references/Sections.md#Chosen%23Nested)"),
             "{}",
             compiled.body
         );
@@ -3947,8 +3677,14 @@ mod tests {
     /// `demo` (the entry) and `called` are skills; `Shared` is not.
     fn call_index(called_name: &str) -> SkillIndex {
         SkillIndex::new([
-            indexed("/vault/plugins/demo/demo.md", "demo"),
-            indexed("/vault/plugins/demo/called.md", called_name),
+            indexed(
+                "/vault/marketplaces/m/plugins/p/skills/demo/demo.md",
+                "demo",
+            ),
+            indexed(
+                "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+                called_name,
+            ),
         ])
     }
 
@@ -3974,7 +3710,11 @@ mod tests {
 
     fn call_refusal(skills: &SkillIndex, body: &str) -> String {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         try_compile_with(&vfs, SkillSource::ready(skills), body)
             .unwrap_err()
             .to_string()
@@ -3983,7 +3723,11 @@ mod tests {
     #[test]
     fn an_escaped_sigil_before_a_skill_shows_the_notation() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let (compiled, warnings) = try_compile_with(
             &vfs,
             SkillSource::ready(&call_index("called")),
@@ -3994,7 +3738,7 @@ mod tests {
             compiled.body,
             "Esc /[[called]] here, `/[[called|alias]]` there.\n"
         );
-        assert!(compiled.resources.is_empty(), "{:?}", paths(&compiled));
+        assert_eq!(paths(&compiled), SEEDED);
         assert!(compiled.closures["SKILL.md"].calls.is_empty());
         assert!(warnings.is_empty(), "{warnings:?}");
     }
@@ -4016,9 +3760,18 @@ mod tests {
     #[test]
     fn a_name_several_skills_share_is_refused_as_ambiguous() {
         let skills = SkillIndex::new([
-            indexed("/vault/plugins/demo/demo.md", "demo"),
-            indexed("/vault/plugins/a/rev/SKILL.md", "rev"),
-            indexed("/vault/plugins/b/rev/SKILL.md", "rev"),
+            indexed(
+                "/vault/marketplaces/m/plugins/p/skills/demo/demo.md",
+                "demo",
+            ),
+            indexed(
+                "/vault/marketplaces/m/plugins/p/references/plugins/a/rev/SKILL.md",
+                "rev",
+            ),
+            indexed(
+                "/vault/marketplaces/m/plugins/p/references/plugins/b/rev/SKILL.md",
+                "rev",
+            ),
         ]);
         let err = call_refusal(&skills, "Run /[[rev]].\n");
         assert!(err.contains("skill-call-ambiguous"), "{err}");
@@ -4028,21 +3781,32 @@ mod tests {
 
     #[test]
     fn a_call_to_a_skill_the_destination_does_not_ship_is_refused() {
-        let mut called = indexed("/vault/plugins/demo/called.md", "called");
+        let mut called = indexed(
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            "called",
+        );
         called.shipped = false;
-        let skills = SkillIndex::new([indexed("/vault/plugins/demo/demo.md", "demo"), called]);
-        for body in ["Run /[[called]].\n", "See [[called]].\n"] {
-            let err = call_refusal(&skills, body);
-            assert!(err.contains("skill-call-not-shipped"), "{err}");
-            assert!(err.contains("tools:called"), "{err}");
-            assert!(err.contains("test does not ship"), "{err}");
-        }
+        let skills = SkillIndex::new([
+            indexed(
+                "/vault/marketplaces/m/plugins/p/skills/demo/demo.md",
+                "demo",
+            ),
+            called,
+        ]);
+        let err = call_refusal(&skills, "Run /[[called]].\n");
+        assert!(err.contains("skill-call-not-shipped"), "{err}");
+        assert!(err.contains("tools:called"), "{err}");
+        assert!(err.contains("test does not ship"), "{err}");
     }
 
     #[test]
     fn the_index_is_built_only_for_a_body_that_needs_it() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let build = || -> Result<SkillIndex, CoreError> {
             Err(CoreError::refused(
                 "path-collision",
@@ -4087,11 +3851,15 @@ mod tests {
     #[test]
     fn renaming_a_called_skill_changes_the_callers_hash() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let body = "Run /[[called]].\n";
 
         let before = compile_with_calls(&vfs, &call_index("called"), body);
-        let after = compile_with_calls(&vfs, &call_index("renamed"), body);
+        let after = compile_with_calls(&vfs, &call_index("renamed"), "Run /[[renamed]].\n");
 
         assert_eq!(before.body, "Run `/tools:called`.\n");
         assert_eq!(before.closures["SKILL.md"].calls, vec!["tools:called"]);
@@ -4106,8 +3874,7 @@ mod tests {
         );
     }
 
-    /// The test call context: a call renders as `/<call id>`, a mention as
-    /// `<call id>`.
+    /// The test call context: a call renders as `/<call id>`.
     fn test_calls(skills: SkillSource<'_>, implicit: bool) -> CallContext<'_> {
         CallContext {
             skills,
@@ -4119,9 +3886,8 @@ mod tests {
         }
     }
 
-    fn render_call_id(skill: &IndexedSkill, mention: bool) -> Result<String, CoreError> {
-        let sigil = if mention { "" } else { "/" };
-        Ok(format!("{sigil}{}", skill.call_id()))
+    fn render_call_id(skill: &IndexedSkill) -> Result<String, CoreError> {
+        Ok(format!("/{}", skill.call_id()))
     }
 
     /// A compile of `source` with the test call context over `skills`.
@@ -4144,213 +3910,6 @@ mod tests {
     }
 
     #[test]
-    fn a_link_to_the_entry_itself_names_the_skill() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
-        let body = "Back to [[demo]].\n";
-        let compiled = compile_with_calls(&vfs, &call_index("called"), body);
-        assert_eq!(compiled.body, "Back to `tools:demo`.\n");
-        assert!(!compiled.body.contains("SKILL.md"), "{}", compiled.body);
-        assert_eq!(compiled.closures["SKILL.md"].calls, vec!["tools:demo"]);
-
-        let skills = call_index("called");
-        let calls = test_calls(SkillSource::ready(&skills), true);
-        let source = CompileSource {
-            calls: Some(&calls),
-            ..source(None)
-        };
-        let related = related_of(&vfs, &source, body).unwrap();
-        assert!(related.calls.is_empty(), "{:?}", related.calls);
-        assert!(related.links.is_empty(), "{:?}", related.links);
-    }
-
-    #[test]
-    fn renaming_a_skill_changes_the_hash_of_its_self_links() {
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/plugins/demo/references/x.md",
-            b"Part of [[demo]].\n",
-        );
-        let bundle = Path::new("/vault/plugins/demo");
-        let compile = |skill: IndexedSkill| {
-            let skills = SkillIndex::new([skill]);
-            compile_source_with_calls(&vfs, &skills, bundled(&vfs, bundle), "Back to [[demo]].\n")
-                .unwrap()
-        };
-        let hash = |compiled: &CompiledNote, path: &str| {
-            compiled.closures[path]
-                .hash(&vfs, Path::new("/vault"))
-                .unwrap()
-        };
-        let before = compile(indexed("/vault/plugins/demo/demo.md", "demo"));
-        let renamed = compile(indexed("/vault/plugins/demo/demo.md", "renamed"));
-        let moved = compile(IndexedSkill {
-            plugin: Some("other".to_owned()),
-            ..indexed("/vault/plugins/demo/demo.md", "demo")
-        });
-        assert_eq!(
-            compiled_text(&before, "references/x.md"),
-            "Part of `tools:demo`.\n"
-        );
-        for path in ["SKILL.md", "references/x.md"] {
-            assert_eq!(before.closures[path].calls, vec!["tools:demo"], "{path}");
-            assert_ne!(hash(&before, path), hash(&renamed, path), "{path}");
-            assert_ne!(hash(&before, path), hash(&moved, path), "{path}");
-        }
-    }
-
-    #[test]
-    fn a_bundle_files_link_to_its_own_skill_names_the_skill() {
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/plugins/demo/references/x.md",
-            b"Part of [[demo]].\n",
-        );
-        let compiled = compile_source_with_calls(
-            &vfs,
-            &call_index("called"),
-            bundled(&vfs, Path::new("/vault/plugins/demo")),
-            "# Demo\n",
-        )
-        .unwrap();
-        assert_eq!(
-            compiled_text(&compiled, "references/x.md"),
-            "Part of `tools:demo`.\n"
-        );
-        assert_eq!(
-            compiled.closures["references/x.md"].calls,
-            vec!["tools:demo"]
-        );
-    }
-
-    #[test]
-    fn a_self_link_names_the_skill_in_every_skill_shape() {
-        // (entry, bundle root, the link's target)
-        let shapes = [
-            ("/vault/skills/s.md", "/vault/skills/s", "s"),
-            ("/vault/skills/s/s.md", "/vault/skills/s", "s"),
-            ("/vault/skills/s/SKILL.md", "/vault/skills/s", "s"),
-        ];
-        for (entry, bundle, target) in shapes {
-            let vfs = MemVfs::new();
-            write(&vfs, entry, b"---\ndescription: d\n---\n\n# S\n");
-            let link = format!("Part of [[{target}]].\n");
-            write(&vfs, &format!("{bundle}/references/x.md"), link.as_bytes());
-            let skills = SkillIndex::new([indexed(entry, "s")]);
-            let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
-            base.bundle_root = Some(Path::new(bundle));
-            base.layout = Some(bundle_layout(&vfs, Path::new(entry), Path::new(bundle)));
-            let compiled = compile_source_with_calls(&vfs, &skills, base, &link).unwrap();
-            assert_eq!(compiled.body, "Part of `tools:s`.\n", "{entry}");
-            assert_eq!(
-                compiled_text(&compiled, "references/x.md"),
-                "Part of `tools:s`.\n",
-                "{entry}"
-            );
-            for path in ["SKILL.md", "references/x.md"] {
-                assert!(
-                    compiled.closures[path].unresolved.is_empty(),
-                    "{entry} {path}: {:?}",
-                    compiled.closures[path].unresolved
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn an_embedded_notes_link_to_the_embedding_skill_names_it() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/snippet.md", b"Part of [[demo]].\n");
-        let compiled = compile_with_calls(&vfs, &call_index("called"), "![[snippet]]\n");
-        assert_eq!(compiled.body, "Part of `tools:demo`.\n");
-    }
-
-    #[test]
-    fn a_linked_vault_notes_link_back_to_the_skill_names_it() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/Foo.md", b"Part of [[demo]].\n");
-        let compiled = compile_with_calls(&vfs, &call_index("called"), "See [[Foo]].\n");
-        assert_eq!(compiled.body, "See [Foo.md](references/vault/Foo.md).\n");
-        assert_eq!(
-            compiled_text(&compiled, "references/vault/Foo.md"),
-            "Part of `tools:demo`.\n"
-        );
-    }
-
-    #[test]
-    fn a_self_link_keeps_its_alias() {
-        let vfs = demo_vault();
-        let compiled =
-            compile_with_calls(&vfs, &call_index("called"), "Use [[demo|this skill]].\n");
-        assert_eq!(compiled.body, "Use this skill (`tools:demo`).\n");
-    }
-
-    #[test]
-    fn a_self_link_with_a_fragment_stays_a_link() {
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/plugins/demo/demo.md",
-            b"---\ndescription: d\n---\n\n## Steps\n",
-        );
-        write(
-            &vfs,
-            "/vault/plugins/demo/references/x.md",
-            b"See [[demo#Steps]].\n",
-        );
-        let compiled = compile_source_with_calls(
-            &vfs,
-            &call_index("called"),
-            bundled(&vfs, Path::new("/vault/plugins/demo")),
-            "See [[demo#Steps]].\n",
-        )
-        .unwrap();
-        assert_eq!(compiled.body, "See [demo.md](SKILL.md#Steps).\n");
-        assert_eq!(
-            compiled_text(&compiled, "references/x.md"),
-            "See [demo.md](../SKILL.md#Steps).\n"
-        );
-
-        // The link path's rules, not a call's: a link's fragment is not
-        // checked, so a missing heading is not a `skill-call-*` refusal.
-        let compiled = compile_source_with_calls(
-            &vfs,
-            &call_index("called"),
-            source(None),
-            "See [[demo#Missing]].\n",
-        )
-        .unwrap();
-        assert_eq!(compiled.body, "See [demo.md](SKILL.md#Missing).\n");
-
-        // A bundle skill's entry, which `[[s]]` names but does not resolve to.
-        let vfs = MemVfs::new();
-        let entry = "/vault/skills/s/SKILL.md";
-        write(&vfs, entry, b"---\ndescription: d\n---\n\n## Steps\n");
-        write(
-            &vfs,
-            "/vault/skills/s/references/x.md",
-            b"See [[s#Steps]].\n",
-        );
-        let skills = SkillIndex::new([indexed(entry, "s")]);
-        let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
-        base.bundle_root = Some(Path::new("/vault/skills/s"));
-        base.layout = Some(bundle_layout(
-            &vfs,
-            Path::new(entry),
-            Path::new("/vault/skills/s"),
-        ));
-        let compiled =
-            compile_source_with_calls(&vfs, &skills, base, "See [[s#Steps]].\n").unwrap();
-        assert_eq!(compiled.body, "See [SKILL.md](SKILL.md#Steps).\n");
-        assert_eq!(
-            compiled_text(&compiled, "references/x.md"),
-            "See [SKILL.md](../SKILL.md#Steps).\n"
-        );
-    }
-
-    #[test]
     fn a_self_call_still_renders_the_call() {
         let vfs = demo_vault();
         let compiled = compile_with_calls(&vfs, &call_index("called"), "Run /[[demo]].\n");
@@ -4358,58 +3917,25 @@ mod tests {
     }
 
     #[test]
-    fn a_bundle_files_link_to_another_skill_names_it() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
-        write(
-            &vfs,
-            "/vault/plugins/demo/references/x.md",
-            b"See [[called]].\n",
-        );
-        let compiled = compile_source_with_calls(
-            &vfs,
-            &call_index("called"),
-            bundled(&vfs, Path::new("/vault/plugins/demo")),
-            "See [[called]].\n",
-        )
-        .unwrap();
-        assert_eq!(compiled.body, "See `tools:called`.\n");
-        assert_eq!(
-            compiled_text(&compiled, "references/x.md"),
-            "See `tools:called`.\n"
-        );
-    }
-
-    #[test]
-    fn a_self_link_without_an_implicit_context_stays_a_link() {
-        let vfs = demo_vault();
-        let compiled = compile_note(&vfs, &source(None), "Back to [[demo]].\n").unwrap();
-        assert_eq!(compiled.body, "Back to [demo.md](SKILL.md).\n");
-
-        let skills = call_index("called");
-        let calls = test_calls(SkillSource::ready(&skills), false);
-        let source = CompileSource {
-            calls: Some(&calls),
-            ..source(None)
-        };
-        let compiled = compile_note(&vfs, &source, "Back to [[demo]].\n").unwrap();
-        assert_eq!(compiled.body, "Back to [demo.md](SKILL.md).\n");
-        assert!(compiled.closures["SKILL.md"].calls.is_empty());
-    }
-
-    #[test]
     fn without_a_context_a_call_renders_its_target_and_is_related() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let body = "Run /[[called]] and `/[[missing]] now`.\n";
 
         let compiled = compile_note(&vfs, &source(None), body).unwrap();
         assert_eq!(compiled.body, "Run `called` and `missing now`.\n");
-        assert!(compiled.resources.is_empty(), "{:?}", paths(&compiled));
-        assert_eq!(compiled.closures["SKILL.md"].unresolved, vec!["missing"]);
+        assert_eq!(paths(&compiled), SEEDED);
+        assert_eq!(
+            compiled.closures["SKILL.md"].unresolved,
+            vec!["called", "missing"]
+        );
 
         let related = related_of(&vfs, &source(None), body).unwrap();
-        assert_eq!(related.calls, vec!["plugins/demo/called.md".to_owned()]);
+        assert!(related.calls.is_empty(), "{:?}", related.calls);
         assert!(related.links.is_empty(), "{:?}", related.links);
     }
 
@@ -4455,7 +3981,11 @@ mod tests {
     #[test]
     fn emphasis_a_table_cell_and_an_option_value_carry_a_call() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let compiled = compile_with_calls(
             &vfs,
             &call_index("called"),
@@ -4470,7 +4000,11 @@ mod tests {
     #[test]
     fn a_call_left_raw_in_code_is_warned_about() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let (compiled, warnings) = try_compile_with(
             &vfs,
             SkillSource::ready(&call_index("called")),
@@ -4489,11 +4023,20 @@ mod tests {
 
     /// `demo` and `called` in plugin `tools`; `away` in plugin `other`.
     fn literal_index() -> SkillIndex {
-        let mut away = indexed("/vault/plugins/other/away.md", "away");
+        let mut away = indexed(
+            "/vault/marketplaces/m/plugins/p/references/plugins/other/away.md",
+            "away",
+        );
         away.plugin = Some("other".to_owned());
         SkillIndex::new([
-            indexed("/vault/plugins/demo/demo.md", "demo"),
-            indexed("/vault/plugins/demo/called.md", "called"),
+            indexed(
+                "/vault/marketplaces/m/plugins/p/skills/demo/demo.md",
+                "demo",
+            ),
+            indexed(
+                "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+                "called",
+            ),
             away,
         ])
     }
@@ -4539,7 +4082,11 @@ mod tests {
     #[test]
     fn a_bare_call_counts_only_for_the_entrys_own_plugin() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         // `away` is another plugin's skill; `nope` is no skill at all.
         let compiled = compile_with_calls(&vfs, &literal_index(), "Run /away or /nope.\n");
         assert_eq!(compiled.body, "Run /away or /nope.\n");
@@ -4558,7 +4105,11 @@ mod tests {
     #[test]
     fn an_escaped_literal_call_loses_its_backslash_and_is_not_refused() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let compiled = compile_with_calls(
             &vfs,
             &literal_index(),
@@ -4575,7 +4126,11 @@ mod tests {
     #[test]
     fn an_escape_that_names_no_known_skill_is_left_as_written() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let body = "Regex: `s=(\\/tmp)=` and \\/away, \\$other:called.\n\n\
                     ```sh\nchown \"\\$owner:staff\" f\n```\n";
         let compiled = compile_with_calls(&vfs, &literal_index(), body);
@@ -4605,7 +4160,11 @@ mod tests {
     #[test]
     fn a_standalone_publish_matches_by_skill_name() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let build = || -> Result<SkillIndex, CoreError> { Ok(standalone_index()) };
         let (compiled, _) = try_compile_with(
             &vfs,
@@ -4648,25 +4207,24 @@ mod tests {
     #[test]
     fn a_plain_link_does_not_need_the_index() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let build = || -> Result<SkillIndex, CoreError> {
             Err(CoreError::refused(
                 "path-collision",
                 "two `dup` skills elsewhere",
             ))
         };
-        let (compiled, warnings) = try_compile_with(
-            &vfs,
-            SkillSource::lazy(&build),
-            "See [[called]]. Also [[nowhere]].\n",
-        )
-        .unwrap();
+        let (compiled, warnings) =
+            try_compile_with(&vfs, SkillSource::lazy(&build), "See [[called]].\n").unwrap();
+        assert_eq!(compiled.body, "See [called](../called/SKILL.md).\n");
         assert!(
-            compiled.body.starts_with("See [called.md]("),
-            "{}",
-            compiled.body
+            warnings.iter().all(|w| w.reason == "link-not-call"),
+            "{warnings:?}"
         );
-        assert!(warnings.is_empty(), "{warnings:?}");
 
         let err = try_compile_with(
             &vfs,
@@ -4681,9 +4239,13 @@ mod tests {
     #[test]
     fn the_related_view_records_a_broken_call_instead_of_refusing() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
         let skills = call_index("called");
-        let render = |skill: &IndexedSkill, _| Ok(skill.name.clone());
+        let render = |skill: &IndexedSkill| Ok(skill.name.clone());
         let calls = CallContext {
             skills: SkillSource::ready(&skills),
             render: &render,
@@ -4699,8 +4261,11 @@ mod tests {
         let body = "Run /[[called#Missing]], /[[nope]] and /[[Shared]].\n\n\
                     Notation: `/[[task-work]] T-1` example.\n";
         let related = related_of(&vfs, &source, body).unwrap();
-        assert_eq!(related.calls, vec!["Shared.md", "plugins/demo/called.md"]);
-        assert_eq!(related.unresolved, vec!["nope", "task-work"]);
+        assert_eq!(
+            related.calls,
+            vec!["marketplaces/m/plugins/p/skills/called/called.md"]
+        );
+        assert_eq!(related.unresolved, vec!["Shared", "nope", "task-work"]);
 
         // A build still refuses.
         let err = compile_note(&vfs, &source, body).unwrap_err().to_string();
@@ -4710,13 +4275,28 @@ mod tests {
     #[test]
     fn a_literal_call_in_an_embedded_note_is_refused() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
-        write(&vfs, "/vault/Snippet.md", b"Then run `/tools:called`.\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
+            b"# called\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Snippet.md",
+            b"Then run `/tools:called`.\n",
+        );
         let err = call_refusal_in(&vfs, &literal_index(), "# Demo\n\n![[Snippet]]\n");
-        assert!(err.contains("`/tools:called` in Snippet.md"), "{err}");
+        assert!(
+            err.contains("`/tools:called` in marketplaces/m/plugins/p/references/Snippet.md"),
+            "{err}"
+        );
 
         // The escape works inside an embed as well.
-        write(&vfs, "/vault/Snippet.md", b"Then run `\\/tools:called`.\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/references/Snippet.md",
+            b"Then run `\\/tools:called`.\n",
+        );
         let compiled = compile_with_calls(&vfs, &literal_index(), "# Demo\n\n![[Snippet]]\n");
         assert_eq!(compiled.body, "# Demo\n\nThen run `/tools:called`.\n");
     }
@@ -4728,7 +4308,11 @@ mod tests {
     #[test]
     fn an_unclosed_wikilink_does_not_swallow_the_lines_after_it() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/note.md", b"# Note\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/demo/references/note.md",
+            b"# Note\n",
+        );
         let err = compile_note(
             &vfs,
             &source(None),
@@ -4746,29 +4330,32 @@ mod tests {
     #[test]
     fn a_note_name_with_a_dot_resolves_to_the_note() {
         let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/v1.2 notes.md", b"# Notes\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/m/plugins/p/skills/demo/references/v1.2 notes.md",
+            b"# Notes\n",
+        );
         let compiled = compile_note(&vfs, &source(None), "See [[v1.2 notes]].\n").unwrap();
         assert!(
-            compiled.body.starts_with("See [v1.2 notes.md]("),
+            compiled.body.starts_with("See [v1.2 notes]("),
             "{}",
             compiled.body
         );
-        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
-        // A real extension that names nothing is still unresolved.
-        let compiled = compile_note(&vfs, &source(None), "See [[gone.pdf]].\n").unwrap();
-        assert_eq!(compiled.body, "See gone.pdf.\n");
+        // A real extension that names nothing links to nothing.
+        let err = compile_note(&vfs, &source(None), "See [[gone.pdf]].\n").unwrap_err();
+        assert!(err.to_string().contains("links to nothing"), "{err}");
     }
 
     /// A size alias is image geometry, not words for the page.
     #[test]
-    fn an_unresolved_embed_with_a_size_alias_shows_the_target() {
+    fn an_embed_of_nothing_is_refused_naming_it_as_written() {
         let vfs = demo_vault();
-        let compiled = compile_note(
-            &vfs,
-            &source(None),
-            "A ![[missing.png|100]] and ![[gone.png|640x480]] here.\n",
-        )
-        .unwrap();
-        assert_eq!(compiled.body, "A missing.png and gone.png here.\n");
+        let err = compile_note(&vfs, &source(None), "A ![[missing.png|100]] here.\n")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("`![[missing.png|100]]` links to nothing"),
+            "{err}"
+        );
     }
 }

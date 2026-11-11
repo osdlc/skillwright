@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use markdown_link::LinkIndex;
 use serde::{Deserialize, Serialize};
 
 use super::cascade::{Cascade, belongs_to};
@@ -74,37 +73,14 @@ impl LoadRequest {
 }
 
 /// Pass 1: every note of the layout, read into a node — its frontmatter,
-/// kind, plugin, marketplace and files.
-///
-/// Beside the report it returns the vault's link index, built from the
-/// layout's files, so pass 2 resolves every link without walking again. A
-/// plugin's own `assets/` is left out of the index.
+/// kind, plugin, marketplace and files. Pass 2 resolves links in the same
+/// layout.
 ///
 /// # Errors
 ///
 /// What [`crate::discover::discover_components`] refuses.
-pub fn read_notes(
-    vfs: &dyn Vfs,
-    layout: &Layout,
-) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
-    let report = discover_in(vfs, layout)?;
-    let files: Vec<PathBuf> = layout
-        .files
-        .iter()
-        .filter(|file| {
-            !matches!(
-                file.place,
-                Place::Shared {
-                    skill: None,
-                    dir: SharedDir::Assets,
-                    ..
-                }
-            )
-        })
-        .map(|file| file.path.clone())
-        .collect();
-    let links = crate::compile::link_index(&layout.root, &files)?;
-    Ok((report, links))
+pub fn read_notes(vfs: &dyn Vfs, layout: &Layout) -> Result<DiscoveryReport, CoreError> {
+    discover_in(vfs, layout)
 }
 
 /// The harnesses `names` selects, every one with a plugin format when empty.
@@ -182,7 +158,7 @@ pub fn load_in(
     let roots = selected_harnesses(&request.harnesses)?;
 
     // Pass 1.
-    let (scan, links) = read_notes(vfs, layout)?;
+    let scan = read_notes(vfs, layout)?;
     // The root file's own entry is configuration, not a note, and
     // `check_block_values` below refuses it naming the marketplace. A note in
     // another marketplace does not stop a build of this one.
@@ -310,15 +286,12 @@ pub fn load_in(
     // under the plugin it ships in, whether or not a given harness ships it:
     // which harness ships what is asked when the call is written.
     let checked = skills.len();
-    let index = skill_index(
-        plugins.values().flat_map(|plugin| {
-            plugin
-                .skills
-                .iter()
-                .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
-        }),
-        Some(links),
-    );
+    let index = skill_index(plugins.values().flat_map(|plugin| {
+        plugin
+            .skills
+            .iter()
+            .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
+    }));
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
@@ -342,6 +315,7 @@ pub fn load_in(
             component.content = Some(content);
             component.resolved = Some(resolved);
         }
+        plugin.references = shared_references(vfs, layout, &market, &plugin_name, &calls)?;
     }
     for warning in calls.warnings.into_inner() {
         if !warnings.contains(&warning) {
@@ -385,32 +359,21 @@ pub fn resolve_body(
     let record = calls
         .record
         .expect("a load compiles through a recording context");
-    let (mut resolved, content) = resolve_compiled(
-        vfs,
-        layout,
-        component,
-        note,
-        kind,
-        calls,
-        record,
-        index.links.as_ref(),
-    )?;
+    let (mut resolved, content) =
+        resolve_compiled(vfs, layout, component, note, kind, calls, record)?;
     fill_targets(&mut resolved, &index.targets);
     Ok((resolved, content))
 }
 
-/// The skills a call may name, each one's `targets`, and the vault's link
-/// index when pass 1 built it.
+/// The skills a call may name, and each one's `targets`.
 #[derive(Debug, Clone, Default)]
 pub struct Index {
     skills: SkillIndex,
     targets: BTreeMap<PathBuf, Option<Vec<String>>>,
-    links: Option<LinkIndex>,
 }
 
 fn skill_index<'a>(
     skills: impl Iterator<Item = (&'a DiscoveredComponent, Option<&'a str>)>,
-    links: Option<LinkIndex>,
 ) -> Index {
     let mut targets = BTreeMap::new();
     let skills = SkillIndex::new(
@@ -427,11 +390,7 @@ fn skill_index<'a>(
             })
             .collect::<Vec<_>>(),
     );
-    Index {
-        skills,
-        targets,
-        links,
-    }
+    Index { skills, targets }
 }
 
 fn recording_context<'a>(
@@ -475,7 +434,7 @@ fn refuse_carried_peers(projection: &SkillProjection, kind: &str) -> Result<(), 
 }
 
 /// The renderer a recording compile never calls.
-fn no_render(_: &IndexedSkill, _: bool) -> Result<String, CoreError> {
+fn no_render(_: &IndexedSkill) -> Result<String, CoreError> {
     Ok(String::new())
 }
 
@@ -488,7 +447,6 @@ fn resolve_compiled(
     kind: EntityKind,
     calls: &CallContext<'_>,
     record: &RefCell<Recorded>,
-    links: Option<&LinkIndex>,
 ) -> Result<(Resolved, SkillContent), CoreError> {
     let mut projection: SkillProjection = note.projection.clone();
     // Only the two kinds an invocation actually takes arguments at.
@@ -504,10 +462,8 @@ fn resolve_compiled(
         &CompileSource {
             vault_root: &layout.root,
             entry_path: &component.entry_path,
-            bundle_root: component.bundle_root.as_deref(),
             skill_name: &component.name,
             calls: Some(calls),
-            links,
             layout: Some(layout),
         },
         &mut projection,
@@ -855,7 +811,8 @@ fn group_by_plugin(
 
 /// What a plugin ships at its pack root, read from the layout: its
 /// `CHANGELOG.md`, and its `references/`, `scripts/` and `assets/` under
-/// their own names (spec section 9). Each is copied byte for byte.
+/// their own names (spec section 9). Each is copied byte for byte, except
+/// the Markdown in `references/`, which [`shared_references`] compiles.
 fn pack_files(
     vfs: &dyn Vfs,
     layout: &Layout,
@@ -867,7 +824,7 @@ fn pack_files(
             Place::Changelog => CHANGELOG_FILE,
             Place::Shared {
                 skill: None, path, ..
-            } => path.as_str(),
+            } if !shared_markdown(&file.place) => path.as_str(),
             _ => continue,
         };
         let Some(plugin) = file.plugin.as_ref().and_then(|p| plugins.get_mut(p)) else {
@@ -880,6 +837,68 @@ fn pack_files(
         });
     }
     Ok(())
+}
+
+/// Whether `place` is Markdown in a plugin's shared `references/`.
+fn shared_markdown(place: &Place) -> bool {
+    matches!(
+        place,
+        Place::Shared {
+            skill: None,
+            dir: SharedDir::References,
+            path,
+        } if path.to_lowercase().ends_with(".md")
+    )
+}
+
+/// The Markdown in plugin `plugin`'s shared `references/`, each compiled
+/// as a file with no component: its links start at step 2 and are written
+/// from where it lands, at the pack root (spec section 4 rule 3).
+///
+/// # Errors
+///
+/// What [`crate::compile::compile_note`] refuses.
+fn shared_references(
+    vfs: &dyn Vfs,
+    layout: &Layout,
+    market: &str,
+    plugin: &str,
+    calls: &CallContext<'_>,
+) -> Result<Vec<Resource>, CoreError> {
+    let record = calls
+        .record
+        .expect("a load compiles through a recording context");
+    let mut out = Vec::new();
+    for file in layout.files_of(market) {
+        let (Place::Shared { path, .. }, Some(owner)) = (&file.place, file.plugin.as_deref())
+        else {
+            continue;
+        };
+        if owner != plugin || !shared_markdown(&file.place) {
+            continue;
+        }
+        let raw = crate::skill::read_utf8(vfs, &file.path)?;
+        // Its frontmatter ships as written; only the body is compiled.
+        let split = frontmatter_lossless::split(&raw);
+        *record.borrow_mut() = Recorded::default();
+        let source = CompileSource {
+            vault_root: &layout.root,
+            entry_path: &file.path,
+            skill_name: path,
+            calls: Some(calls),
+            layout: Some(layout),
+        };
+        let compiled = crate::compile::compile_note(vfs, &source, split.body)?;
+        let text = frontmatter_lossless::compose(split.yaml, &compiled.body, split.shape);
+        out.push(Resource {
+            path: path.clone(),
+            content: ResourceContent::Body {
+                body: segments(&text, &record.borrow()),
+            },
+            executable: vfs.is_executable(&file.path),
+        });
+    }
+    Ok(out)
 }
 
 /// A warning for each plugin whose `CHANGELOG.md` has no heading naming the
@@ -998,18 +1017,22 @@ mod tests {
         vfs
     }
 
-    /// Pass 1 hands on an index of the files it read, `marketplaces/` only,
-    /// so pass 2 resolves links without walking again.
+    /// A plugin's shared Markdown reference is compiled, and its other
+    /// shared files are copied.
     #[test]
-    fn pass_one_indexes_what_it_read_and_nothing_outside_marketplaces() {
+    fn a_shared_markdown_reference_is_compiled_and_other_files_copied() {
         let vfs = vault();
-        let layout = crate::layout::read_layout(&vfs, Path::new("/vault")).unwrap();
-        let (report, links) = read_notes(&vfs, &layout).unwrap();
-        assert_eq!(report.components.len(), 3);
-        assert_eq!(
-            links.resolve("guide"),
-            Some("marketplaces/m/plugins/p/references/guide.md")
-        );
-        assert_eq!(links.resolve("elsewhere"), None);
+        vfs.write_file(
+            Path::new("/vault/marketplaces/m/plugins/p/references/data.txt"),
+            b"[[guide]]",
+        )
+        .unwrap();
+        let request = LoadRequest::new("/vault", crate::settings::SharedDefaults::default());
+        let market = load(&vfs, &request).unwrap();
+        let plugin = &market.plugins["p"];
+        let paths: Vec<&str> = plugin.references.iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(paths, ["references/guide.md"]);
+        let assets: Vec<&str> = plugin.assets.iter().map(|a| a.dest.as_str()).collect();
+        assert_eq!(assets, ["references/data.txt"]);
     }
 }

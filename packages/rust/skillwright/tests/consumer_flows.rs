@@ -503,7 +503,7 @@ fn a_bare_link_resolves_to_the_match_in_its_own_bundle() {
             .join(format!(".claude-plugin/packs/{plugin}/skills/doc"));
         let body = std::fs::read_to_string(pack.join("SKILL.md")).unwrap();
         assert!(
-            body.contains("See [contract.md](references/contract.md)."),
+            body.contains("See [contract](references/contract.md)."),
             "{body}"
         );
         let copy = std::fs::read_to_string(pack.join("references/contract.md")).unwrap();
@@ -610,7 +610,7 @@ fn plugin_fields_reach_the_codex_cursor_and_pi_manifests() {
 }
 
 #[test]
-fn a_skill_and_its_reference_name_the_skill_they_belong_to() {
+fn a_skill_and_its_reference_link_the_skill_they_belong_to() {
     let note = "---\ndescription: Work.\n---\nPart of [[work]].\n";
     let dir = vault(
         ROOT,
@@ -626,15 +626,17 @@ fn a_skill_and_its_reference_name_the_skill_they_belong_to() {
     let built = sw(&dir.path(), &["build", "--yes"]);
     assert_eq!(built.code, 0, "{}", built.text);
     let read = |rel: &str| std::fs::read_to_string(dir.dist().join(rel)).unwrap();
-    for (skill, named) in [
-        (".claude-plugin/packs/t/skills/work", "t:work"),
-        (".pi/packs/t/skills/t-work", "t-work"),
+    for skill in [
+        ".claude-plugin/packs/t/skills/work",
+        ".pi/packs/t/skills/t-work",
     ] {
-        let want = format!("Part of `{named}`.");
         let entry = read(&format!("{skill}/SKILL.md"));
-        assert!(entry.contains(&want), "{skill}: {entry}");
+        assert!(
+            entry.contains("Part of [work](SKILL.md)."),
+            "{skill}: {entry}"
+        );
         let reference = read(&format!("{skill}/references/bug-route.md"));
-        assert_eq!(reference, format!("{want}\n"), "{skill}");
+        assert_eq!(reference, "Part of [work](../SKILL.md).\n", "{skill}");
     }
 }
 

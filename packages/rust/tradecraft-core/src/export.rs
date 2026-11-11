@@ -1815,20 +1815,14 @@ mod tests {
     fn a_call_renders_each_harness_spelling_and_copies_nothing() {
         let vfs = calls_vault(
             "# a\n\nNext, run /[[b]] to finish.\n\nUsage: `/[[b|the b skill]] ISSUE-1 --flag`\n\n\
-             ```sh\n/[[b#Steps]] now\n```\n\nSee also [[b]].\n\nThen /[[c]].\n",
+             ```sh\n/[[b#Steps]] now\n```\n\nThen /[[c]].\n",
         );
         let report = build(&vfs);
 
-        for (tree, a, b, named, c) in [
-            (".claude-plugin", "a", "/tools:b", "tools:b", "/other:c"),
-            (".agents", "a", "$tools:b", "tools:b", "$other:c"),
-            (
-                ".cursor-plugin",
-                "tools-a",
-                "/tools-b",
-                "tools-b",
-                "/other-c",
-            ),
+        for (tree, a, b, c) in [
+            (".claude-plugin", "a", "/tools:b", "/other:c"),
+            (".agents", "a", "$tools:b", "$other:c"),
+            (".cursor-plugin", "tools-a", "/tools-b", "/other-c"),
         ] {
             let body = skill_md(&vfs, tree, a);
             assert!(
@@ -1841,11 +1835,6 @@ mod tests {
             );
             assert!(
                 body.contains(&format!("```sh\n{b} now\n```")),
-                "{tree}: {body}"
-            );
-            // A plain `[[b]]` names the skill: no sigil, no link, no copy.
-            assert!(
-                body.contains(&format!("See also `{named}`.")),
                 "{tree}: {body}"
             );
             assert!(body.contains(&format!("Then `{c}`.")), "{tree}: {body}");
@@ -1865,32 +1854,7 @@ mod tests {
     }
 
     #[test]
-    fn a_mention_keeps_its_alias_and_ignores_its_fragment() {
-        let vfs = calls_vault(
-            "# a\n\nUse [[b|the b skill]] next, see [[b#Steps]] and [[b#Steps|the steps]].\n",
-        );
-        build(&vfs);
-        for (tree, named) in [
-            (".claude-plugin", "tools:b"),
-            (".agents", "tools:b"),
-            (".cursor-plugin", "tools-b"),
-            (".pi", "tools-b"),
-        ] {
-            let skill = if named == "tools-b" { "tools-a" } else { "a" };
-            let body = skill_md(&vfs, tree, skill);
-            let want = format!(
-                "Use the b skill (`{named}`) next, see `{named}` and the steps (`{named}`)."
-            );
-            assert!(body.contains(&want), "{tree}: {body}");
-        }
-
-        let vfs = calls_vault("# a\n\nSee [[b#Missing]].\n");
-        let err = export_refusal(&vfs);
-        assert!(err.contains("fragment-unresolved"), "{err}");
-    }
-
-    #[test]
-    fn a_skills_link_to_itself_names_it_in_each_harness() {
+    fn a_skills_link_to_itself_is_a_link_to_its_skill_md_in_each_harness() {
         let vfs = MemVfs::new();
         let folder = "/vault/marketplaces/house/plugins/tools/skills/a";
         write(
@@ -1903,80 +1867,32 @@ mod tests {
             &format!("{folder}/references/x.md"),
             "Part of [[a]].\n",
         );
-        let check = |vfs: &MemVfs, tree: &str, skill: &str, named: &str| {
-            let want = format!("Part of `{named}`.");
+        let check = |vfs: &MemVfs, tree: &str, skill: &str| {
             let body = skill_md(vfs, tree, skill);
-            assert!(body.contains(&want), "{tree}: {body}");
+            assert!(body.contains("Part of [a](SKILL.md)."), "{tree}: {body}");
             let reference = text_at(
                 vfs,
                 &format!("/vault/dist/house/{tree}/packs/tools/skills/{skill}/references/x.md"),
             );
-            assert_eq!(reference, format!("{want}\n"), "{tree}");
+            assert_eq!(reference, "Part of [a](../SKILL.md).\n", "{tree}");
         };
-        build(&vfs);
-        for (tree, skill, named) in [
-            (".claude-plugin", "a", "tools:a"),
-            (".agents", "a", "tools:a"),
-            (".cursor-plugin", "tools-a", "tools-a"),
-            (".pi", "tools-a", "tools-a"),
+        let report = build(&vfs);
+        for (tree, skill) in [
+            (".claude-plugin", "a"),
+            (".agents", "a"),
+            (".cursor-plugin", "tools-a"),
+            (".pi", "tools-a"),
         ] {
-            check(&vfs, tree, skill, named);
+            check(&vfs, tree, skill);
         }
-
-        let mut defaults = SharedDefaults::default();
-        defaults.blocks.insert(
-            "pi".to_owned(),
-            serde_json::Map::from_iter([("naming".to_owned(), json!("bare"))]),
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|w| w.reason == "missing-version"),
+            "{:?}",
+            report.warnings
         );
-        build_with(&vfs, defaults);
-        check(&vfs, ".pi", "a", "a");
-    }
-
-    /// A self-link renders through the harness's naming, so a plugin that
-    /// chooses its Cursor or Pi naming gets its own name back in each case.
-    #[test]
-    fn a_skills_link_to_itself_follows_the_chosen_naming() {
-        let vfs = MemVfs::new();
-        let folder = "/vault/marketplaces/house/plugins/tools/skills/a";
-        write(
-            &vfs,
-            &format!("{folder}/a.md"),
-            &note_with_body("a", &[], "# a\n\nPart of [[a]].\n"),
-        );
-        write(
-            &vfs,
-            &format!("{folder}/references/x.md"),
-            "Part of [[a]].\n",
-        );
-        let check = |vfs: &MemVfs, tree: &str, skill: &str, named: &str| {
-            let want = format!("Part of `{named}`.");
-            let body = skill_md(vfs, tree, skill);
-            assert!(body.contains(&want), "{tree}: {body}");
-            let reference = text_at(
-                vfs,
-                &format!("/vault/dist/house/{tree}/packs/tools/skills/{skill}/references/x.md"),
-            );
-            assert_eq!(reference, format!("{want}\n"), "{tree}");
-        };
-
-        let mut defaults = SharedDefaults::default();
-        defaults.blocks.insert(
-            "cursor".to_owned(),
-            serde_json::Map::from_iter([("naming".to_owned(), json!("bare"))]),
-        );
-        build_with(&vfs, defaults);
-        check(&vfs, ".cursor-plugin", "a", "a");
-        check(&vfs, ".pi", "tools-a", "tools-a");
-
-        write(
-            &vfs,
-            "/vault/marketplaces/house/plugins/tools/tools.md",
-            "---\ndescription: Tools.\npi:\n  naming: bare\n\
-             cursor:\n  naming: bare\n---\n",
-        );
-        build(&vfs);
-        check(&vfs, ".cursor-plugin", "a", "a");
-        check(&vfs, ".pi", "a", "a");
     }
 
     #[test]
@@ -2000,9 +1916,11 @@ mod tests {
         let err = export_refusal(&vfs);
         assert!(err.contains("skill-call-unresolved"), "{err}");
 
+        // A call names a skill by name, so a note that is not one names
+        // nothing.
         let vfs = calls_vault("# a\n\nRun /[[plain]].\n");
         let err = export_refusal(&vfs);
-        assert!(err.contains("skill-call-not-skill"), "{err}");
+        assert!(err.contains("skill-call-unresolved"), "{err}");
     }
 
     #[test]
@@ -2024,22 +1942,12 @@ mod tests {
         );
         build(&vfs);
         let body = skill_md(&vfs, ".claude-plugin", "a");
-        // In prose and code alike the notation is written out, and nothing is
-        // copied, even when it names a skill.
+        // In prose and code alike the notation is written out, even when it
+        // names a skill.
         assert!(body.contains("Write /[[plain]] in prose"), "{body}");
         assert!(body.contains("and `/[[b]]` in code."), "{body}");
         assert!(body.contains("Cite /[[b]] too."), "{body}");
         assert!(!body.contains("/tools:b"), "{body}");
-        let copied = "/vault/dist/house/.claude-plugin/packs/tools/skills/a/references/vault";
-        for note in [
-            "marketplaces/house/plugins/tools/references/plain.md",
-            "marketplaces/house/plugins/tools/skills/b/b.md",
-        ] {
-            assert!(
-                !vfs.exists(Path::new(&format!("{copied}/{note}"))),
-                "{note}"
-            );
-        }
     }
 
     #[test]
@@ -2154,7 +2062,8 @@ mod tests {
         );
         assert!(
             a.contains(
-                "Run `/skill:tools-b`, then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`. See `tools-b`."
+                "Run `/skill:tools-b`, then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`. See \
+                 [b](../tools-b/SKILL.md)."
             ),
             "{a}"
         );
@@ -4032,11 +3941,10 @@ mod tests {
         );
     }
 
-    /// The refusal runs after the compile, so a peer the *body* reaches —
-    /// not just one seeded by a bundle folder — is refused rather than
-    /// silently dropped from the plugin.
+    /// A command's embed of a plugin file is a link to where the file ships
+    /// in the pack: nothing is copied beside the command.
     #[test]
-    fn a_command_embedding_a_plugin_file_is_refused() {
+    fn a_command_embedding_a_plugin_image_links_it() {
         let vfs = MemVfs::new();
         write(
             &vfs,
@@ -4052,16 +3960,14 @@ mod tests {
             marketplace: Some("beta".to_owned()),
             ..request(ExportMode::Build)
         };
-        let err = export_skills(&vfs, &request).unwrap_err();
-
-        let message = err.to_string();
-        assert!(message.contains("no-renderer"), "{message}");
-        assert!(message.contains("team-logo.png"), "{message}");
+        export_skills(&vfs, &request).unwrap();
+        let ship = text_at(
+            &vfs,
+            "/vault/dist/beta/.claude-plugin/packs/core/commands/ship.md",
+        );
         assert!(
-            !vfs.exists(Path::new(
-                "/vault/dist/beta/.claude-plugin/packs/core/commands/ship.md"
-            )),
-            "nothing is committed from a refused build"
+            ship.contains("![team-logo.png](../references/team-logo.png)"),
+            "{ship}"
         );
     }
 

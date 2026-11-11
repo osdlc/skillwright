@@ -195,8 +195,7 @@ breaking change:
   `CoreError::variant_name` names an error's variant, and
   `CoreError::reason_token` gives the reason token a host reports for it.
 
-`LinkIndex` (for `CompileSource::links`) and `FieldValue` (for
-`FieldEdit::set`) are re-exported, so a consumer needs no `markdown-link` or
+`FieldValue` (for `FieldEdit::set`) is re-exported, so a consumer needs no
 `yaml-splice` dependency of its own.
 
 ## Platforms

@@ -24,7 +24,7 @@ test('loadMarketplace returns the model with calls resolved', () => {
     writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
     writeFileSync(
       path.join(skills, 'review/review.md'),
-      '---\ndescription: Reviews a diff.\n---\n\nRun [[lint]] first.\n',
+      '---\ndescription: Reviews a diff.\n---\n\nRun /[[lint]] first.\n',
     )
     writeFileSync(path.join(skills, 'lint/lint.md'), '---\ndescription: Lints.\n---\n\nLint it.\n')
 

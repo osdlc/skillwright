@@ -47,7 +47,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::compile::{Closure, LinkSite, MARK_CLOSE, MARK_OPEN, Recorded};
+use crate::compile::{Closure, MARK_CLOSE, MARK_OPEN, Recorded};
 use crate::content::SkillContent;
 use crate::discover::{DiscoveredComponent, DiscoveryWarning};
 use crate::error::CoreError;
@@ -102,6 +102,9 @@ pub struct Plugin {
     pub commands: Vec<Component>,
     /// Files copied verbatim into the built pack.
     pub assets: Vec<Asset>,
+    /// The Markdown in its shared `references/`, compiled, each at its path
+    /// from the pack root.
+    pub references: Vec<Resource>,
     /// The plugin's `hooks/hooks.json`, parsed.
     #[serde(skip)]
     pub hooks_file: Option<HooksFile>,
@@ -233,39 +236,78 @@ pub enum Segment {
     },
 }
 
-/// A resolved link: the file it reaches and the markdown it renders as.
+/// A resolved link: where it is written, the file it reaches, and how it is
+/// written. Both paths are paths in a pack laid out as Claude Code's
+/// (`skills/<s>/…`, `commands/<c>.md`, shared files at the root); a translator
+/// maps them to its own folders.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedRef {
     /// The linked file, vault-relative.
     pub path: String,
-    /// The link text, escaped.
+    /// The link text, escaped. Empty for a Markdown link's destination.
     pub label: String,
-    /// The relative path from the emitting file, encoded, with its fragment.
-    pub href: String,
-    /// Written as an image.
-    pub image: bool,
-}
-
-impl From<LinkSite> for ResolvedRef {
-    fn from(site: LinkSite) -> Self {
-        ResolvedRef {
-            path: site.target,
-            label: site.label,
-            href: site.href,
-            image: site.image,
-        }
-    }
+    /// Where the text holding the link lands.
+    pub from: String,
+    /// Where the linked file lands.
+    pub to: String,
+    /// What follows the path: a fragment, encoded, with its `#`, or a
+    /// Markdown link's own `#…` or `?…` as written. Empty for none.
+    pub suffix: String,
+    /// How the link is written.
+    pub form: LinkForm,
+    /// The component whose folder holds the linked file. A pack that does
+    /// not contain it cannot hold the link (spec section 4 rule 6).
+    pub component: Option<LinkedComponent>,
+    /// The link as written, for an error.
+    pub written: String,
+    /// The file the link is in, vault-relative, for an error.
+    pub caller: String,
 }
 
 impl ResolvedRef {
-    /// The markdown the link is written as. The same on every harness.
-    pub fn markdown(&self) -> String {
-        if self.image {
-            format!("![{}]({})", self.label, self.href)
-        } else {
-            format!("[{}]({})", self.label, self.href)
+    /// The markdown the link is written as, from `from` to `to`.
+    pub fn markdown_at(&self, from: &str, to: &str) -> String {
+        let relative = crate::harness::translator::relative_path(from, to);
+        let encoded: Vec<String> = relative
+            .split('/')
+            .map(|segment| match segment {
+                ".." | "." => segment.to_owned(),
+                _ => markdown_link::encode_uri_component(segment),
+            })
+            .collect();
+        let href = format!("{}{}", encoded.join("/"), self.suffix);
+        match self.form {
+            LinkForm::Link => format!("[{}]({href})", self.label),
+            LinkForm::Image => format!("![{}]({href})", self.label),
+            LinkForm::Href => href,
         }
     }
+
+    /// The markdown the link is written as in a Claude Code pack.
+    pub fn markdown(&self) -> String {
+        self.markdown_at(&self.from, &self.to)
+    }
+}
+
+/// How a link is written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LinkForm {
+    /// `[label](href)`.
+    Link,
+    /// `![label](href)`, for an embedded image.
+    Image,
+    /// The href alone: a Markdown link's destination, rewritten in place.
+    Href,
+}
+
+/// A component a link reaches into.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LinkedComponent {
+    /// Its kind.
+    pub kind: EntityKind,
+    /// Its source name.
+    pub name: String,
 }
 
 /// A resolved call.
@@ -281,9 +323,6 @@ pub struct Call {
     pub bare_on: Vec<String>,
     /// The call as written, for a refusal.
     pub destination: String,
-    /// A plain `[[skill]]`: written as the skill's published name, with no
-    /// call sigil, rather than as an invocation.
-    pub mention: bool,
     /// The note the call is in, for a refusal.
     pub caller: String,
 }
@@ -387,7 +426,7 @@ pub(crate) fn segments(text: &str, record: &Recorded) -> Body {
                     call: record.calls.get(index).map(call_of)?,
                 },
                 'l' => Segment::Link {
-                    target: record.links.get(index).cloned()?.into(),
+                    target: record.links.get(index).cloned()?,
                 },
                 _ => return None,
             };
@@ -420,7 +459,6 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
         targets: None,
         bare_on: Vec::new(),
         destination: site.destination.clone(),
-        mention: site.mention,
         caller: site.caller.clone(),
     }
 }
@@ -462,14 +500,18 @@ mod tests {
                     shipped: true,
                 },
                 destination: "a".into(),
-                mention: false,
                 caller: "b.md".into(),
             }],
-            links: vec![LinkSite {
+            links: vec![ResolvedRef {
+                path: "x.md".into(),
                 label: "x".into(),
-                href: "references/x.md".into(),
-                image: false,
-                target: "x.md".into(),
+                from: "skills/b/SKILL.md".into(),
+                to: "skills/b/references/x.md".into(),
+                suffix: String::new(),
+                form: LinkForm::Link,
+                component: None,
+                written: "[[x]]".into(),
+                caller: "b.md".into(),
             }],
         }
     }
@@ -488,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn a_self_link_is_a_mention_segment() {
+    fn a_self_link_is_a_link_to_skill_md() {
         use crate::vfs::{MemVfs, Vfs};
         use std::path::Path;
         let vfs = MemVfs::new();
@@ -507,15 +549,15 @@ mod tests {
         let marketplace = load(&vfs, &request).unwrap();
         let skill = &marketplace.plugins["tools"].skills[0];
         let body = &skill.resolved.as_ref().unwrap().body;
-        let calls: Vec<(String, bool)> = body
+        let links: Vec<String> = body
             .segments
             .iter()
             .filter_map(|segment| match segment {
-                Segment::Call { call } => Some((call.skill.call_id(), call.mention)),
+                Segment::Link { target } => Some(target.markdown()),
                 _ => None,
             })
             .collect();
-        assert_eq!(calls, vec![("tools:a".to_owned(), true)]);
+        assert_eq!(links, vec!["[a](SKILL.md)".to_owned()]);
     }
 
     #[test]

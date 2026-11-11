@@ -421,6 +421,8 @@ strings. Nothing is renamed by hand. The Pi pack already uses these names.
 Scoped resolution, the link table, the real-path check, missing targets as
 errors, calls and plain links (D2, D3), hand-written calls, literal code, the
 leftover check, the embed rules of section 5, and plugin-root paths (D9).
+It also compiles the plugin's shared `references/` Markdown, which lands at
+the pack root.
 
 Tests first, through `build`, one test per rule in sections 4 and 5. All use
 plugin `tools`.

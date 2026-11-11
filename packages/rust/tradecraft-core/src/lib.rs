@@ -75,6 +75,7 @@ pub mod status;
 mod text;
 pub mod vault;
 pub mod vfs;
+#[cfg(test)]
 mod walk;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
@@ -105,9 +106,6 @@ pub use layout::{
     KIND_DIRS, Layout, LayoutFile, MARKETPLACES_DIR, Place, Position, RESERVED_NAMES, SharedDir,
     check_vault_root, find_vault_root, is_vault_root, name_problem, read_layout,
 };
-/// The vault's file index, for [`CompileSource::links`]: re-exported so a
-/// consumer needs no `markdown-link` dependency of its own.
-pub use markdown_link::LinkIndex;
 pub use paths::{
     LoadedVault, MarketplaceInputs, VaultMarketplace, dist_dir, load_vault, marketplace_inputs,
     resolve_path,
@@ -119,4 +117,3 @@ pub use settings::{
 };
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
-pub use walk::built_paths;

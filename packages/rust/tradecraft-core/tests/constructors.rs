@@ -8,8 +8,8 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
     BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportRequest,
-    ExportUnit, LinkIndex, MemVfs, RootFile, SharedDefaults, StaleKind, UnitStatus, Vfs,
-    discover_components, export_skills,
+    ExportUnit, MemVfs, RootFile, SharedDefaults, StaleKind, UnitStatus, Vfs, discover_components,
+    export_skills,
 };
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
@@ -56,11 +56,8 @@ fn a_load_request_takes_its_inputs() {
 fn a_compile_source_takes_its_inputs() {
     let vault = Path::new("/vault");
     let entry = Path::new("/vault/marketplaces/house/plugins/tools/skills/a/a.md");
-    let mut source = CompileSource::new(vault, entry, "a");
-    assert!(source.calls.is_none() && source.links.is_none());
-    source.bundle_root = Some(Path::new(
-        "/vault/marketplaces/house/plugins/tools/skills/a",
-    ));
+    let source = CompileSource::new(vault, entry, "a");
+    assert!(source.calls.is_none() && source.layout.is_none());
     assert_eq!(source.skill_name, "a");
 }
 
@@ -75,16 +72,6 @@ fn the_settings_types_build_from_default() {
     root.build = build;
     assert_eq!(root.defaults.targets, Some(vec!["claude".to_owned()]));
     assert_eq!(root.harness_set().len(), 1);
-}
-
-#[test]
-fn a_compile_source_takes_a_reexported_link_index() {
-    let note = "marketplaces/house/plugins/tools/skills/a/a.md";
-    let index = LinkIndex::build(&[note.to_owned()]);
-    let entry = Path::new("/vault").join(note);
-    let mut source = CompileSource::new(Path::new("/vault"), &entry, "a");
-    source.links = Some(&index);
-    assert!(source.links.is_some());
 }
 
 #[test]

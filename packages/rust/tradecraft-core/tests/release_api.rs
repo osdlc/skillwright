@@ -777,7 +777,7 @@ fn a_bare_pi_collision_names_the_bare_setting() {
 /// calls and mentions its own `hello` and calls `p1`'s, each by path.
 fn cursor_vault() -> MemVfs {
     let lead = "---\ndescription: Use lead.\n---\n\n\
-                Run /[[p2/skills/hello/hello]]. See [[p2/skills/hello/hello]]. \
+                Run /[[p2/skills/hello/hello]]. See [[hello]]. \
                 Then /[[p1/skills/hello/hello]].\n";
     root_vault(
         "---\n---\n",
@@ -858,7 +858,7 @@ fn a_body_names_the_prefixed_cursor_skill() {
     build_root(&vfs, SharedDefaults::default()).unwrap();
     let lead = cursor_skill(&vfs, "p2", "p2-lead").unwrap();
     assert!(
-        lead.contains("Run `/p2-hello`. See `p2-hello`. Then `/p1-hello`."),
+        lead.contains("Run `/p2-hello`. See [hello](../p2-hello/SKILL.md). Then `/p1-hello`."),
         "{lead}"
     );
     let claude = text_at(
@@ -1067,8 +1067,8 @@ fn every_spelling_of_a_link_to_what_never_ships_is_refused_alike() {
     let plugin_docs = "marketplaces/house/plugins/rev/docs/pg.md";
     let skill_docs = "marketplaces/house/plugins/rev/skills/a/docs";
     for (body, target) in [
-        ("![[pg]]", plugin_docs.to_owned()),
-        ("[[docs/pg]]", plugin_docs.to_owned()),
+        ("![[in]]", format!("{skill_docs}/in.md")),
+        ("[[../../docs/pg]]", plugin_docs.to_owned()),
         ("[x](../../docs/pg.md#part)", plugin_docs.to_owned()),
         ("[x]: ../../docs/pg.md", plugin_docs.to_owned()),
         ("[x](docs/in.md)", format!("{skill_docs}/in.md")),
@@ -1094,8 +1094,8 @@ fn every_spelling_of_a_link_to_what_never_ships_is_refused_alike() {
 #[test]
 fn a_link_that_is_not_one_or_that_ships_is_left_alone() {
     let body = "---\ndescription: Use it.\n---\n\n`[c](docs/in.md)` <!-- [c](docs/in.md) --> \
-                [web](https://example.com/docs/in.md) [ok](references/r.md) \
-                [gone](docs/nope.md)\n\n```\n[c](docs/in.md)\n```\n";
+                [web](https://example.com/docs/in.md) [ok](references/r.md)\n\n\
+                ```\n[c](docs/in.md)\n```\n";
     let vfs = root_vault(
         "---\n---\n",
         &[
@@ -1139,8 +1139,8 @@ fn a_link_to_a_component_named_for_a_never_ship_folder_builds() {
         &[
             (
                 "plugins/rev/skills/a/a.md",
-                "---\ndescription: Use a.\n---\n\n[[guide]] and \
-                 [[plugins/rev/skills/docs/references/ref]]\n",
+                "---\ndescription: Use a.\n---\n\n[[docs]] and \
+                 [[../docs/references/ref]]\n",
             ),
             (
                 "plugins/rev/skills/b/b.md",

@@ -610,6 +610,12 @@ export interface Plugin {
   assets: Asset[];
 
   /**
+   * The Markdown in its shared `references/`, compiled, each at its path
+   * from the pack root.
+   */
+  references: Resource[];
+
+  /**
    * The harnesses that name this plugin's skills bare against their
    * profile's default: `<harness>: {naming: bare}` where the default
    * prefixes.
@@ -845,19 +851,57 @@ export type Segment =
       call: Call;
     };
 
-/** A resolved link: the file it reaches and the markdown it renders as. */
+/**
+ * A resolved link: where it is written, the file it reaches, and how it is
+ * written. Both paths are paths in a pack laid out as Claude Code's
+ * (`skills/<s>/…`, `commands/<c>.md`, shared files at the root); a translator
+ * maps them to its own folders.
+ */
 export interface ResolvedRef {
   /** The linked file, vault-relative. */
   path: string;
 
-  /** The link text, escaped. */
+  /** The link text, escaped. Empty for a Markdown link's destination. */
   label: string;
 
-  /** The relative path from the emitting file, encoded, with its fragment. */
-  href: string;
+  /** Where the text holding the link lands. */
+  from: string;
 
-  /** Written as an image. */
-  image: boolean;
+  /** Where the linked file lands. */
+  to: string;
+
+  /**
+   * What follows the path: a fragment, encoded, with its `#`, or a
+   * Markdown link's own `#…` or `?…` as written. Empty for none.
+   */
+  suffix: string;
+
+  /** How the link is written. */
+  form: LinkForm;
+
+  /**
+   * The component whose folder holds the linked file. A pack that does
+   * not contain it cannot hold the link (spec section 4 rule 6).
+   */
+  component: LinkedComponent | null;
+
+  /** The link as written, for an error. */
+  written: string;
+
+  /** The file the link is in, vault-relative, for an error. */
+  caller: string;
+}
+
+/** How a link is written. */
+export type LinkForm = "link" | "image" | "href";
+
+/** A component a link reaches into. */
+export interface LinkedComponent {
+  /** Its kind. */
+  kind: EntityKind;
+
+  /** Its source name. */
+  name: string;
 }
 
 /** A resolved call. */
@@ -876,12 +920,6 @@ export interface Call {
 
   /** The call as written, for a refusal. */
   destination: string;
-
-  /**
-   * A plain `[[skill]]`: written as the skill's published name, with no
-   * call sigil, rather than as an invocation.
-   */
-  mention: boolean;
 
   /** The note the call is in, for a refusal. */
   caller: string;
