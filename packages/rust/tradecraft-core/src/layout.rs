@@ -630,8 +630,20 @@ pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
         marketplace: None,
         plugin: None,
     };
-    for entry in walk.list(root)? {
-        if entry.is_dir && (entry.name == PLUGINS_DIR || kind_or_hooks(&entry.name)) {
+    // Root entries other than the three the vault uses are left alone and not
+    // read (spec section 3), so a symlink among them is not checked: only its
+    // name and kind matter.
+    for entry in vfs.read_dir(root)? {
+        let path = root.join(&entry.name);
+        let is_dir = if !vfs.is_symlink(&path) {
+            entry.is_dir
+        } else if [ROOT_FILE, MARKETPLACES_DIR, DIST_DIR].contains(&entry.name.as_str()) {
+            walk.linked(&path)?
+        } else {
+            vfs.canonicalize(&path)
+                .is_ok_and(|target| vfs.metadata(&target).is_ok_and(|m| m.is_dir))
+        };
+        if is_dir && (entry.name == PLUGINS_DIR || kind_or_hooks(&entry.name)) {
             walk.problems
                 .add(Case::KindFolderOutOfPlace, format!("{}/", entry.name));
         }

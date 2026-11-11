@@ -829,3 +829,66 @@ fn sibling_folder_links_that_lead_back_are_refused() {
         "{err}"
     );
 }
+
+/// Root entries other than `skillwright.md`, `marketplaces/` and `dist/` are
+/// left alone and not read (spec section 3), so a symlink there, even a
+/// dangling one, does not refuse the vault.
+#[cfg(unix)]
+#[test]
+fn a_symlink_at_the_vault_root_is_left_alone() {
+    let tmp = std::env::temp_dir().join(format!("tc-layout-root-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let tools = tmp.join("marketplaces/acme/plugins/tools");
+    std::fs::create_dir_all(tools.join("skills/review")).unwrap();
+    std::fs::write(tmp.join("skillwright.md"), ROOT).unwrap();
+    std::fs::write(tmp.join("marketplaces/acme/acme.md"), NOTE).unwrap();
+    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
+    std::fs::write(tools.join("skills/review/review.md"), SKILL).unwrap();
+    std::fs::write(tmp.join("CLAUDE.md"), "x").unwrap();
+    std::os::unix::fs::symlink(tmp.join("CLAUDE.md"), tmp.join("AGENTS.md")).unwrap();
+    std::os::unix::fs::symlink(std::env::temp_dir(), tmp.join("notes")).unwrap();
+    std::os::unix::fs::symlink(tmp.join("missing"), tmp.join("broken")).unwrap();
+
+    let result = read_layout(&tradecraft_core::NativeVfs, &tmp);
+    std::fs::remove_dir_all(&tmp).unwrap();
+    let layout = result.unwrap();
+    assert!(
+        layout
+            .files
+            .iter()
+            .all(|f| f.rel.starts_with("marketplaces/"))
+    );
+}
+
+/// A symlinked folder inside a skill that the layout walk accepts builds,
+/// and its files ship under the skill.
+#[cfg(unix)]
+#[test]
+fn a_symlinked_folder_in_a_skill_builds() {
+    let tmp = std::env::temp_dir().join(format!("tc-layout-skill-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let tools = tmp.join("marketplaces/acme/plugins/tools");
+    std::fs::create_dir_all(tools.join("skills/review")).unwrap();
+    std::fs::create_dir_all(tools.join("references")).unwrap();
+    std::fs::write(tmp.join("skillwright.md"), ROOT).unwrap();
+    std::fs::write(tmp.join("marketplaces/acme/acme.md"), NOTE).unwrap();
+    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
+    std::fs::write(tools.join("skills/review/review.md"), SKILL).unwrap();
+    std::fs::write(tools.join("references/x.md"), "x").unwrap();
+    std::os::unix::fs::symlink(
+        tools.join("references"),
+        tools.join("skills/review/references"),
+    )
+    .unwrap();
+
+    let vfs = tradecraft_core::NativeVfs;
+    let result = load_vault(&vfs, &tmp, None).and_then(|loaded| {
+        let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
+        export_skills(&vfs, &request)
+    });
+    let shipped = tmp.join("dist/acme/.claude-plugin/packs/tools/skills/review/references/x.md");
+    let exists = shipped.exists();
+    std::fs::remove_dir_all(&tmp).unwrap();
+    result.unwrap();
+    assert!(exists, "no {}", shipped.display());
+}

@@ -61,7 +61,7 @@
 //! flattened form runs [`crate::compile::compile_projection`] over what this
 //! read returns.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
@@ -204,9 +204,9 @@ pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
 /// raised rather than dropped: shipping less, silently, is what the
 /// verbatim-carry rule exists to prevent.
 ///
-/// The walk is unbounded in depth on purpose. [`crate::vfs::Vfs::read_dir`]
-/// reports a symlinked directory as a non-directory, so there is no cycle to
-/// terminate, and any depth bound would silently drop the peers below it.
+/// The walk is unbounded in depth on purpose: any depth bound would silently
+/// drop the peers below it. A symlinked folder is followed, unless its target
+/// is a folder the walk is already inside, which would never end.
 fn read_resources(
     vfs: &dyn Vfs,
     dir: Option<&Path>,
@@ -224,12 +224,22 @@ fn read_resources(
         base: &Path,
         entry: &Path,
         dir: &Path,
+        inside: &mut Vec<PathBuf>,
         out: &mut Vec<(String, Vec<u8>, bool)>,
     ) -> Result<(), CoreError> {
+        inside.push(vfs.canonicalize(dir)?);
         for child in vfs.read_dir(dir)? {
             let path = dir.join(&child.name);
-            if child.is_dir {
-                collect(vfs, base, entry, &path, out)?;
+            let target = (!child.is_dir && vfs.is_symlink(&path))
+                .then(|| vfs.canonicalize(&path).ok())
+                .flatten()
+                .filter(|target| vfs.metadata(target).is_ok_and(|m| m.is_dir));
+            if target.as_ref().is_some_and(|t| inside.contains(t)) {
+                continue;
+            }
+            let linked_dir = target.is_some();
+            if child.is_dir || linked_dir {
+                collect(vfs, base, entry, &path, inside, out)?;
                 continue;
             }
             if path == entry {
@@ -241,11 +251,12 @@ fn read_resources(
             let bytes = vfs.read_file(&path)?;
             out.push((forward_slashed(relative), bytes, vfs.is_executable(&path)));
         }
+        inside.pop();
         Ok(())
     }
 
     let mut out = Vec::new();
-    collect(vfs, dir, entry, dir, &mut out)?;
+    collect(vfs, dir, entry, dir, &mut Vec::new(), &mut out)?;
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
 }
