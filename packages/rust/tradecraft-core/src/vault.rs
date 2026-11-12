@@ -99,14 +99,9 @@ pub struct VaultNote {
 /// empty description. The name is the file name slugified, via
 /// [`crate::discover::default_name`], the one derivation the scan uses too.
 ///
-/// Reads the note as a skill. [`read_vault_note`] reads one of another kind.
-pub fn read_vault_skill(vfs: &dyn Vfs, skill_path: &Path) -> Result<VaultNote, CoreError> {
-    read_vault_note(vfs, skill_path, EntityKind::Skill)
-}
-
-/// [`read_vault_skill`] for a note whose kind the caller has resolved from
-/// its folder. The kind says which of the note's keys are skillwright's: on
-/// a plugin note `license` is the pack's, on a skill it is the spec's.
+/// The kind, resolved by the caller from the note's folder, says which of
+/// the note's keys are skillwright's: on a plugin note `license` is the
+/// pack's, on a skill it is the spec's.
 pub fn read_vault_note(
     vfs: &dyn Vfs,
     skill_path: &Path,
@@ -405,6 +400,10 @@ mod tests {
     use crate::vfs::MemVfs;
     use std::path::PathBuf;
 
+    fn read_vault_skill(vfs: &dyn Vfs, skill_path: &Path) -> Result<VaultNote, CoreError> {
+        read_vault_note(vfs, skill_path, EntityKind::Skill)
+    }
+
     /// A vault with one note at `skills/<name>.md`.
     fn vault(name: &str, source: &str) -> (MemVfs, PathBuf) {
         let vfs = MemVfs::new();
@@ -514,6 +513,7 @@ mod tests {
                 resources: Vec::new(),
             },
             &["pi".to_owned()],
+            None,
         )
         .unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();

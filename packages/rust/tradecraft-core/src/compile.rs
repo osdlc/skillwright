@@ -20,7 +20,7 @@
 //! Code is literal: nothing in a code span or fenced block is a link, an
 //! embed or a call, and it ships as written.
 //!
-//! [`crate::vault::read_vault_skill`] still reads the body verbatim — the
+//! [`crate::vault::read_vault_note`] still reads the body verbatim — the
 //! vault's bytes are canonical and a read must not rewrite them. Compilation
 //! is a separate pass between the read and the projection:
 //! [`compile_note`] takes the body the read produced and returns it compiled,

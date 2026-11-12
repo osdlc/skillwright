@@ -527,7 +527,9 @@ impl Shape {
 }
 
 /// The per-kind field reference, in Markdown. `docs/reference/fields.md` is
-/// this text, and a test holds the two together.
+/// this text, and the `field_reference` test holds the two together. Public
+/// only for that test.
+#[doc(hidden)]
 #[must_use]
 pub fn field_reference() -> String {
     let mut out = String::from(

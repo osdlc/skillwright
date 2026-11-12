@@ -16,6 +16,5 @@
 //! path and cause.
 
 pub use vfs_seam::{
-    Clock, DirEntry, FixedClock, MemVfs, Metadata, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite,
-    Vfs, VfsError, normalize,
+    DirEntry, MemVfs, Metadata, NativeVfs, PreviewWrite, Vfs, VfsError, ms_f64_to_ns, normalize,
 };

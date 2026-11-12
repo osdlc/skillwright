@@ -8,7 +8,7 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
     BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportUnit, MemVfs,
-    RootFile, SharedDefaults, StaleKind, UnitStatus, VaultRequest, Vfs, discover_components,
+    RootFile, SharedDefaults, UnitStatus, VaultRequest, Vfs, discover_components,
 };
 
 /// `build_vault` over the one marketplace a request covers: its report.
@@ -107,16 +107,13 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
 }
 
 #[test]
-fn each_as_str_is_the_serialized_word() {
+fn each_unit_status_as_str_is_the_serialized_word() {
     fn wire<T: serde::Serialize>(value: T) -> String {
         serde_json::to_value(value)
             .unwrap()
             .as_str()
             .unwrap()
             .to_owned()
-    }
-    for kind in [StaleKind::Plugin, StaleKind::File, StaleKind::EmptyDir] {
-        assert_eq!(kind.as_str(), wire(kind));
     }
     for status in [
         UnitStatus::Ok,
