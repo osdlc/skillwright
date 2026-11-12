@@ -1,12 +1,123 @@
 {
   "schema": 1,
   "pr": 163,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "0df1bf68a57f75af9e6535488620b2125e2e8447",
+  "base": "aef88aa232d702d5eafaba1a15465c64f10a59e6",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7v2qm",
     "at": "2026-11-12T09:40:22.143Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/compile/mod.rs",
+      "line": 188,
+      "title": "Intra-doc link to refuse_marks broke when it moved to validate.rs",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/compile/validate.rs",
+      "line": 21,
+      "title": "'Every transformation above' points at nothing after the move",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/model/config.rs",
+      "line": 10,
+      "title": "Unresolved link crate::model::Cascade; 'never by a host' restates pub(crate)",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/layout.rs",
+      "line": 816,
+      "title": "Second within() site (walk-ancestor check) has no test for the new unsafe-path refusal",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/mod.rs",
+      "line": 11,
+      "title": "pub mod naming adds a third public path for two re-exported functions",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/skillwright/CHANGELOG.md",
+      "line": 18,
+      "title": "BumpFlags breaking line omits removed fields and the BumpLevel move",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/cli.rs",
+      "line": 57,
+      "title": "ReadOnlyGlobals::run doc 'and nothing written' is unclear",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/cli.rs",
+      "line": 59,
+      "title": "Option<&String> parameter; take Option<&str>",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 49,
+      "title": "Split use lines for one module",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/vfs.rs",
+      "line": 12,
+      "title": "Public module doc names a pub(crate) helper and counts it",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
