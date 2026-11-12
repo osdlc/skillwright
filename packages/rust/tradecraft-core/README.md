@@ -120,8 +120,7 @@ assert!(vfs.exists(Path::new("/vault/dist/house/.claude-plugin/marketplace.json"
 ```
 
 The steps inside are public if a host needs them apart: `read_layout`,
-`read_root_file`, `parse_root_file` and `dist_dir`. `resolve_path` resolves a
-path a user typed, as a shell would.
+`read_root_file`, `parse_root_file` and `dist_dir`.
 
 ## What it covers
 
@@ -129,11 +128,11 @@ path a user typed, as a shell would.
 |---|---|
 | `layout` | Find the vault root, check every folder, and place a path by its position |
 | `discover` | Read every note of a vault by its position and vet it |
-| `vault` | Read a skill as the vault stores it: `<name>/<name>.md` and the folder it owns |
+| `note` | Read a skill as the vault stores it: `<name>/<name>.md` and the folder it owns |
 | `compile` | Expand embeds, rewrite links and collect the files a skill references |
-| `projection` | Render one skill into one tool's files, through `agent-adapt` |
 | `export` | Build the vault into one marketplace tree per tool, or check the tree for drift |
-| `paths` | Load a vault: its root file and its marketplaces |
+| `model` | Load a vault, then resolve it into the marketplace model the translators read |
+| `harness` | Each harness's row of data, and the translator that writes the model for it |
 | `field_edit` | Edit frontmatter fields and keep every other byte |
 | `guard` | Containment resolved through links |
 | `vfs` | The filesystem seam |
@@ -155,7 +154,7 @@ Some names the library writes are fixed:
 ## Generated output
 
 Each harness's packs folder and marketplace manifest are generated output,
-replaced on every build. `HarnessProfile::owned_paths` names them, for example
+replaced on every build. `Harness::owned_paths` names them, for example
 `.agents/packs/` and `.agents/plugins/marketplace.json`. A build leaves
 everything else in `.agents/`, `.pi/`, `.claude-plugin/` and `.cursor-plugin/`
 alone.

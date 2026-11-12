@@ -237,7 +237,8 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
 /// `path` relative to `root`, forward-slashed.
 fn vault_relative(root: &Path, path: &Path) -> String {
-    crate::config::relative_path(root, path)
+    path.strip_prefix(root)
+        .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
 }
