@@ -39,6 +39,7 @@
 //! the model keeps the expanded text, not a segment.
 
 pub mod cascade;
+pub(crate) mod config;
 pub mod load;
 
 use std::collections::BTreeMap;
@@ -50,11 +51,11 @@ use crate::compile::{MARK_CLOSE, MARK_OPEN, Recorded};
 use crate::content::SkillContent;
 use crate::discover::{DiscoveredComponent, DiscoveryWarning};
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 use crate::harness::Harness;
 use crate::layout::Position;
 use crate::refusal;
+use config::MarketplaceConfig;
 
 pub use load::{LoadRequest, load, resolve_body};
 
