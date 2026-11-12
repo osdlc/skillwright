@@ -362,8 +362,21 @@ marketplace (rule 8, decision D2).
 
    - A file inside another component's folder is never found by name. Link it
      with a path (rule 4), such as `[[../setup/references/notes.md]]`.
-   - `[[guide]]` matches `guide.md`. A name with an extension,
-     `[[run.sh]]`, matches that exact file name.
+   - How a name matches a file name:
+     - A name with no extension matches the file of that name or that name
+       plus `.md`. `[[guide]]` matches `guide.md`.
+     - A name with an extension matches only the file of that name.
+       `[[run.sh]]` matches `run.sh`, never `run.sh.md`. An extension is a
+       dot at the end of the name followed by letters and digits, at least
+       one a letter, such as `.sh` or `.mp3`. So `[[v1.2 notes]]` has none
+       and matches `v1.2 notes.md`.
+     - Case is ignored. A link that matches only by ignoring case, such as
+       `[[Guide]]` for `guide.md`, works and warns (`link-case`). The warning
+       names the linking file, the link and the file it matched.
+     - Two files whose names differ only in case, such as `guide.md` and
+       `Guide.md`, both match `[[guide]]`. That is two matches, an error.
+     - The same holds for a wikilink with a path (rule 4): a path with no
+       extension may leave out `.md`, and one with an extension may not.
    - `[[setup]]` matches the component `setup` in step 2.
    - A file that belongs to no component, such as one in the plugin's shared
      `references/`, has no step 1. It starts at step 2.

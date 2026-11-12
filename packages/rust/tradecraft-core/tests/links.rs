@@ -379,6 +379,105 @@ fn a_name_matches_at_any_depth() {
     assert!(author(&vfs).contains("[layout](references/design/layout.md)"));
 }
 
+/// The one warning with `reason`.
+fn warned<'w>(warnings: &'w [DiscoveryWarning], reason: &str) -> &'w DiscoveryWarning {
+    let found: Vec<&DiscoveryWarning> = warnings.iter().filter(|w| w.reason == reason).collect();
+    match found[..] {
+        [one] => one,
+        _ => panic!("not one `{reason}` warning: {warnings:?}"),
+    }
+}
+
+#[test]
+fn a_name_matching_a_file_only_by_case_warns_naming_link_file_and_note() {
+    let vfs = vault(&[
+        (AUTHOR, &skill("Follow [[Guide]].")),
+        ("references/guide.md", "Shared.\n"),
+    ]);
+    let warnings = build(&vfs).unwrap();
+    assert!(
+        author(&vfs).contains("[Guide](../../references/guide.md)"),
+        "{}",
+        author(&vfs)
+    );
+    let warning = warned(&warnings, "link-case");
+    assert!(warning.path.ends_with(AUTHOR), "{warning:?}");
+    assert!(warning.detail.contains("[[Guide]]"), "{warning:?}");
+    assert!(
+        warning
+            .detail
+            .contains(&format!("{PLUGIN}/references/guide.md")),
+        "{warning:?}"
+    );
+}
+
+#[test]
+fn a_name_matching_a_component_only_by_case_warns() {
+    let vfs = vault(&[
+        (AUTHOR, &skill("Then run [[Setup]].")),
+        ("skills/setup/setup.md", &skill("Setup.")),
+    ]);
+    let warnings = build(&vfs).unwrap();
+    let warning = warned(&warnings, "link-case");
+    assert!(warning.detail.contains("[[Setup]]"), "{warning:?}");
+    assert!(
+        warning
+            .detail
+            .contains(&format!("{PLUGIN}/skills/setup/setup.md")),
+        "{warning:?}"
+    );
+}
+
+#[test]
+fn a_name_spelled_as_its_file_does_not_warn() {
+    let vfs = vault(&[
+        (AUTHOR, &skill("Follow [[guide]] and [[Style.md]].")),
+        ("references/guide.md", "Shared.\n"),
+        ("references/Style.md", "Style.\n"),
+    ]);
+    let warnings = build(&vfs).unwrap();
+    assert!(
+        warnings.iter().all(|w| w.reason != "link-case"),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn names_that_differ_only_in_case_are_ambiguous() {
+    let vfs = vault(&[
+        (AUTHOR, &skill("Follow [[guide]].")),
+        ("references/guide.md", "Lower.\n"),
+        ("references/Guide.md", "Upper.\n"),
+    ]);
+    let err = refusal(&vfs);
+    names(&err, AUTHOR, "[[guide]]", "section 4 rule 3");
+    assert!(err.contains("references/guide.md"), "{err}");
+    assert!(err.contains("references/Guide.md"), "{err}");
+}
+
+#[test]
+fn a_name_with_an_extension_matches_only_that_file() {
+    let vfs = vault(&[
+        (AUTHOR, &skill("Run [[run.sh]].")),
+        ("scripts/run.sh", "#!/bin/sh\n"),
+        ("references/run.sh.md", "About run.sh.\n"),
+    ]);
+    build(&vfs).unwrap();
+    assert!(
+        author(&vfs).contains("[run.sh](../../scripts/run.sh)"),
+        "{}",
+        author(&vfs)
+    );
+
+    for link in ["[[run.sh]]", "[[../../references/run.sh]]"] {
+        let vfs = vault(&[
+            (AUTHOR, &skill(&format!("Run {link}."))),
+            ("references/run.sh.md", "About run.sh.\n"),
+        ]);
+        names(&refusal(&vfs), AUTHOR, link, "section 4 rule 11");
+    }
+}
+
 #[test]
 fn a_name_matching_twice_is_an_error_naming_both() {
     let vfs = vault(&[

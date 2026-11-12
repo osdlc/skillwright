@@ -1428,9 +1428,9 @@ impl<'a> Renderer<'a> {
 
     /// `relative` from the folder of `from_file`. It must stay inside the
     /// marketplace (containment rule 1) and name a file the layout read; a
-    /// wikilink's path may leave out `.md`. A path below a symlink in a
-    /// never-ship folder, which the layout does not follow, resolves to that
-    /// symlink, so the link is refused as one that never ships.
+    /// wikilink's path with no extension may leave out `.md`. A path below a
+    /// symlink in a never-ship folder, which the layout does not follow,
+    /// resolves to that symlink, so the link is refused as one that never ships.
     fn resolve_path(
         &self,
         from_file: &Path,
@@ -1447,7 +1447,7 @@ impl<'a> Renderer<'a> {
         }
         let with_md = PathBuf::from(format!("{}.md", joined.display()));
         let mut candidates = vec![joined.clone()];
-        if wiki {
+        if wiki && !names_extension(relative) {
             candidates.push(with_md);
         }
         candidates
@@ -1466,20 +1466,52 @@ impl<'a> Renderer<'a> {
     }
 
     /// A name-only link: the linking file's component folder at any depth,
-    /// then the plugin's shared folders and its components by name.
+    /// then the plugin's shared folders and its components by name. Case is
+    /// ignored, with a warning when it differs; a name with no extension may
+    /// leave out `.md` (section 4 rule 3).
     fn resolve_name(
         &self,
         from_file: &Path,
         name: &str,
         written: &str,
     ) -> Result<PathBuf, CoreError> {
+        let found = self.find_name(from_file, name, written)?;
+        self.warn_case(&found, name, written, from_file);
+        Ok(found)
+    }
+
+    /// Warns when `found` matched `name` only by ignoring case.
+    fn warn_case(&self, found: &Path, name: &str, written: &str, from_file: &Path) {
+        let Some(context) = self.call_context else {
+            return;
+        };
+        let spelled = found
+            .file_name()
+            .map(|file| file.to_string_lossy())
+            .is_some_and(|file| file == name || file == format!("{name}.md"));
+        if spelled {
+            return;
+        }
+        context.warn(
+            self.relative_or_verbatim(from_file),
+            "link-case",
+            format!(
+                "`{written}` matches {} only by ignoring case; spell the name as the file \
+                 does (section 4 rule 3)",
+                self.relative_or_verbatim(found)
+            ),
+        );
+    }
+
+    /// The file a name-only link names, by the two steps of rule 3.
+    fn find_name(&self, from_file: &Path, name: &str, written: &str) -> Result<PathBuf, CoreError> {
         let wanted = name.to_lowercase();
-        let wanted_md = format!("{wanted}.md");
+        let wanted_md = (!names_extension(name)).then(|| format!("{wanted}.md"));
         let named = |file: &LayoutFile| {
             file.path
                 .file_name()
                 .map(|found| found.to_string_lossy().to_lowercase())
-                .is_some_and(|found| found == wanted || found == wanted_md)
+                .is_some_and(|found| found == wanted || wanted_md.as_ref() == Some(&found))
         };
         if let Some(folder) = self.component_folder(from_file) {
             let hits: Vec<&LayoutFile> = self
@@ -1770,7 +1802,21 @@ pub(crate) fn extension_of_target(target: &str) -> Option<String> {
     }
 }
 
-/// The extension of a resolved path, same convention.
+/// Whether a wikilink's target ends in a file extension: a dot, then letters
+/// and digits with at least one letter, such as `.sh`. Such a target names
+/// that file only; any other may leave out `.md`, so `[[v1.2 notes]]` finds
+/// `v1.2 notes.md` (section 4 rule 3).
+fn names_extension(target: &str) -> bool {
+    let base = basename(target);
+    base.rfind('.').filter(|at| *at > 0).is_some_and(|at| {
+        let ext = &base[at + 1..];
+        !ext.is_empty()
+            && ext.chars().all(|c| c.is_ascii_alphanumeric())
+            && ext.chars().any(|c| c.is_ascii_alphabetic())
+    })
+}
+
+/// The extension of a resolved path, as [`extension_of_target`] reads it.
 fn extension_of_path(path: &Path) -> Option<String> {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -3932,6 +3978,16 @@ mod tests {
         // A real extension that names nothing links to nothing.
         let err = compile_note(&vfs, &source(None), "See [[gone.pdf]].\n").unwrap_err();
         assert!(err.to_string().contains("links to nothing"), "{err}");
+    }
+
+    #[test]
+    fn an_extension_is_a_dot_then_letters_and_digits() {
+        for target in ["run.sh", "a/b.mp3", "x.7z", "notes.MD"] {
+            assert!(names_extension(target), "{target}");
+        }
+        for target in ["guide", "v1.2", "v1.2 notes", ".hidden", "a.b/c", "x."] {
+            assert!(!names_extension(target), "{target}");
+        }
     }
 
     /// A size alias is image geometry, not words for the page.
