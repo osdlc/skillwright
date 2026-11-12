@@ -351,13 +351,20 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
 }
 
 /// The type a `#[serde(from = "...")]` type crosses the wire as, so a request
-/// spells that type and never the Rust one.
+/// spells that type and never the Rust one. One TS type serves both
+/// directions, so `into` must name the same type as `from`.
 fn wire_type(model: &Model, name: &str) -> Result<Option<syn::Type>, Error> {
     let attrs = match model.types.get(name) {
         Some(TypeDef::Struct(s)) => &s.attrs,
         Some(TypeDef::Enum(e)) => &e.attrs,
         None => return Ok(None),
     };
+    if attrs.into != attrs.from {
+        return Err(format!(
+            "`{name}`: serde reads it as `from` and writes it as `into`, and typegen needs \
+             both to name one type"
+        ));
+    }
     attrs
         .from
         .as_deref()
