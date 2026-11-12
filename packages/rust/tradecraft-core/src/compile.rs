@@ -832,9 +832,16 @@ impl<'a> Renderer<'a> {
     ) -> Result<String, CoreError> {
         refuse_marks(body, &self.relative_or_verbatim(source_path))?;
         let mut tokens = scan_wiki_tokens(body, true);
-        tokens.extend(markdown_link_tokens(body));
+        // A destination that is a plugin-root path is that path, checked by
+        // rules 15 to 22 and not again as a relative link.
+        let roots = plugin_root_tokens(body);
+        tokens.extend(
+            markdown_link_tokens(body)
+                .into_iter()
+                .filter(|link| !roots.iter().any(|root| root.start == link.start)),
+        );
         if self.record().is_some() {
-            tokens.extend(plugin_root_tokens(body));
+            tokens.extend(roots);
         }
         self.check_literal_calls(body, source_path);
         tokens.sort_by_key(|token| token.start);

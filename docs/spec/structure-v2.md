@@ -295,7 +295,7 @@ The syntax decides what a token is, not its target:
 | `[text](https://…)`, `<https://…>`, `mailto:` and any other URL with a scheme | An external link | Ships as written, not checked |
 | `[text](#heading)` | A link within the same file | Ships as written, not checked |
 | `[text](/abs/path)` or `[text](file:…)` | A path outside the vault | Refused |
-| `${PLUGIN_ROOT}/<path>` | A plugin-root path (rules 15 to 26) | Checks the file ships, rewrites per harness, inside code too |
+| `${PLUGIN_ROOT}/<path>` | A plugin-root path (rules 15 to 26) | Checks the file ships, rewrites per harness, inside code and link destinations too |
 | Anything in a code span or fenced block | Literal (rule 12) | Ships as written, with two exceptions (rule 12) |
 
 A plugin-root path is interpreted inside code, because a command in a code
@@ -544,6 +544,13 @@ harness's own form (decision D9).
       `![[run.sh]]`, is not interpreted (section 5 rule 9).
 
     Only the braced form is interpreted. `$PLUGIN_ROOT` is text.
+
+    It is interpreted wherever it appears, a Markdown link destination
+    included. `[the tool](${PLUGIN_ROOT}/scripts/tool)` ships as
+    `[the tool](${CLAUDE_PLUGIN_ROOT}/scripts/tool)` on Claude Code and
+    `[the tool](../../scripts/tool)` on the others, from a skill's note. Such
+    a destination is checked by rule 17, not again as a relative link
+    (rule 4).
 16. The path runs to the first character that cannot continue a path. A
     letter, digit, `.`, `_`, `-` or `/` continues it. A `.` at the end of the
     path is not part of it, so a full stop after a path is punctuation:
@@ -606,7 +613,8 @@ harness's own form (decision D9).
 21. `${PLUGIN_ROOT}` with no `/<path>` after it is an error in Markdown. It
     cannot be rewritten to a path for Codex, Cursor or Pi, and a vault writes
     one text for all harnesses.
-22. `${CLAUDE_PLUGIN_ROOT}` in interpreted text, code included, is an error
+22. `${CLAUDE_PLUGIN_ROOT}` in interpreted text, code and link destinations
+    included, is an error
     that says to write `${PLUGIN_ROOT}`. Interpreted text is the files of rule
     15 (a component's note, the Markdown in its own and the plugin's
     `references/`, and text a note embed inlines) and `hooks/hooks.json`. A

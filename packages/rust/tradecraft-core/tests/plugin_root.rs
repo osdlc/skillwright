@@ -339,6 +339,47 @@ fn a_path_naming_nothing_shipped_fails_naming_the_file_and_the_reference() {
 }
 
 #[test]
+fn a_path_in_a_link_destination_is_rewritten_and_not_checked_as_a_link() {
+    let vfs = with_author(
+        "Run [the tool](${PLUGIN_ROOT}/scripts/tool).\n\n[ref]: ${PLUGIN_ROOT}/scripts/tool",
+        &[],
+    );
+    build(&vfs);
+    let texts = in_author(&vfs, "SKILL.md");
+    holds(
+        &texts,
+        "Run [the tool](${CLAUDE_PLUGIN_ROOT}/scripts/tool).",
+        "Run [the tool](../../scripts/tool).",
+    );
+    holds(
+        &texts,
+        "[ref]: ${CLAUDE_PLUGIN_ROOT}/scripts/tool",
+        "[ref]: ../../scripts/tool",
+    );
+}
+
+#[test]
+fn a_path_in_a_link_destination_naming_nothing_fails_by_the_plugin_root_rule() {
+    let vfs = with_author("Run [t](${PLUGIN_ROOT}/scripts/gone).", &[]);
+    let err = refusal_for(&vfs, &[]);
+    assert!(err.contains("plugin-root-not-shipped"), "{err}");
+    names(
+        &err,
+        AUTHOR,
+        "${PLUGIN_ROOT}/scripts/gone",
+        "section 4 rules 17 and 20",
+    );
+}
+
+#[test]
+fn claude_code_s_variable_in_a_link_destination_is_an_error() {
+    let vfs = with_author("Run [t](${CLAUDE_PLUGIN_ROOT}/x).", &[]);
+    let err = refusal_for(&vfs, &[]);
+    assert!(err.contains("claude-plugin-root"), "{err}");
+    names(&err, AUTHOR, "${CLAUDE_PLUGIN_ROOT}", "section 4 rule 22");
+}
+
+#[test]
 fn a_lone_plugin_root_in_markdown_is_an_error() {
     let vfs = with_author("Run from ${PLUGIN_ROOT} now.", &[]);
     let err = refusal_for(&vfs, &[]);
