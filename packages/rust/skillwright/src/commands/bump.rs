@@ -215,10 +215,8 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         .components
         .iter()
         .filter(|c| {
-            c.kind == EntityKind::Plugin
-                && c.marketplace
-                    .as_deref()
-                    .is_some_and(|m| run.loaded.marketplace(m).is_some())
+            c.position.kind() == EntityKind::Plugin
+                && run.loaded.marketplace(c.position.marketplace()).is_some()
         })
         .collect();
     let scheme = run
@@ -265,10 +263,13 @@ fn vault_relative(root: &Path, path: &Path) -> String {
 
 /// The note of the plugin `name`, or why there is none to bump.
 fn plugin_note(plugins: &[&DiscoveredComponent], name: &str) -> Result<VersionNote, String> {
-    let matches: Vec<&&DiscoveredComponent> = plugins.iter().filter(|c| c.name == name).collect();
+    let matches: Vec<&&DiscoveredComponent> = plugins
+        .iter()
+        .filter(|c| c.position.name() == name)
+        .collect();
     match matches.as_slice() {
         [] => {
-            let names: BTreeSet<&str> = plugins.iter().map(|c| c.name.as_str()).collect();
+            let names: BTreeSet<&str> = plugins.iter().map(|c| c.position.name()).collect();
             let held = if names.is_empty() {
                 "none".to_owned()
             } else {
@@ -468,8 +469,9 @@ fn run_changed(
         .marketplaces()
         .iter()
         .map(|m| {
-            let mut request = run.loaded.vault_request(m, ExportMode::Check);
-            request.harnesses.clone_from(&flags.harnesses);
+            let mut request = VaultRequest::for_marketplace(&run.loaded.root, &m.name);
+            request.options.mode = ExportMode::Check;
+            request.options.harnesses.clone_from(&flags.harnesses);
             (m.name.as_str(), request)
         })
         .collect();
@@ -481,8 +483,8 @@ fn run_changed(
     let now = utc_now_stamp();
     let mut rows: Vec<Row> = Vec::new();
     for (market, mut request) in requests {
-        request.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<Harness> = match owned_paths(&run.loaded.settings, &request.harnesses) {
+        request.options.compare_with = Some(baseline.root(market));
+        let mut roots: Vec<Harness> = match owned_paths(&run.loaded.settings, &flags.harnesses) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return refused(ctx.err, &err.reason()),
         };
@@ -534,7 +536,7 @@ fn run_changed(
         for (name, verdict) in verdicts {
             let note = plugins
                 .iter()
-                .find(|c| c.name == name && c.marketplace.as_deref() == Some(market));
+                .find(|c| c.position.name() == name && c.position.marketplace() == market);
             let Some(note) = note else {
                 let reason = format!("`{name}` has no note to bump; add one with a `version`");
                 let mut row = Row::refused(name, "", "", reason);
@@ -951,10 +953,9 @@ impl BuiltRef {
                 }
                 continue;
             };
-            let mut request = base_run
-                .loaded
-                .vault_request(base_market, ExportMode::Build);
-            request.harnesses.clone_from(harnesses);
+            let mut request =
+                VaultRequest::for_marketplace(&base_run.loaded.root, &base_market.name);
+            request.options.harnesses.clone_from(harnesses);
             if let Err(err) = build_vault(&NativeVfs, &request) {
                 return fail(ctx, format!("building it failed: {}", err.reason()));
             }

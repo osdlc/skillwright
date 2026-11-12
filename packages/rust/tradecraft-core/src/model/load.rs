@@ -7,16 +7,16 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::cascade::{Cascade, belongs_to};
+use super::cascade::Cascade;
 use super::{
     Asset, Body, Component, Extensions, HooksFile, Marketplace, Plugin, Resolved, Resource,
-    ResourceContent, Segment, pack_kind, segments,
+    ResourceContent, Segment, SkillId, pack_kind, segments,
 };
-use crate::compile::{CallContext, CompileSource, IndexedSkill, SkillIndex, compile_note};
+use crate::compile::{CallContext, CompileSource, SkillIndex, compile_note};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, discover_in,
     refuse_undescribed,
@@ -33,6 +33,7 @@ use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
 use crate::layout::{Layout, Place, SharedDir};
+use crate::paths::BuildScope;
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
@@ -44,10 +45,10 @@ use crate::vfs::{Vfs, normalize};
 pub struct LoadRequest {
     /// Absolute path to the vault.
     pub vault_root: PathBuf,
-    /// Which marketplace to load, by folder. `None` names the vault's only
+    /// Which marketplace to load, by folder. Absent names the vault's only
     /// one.
-    #[serde(default)]
-    pub marketplace: Option<String>,
+    #[serde(default, rename = "marketplace")]
+    pub scope: BuildScope,
     /// Which harnesses to load for, by canonical name. It replaces the root
     /// file's `build.harnesses`; empty means that list. A body no harness
     /// here admits is read but not resolved.
@@ -61,18 +62,28 @@ impl LoadRequest {
     pub fn new(vault_root: impl Into<PathBuf>) -> Self {
         Self {
             vault_root: vault_root.into(),
-            marketplace: None,
+            scope: BuildScope::Vault,
             harnesses: BTreeSet::new(),
         }
     }
 }
 
-/// The harnesses `names` selects, every one when empty, in report order.
+/// The harnesses a build renders: those `chosen` names, else the root
+/// file's `build.harnesses`, else every harness, in report order. A choice
+/// replaces the root file's list; it may name a harness the list leaves out.
 ///
 /// # Errors
 ///
 /// `refused: unknown-harness` — a name no harness answers to.
-pub(crate) fn selected_harnesses(names: &BTreeSet<String>) -> Result<Vec<Harness>, CoreError> {
+pub(crate) fn built_harnesses(
+    root: &RootFile,
+    chosen: &BTreeSet<String>,
+) -> Result<Vec<Harness>, CoreError> {
+    let names = if chosen.is_empty() {
+        root.harness_set()
+    } else {
+        chosen.clone()
+    };
     if names.is_empty() {
         return Ok(Harness::ALL.to_vec());
     }
@@ -81,24 +92,6 @@ pub(crate) fn selected_harnesses(names: &BTreeSet<String>) -> Result<Vec<Harness
         .map(|name| Harness::parse(name))
         .collect::<Result<_, _>>()?;
     Ok(chosen.into_iter().collect())
-}
-
-/// The harnesses a build renders: those `chosen` names, else the root
-/// file's `build.harnesses`, else every harness. A choice replaces the root
-/// file's list; it may name a harness the list leaves out.
-///
-/// # Errors
-///
-/// * `refused: unknown-harness` — a name no harness answers to.
-pub(crate) fn built_harnesses(
-    root: &RootFile,
-    chosen: &BTreeSet<String>,
-) -> Result<Vec<Harness>, CoreError> {
-    if chosen.is_empty() {
-        selected_harnesses(&root.harness_set())
-    } else {
-        selected_harnesses(chosen)
-    }
 }
 
 /// Loads the marketplace a build renders.
@@ -121,49 +114,81 @@ pub(crate) fn built_harnesses(
 /// * What [`crate::layout::read_layout`] refuses.
 pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreError> {
     let layout = crate::layout::read_layout(vfs, &normalize(&request.vault_root))?;
-    load_in(vfs, &layout, request)
-}
-
-/// [`load`] over a layout already read, so a build of several marketplaces
-/// walks the vault once.
-///
-/// # Errors
-///
-/// As [`load`], less the layout's own.
-pub fn load_in(
-    vfs: &dyn Vfs,
-    layout: &Layout,
-    request: &LoadRequest,
-) -> Result<Marketplace, CoreError> {
     let root = crate::paths::read_root_file(vfs, &layout.root)?;
     let roots = built_harnesses(&root, &request.harnesses)?;
-    let scan = discover_in(vfs, layout)?;
-    load_for(
-        vfs,
-        layout,
-        &scan,
-        request.marketplace.as_deref(),
-        &roots,
-        &root.defaults,
-    )
+    let scan = discover_in(vfs, &layout)?;
+    load_for(vfs, &layout, &scan, &request.scope, &roots, &root.defaults)
 }
 
-/// [`load_in`] with the root file and pass 1 already done: `scan` is
+/// [`load`] with the root file and pass 1 already done: `scan` is
 /// [`discover_in`] over `layout`, `roots` the harnesses the model is for, and
 /// `defaults` the root file's shared defaults.
 pub(crate) fn load_for(
     vfs: &dyn Vfs,
     layout: &Layout,
     scan: &DiscoveryReport,
-    marketplace: Option<&str>,
+    scope: &BuildScope,
     roots: &[Harness],
     defaults: &SharedDefaults,
 ) -> Result<Marketplace, CoreError> {
-    let vault_root = layout.root.clone();
-    // The root file's own entry is configuration, not a note, and
-    // `check_block_values` below refuses it naming the marketplace. A note in
-    // another marketplace does not stop a build of this one.
-    let market_prefix = marketplace.map(|m| format!("{}/{m}/", crate::layout::MARKETPLACES_DIR));
+    refuse_skipped(scan, scope)?;
+    let Members {
+        market,
+        cascade,
+        mut plugins,
+        uncarried,
+        mut warnings,
+        checked,
+    } = members(scan, scope, defaults, &layout.root)?;
+    let config = &cascade.config;
+    pack_files(vfs, layout, &market, &mut plugins)?;
+    warnings.extend(changelog_warnings(vfs, layout, &market, config));
+    warnings.extend(load_hooks_files(vfs, layout, &market, roots, &mut plugins)?);
+    let index = skill_index(
+        plugins
+            .values()
+            .flat_map(Plugin::components)
+            .chain(&uncarried)
+            .map(|c| &c.discovered),
+    );
+    let calls = CallContext {
+        skills: &index,
+        hand_written: hand_written_forms(&plugins, roots, config)?,
+        warnings: RefCell::new(Vec::new()),
+    };
+    resolve_members(vfs, layout, &market, &cascade, roots, &calls, &mut plugins)?;
+    for warning in calls.warnings.into_inner() {
+        if !warnings.contains(&warning) {
+            warnings.push(warning);
+        }
+    }
+    warnings.sort_by(|a, b| a.path.cmp(&b.path));
+    apply_naming(&mut plugins, config)?;
+    Ok(Marketplace {
+        name: config.name.clone().unwrap_or_else(|| market.clone()),
+        folder: market,
+        config: cascade.config,
+        plugins,
+        uncarried,
+        warnings,
+        checked,
+        vault_root: layout.root.clone(),
+    })
+}
+
+/// Refuses a build over notes the scan skipped in `scope`. The root file's
+/// own entry is configuration, not a note, and `check_block_values` refuses
+/// it naming the marketplace. A note in another marketplace does not stop a
+/// build of this one.
+///
+/// # Errors
+///
+/// `refused: unreadable-note`, or `refused: malformed` when each skipped
+/// note holds a value of the wrong kind.
+fn refuse_skipped(scan: &DiscoveryReport, scope: &BuildScope) -> Result<(), CoreError> {
+    let market_prefix = scope
+        .marketplace()
+        .map(|m| format!("{}/{m}/", crate::layout::MARKETPLACES_DIR));
     let skipped: Vec<&SkippedNote> = scan
         .skipped
         .iter()
@@ -174,41 +199,70 @@ pub(crate) fn load_for(
                 .is_none_or(|prefix| note.path.starts_with(prefix))
         })
         .collect();
-    if !skipped.is_empty() {
-        let (token, which) = skipped_wording(skipped.iter().copied());
-        // A note's own reason is said only when it differs from the token.
-        let notes: Vec<String> = skipped
-            .iter()
-            .map(|note| {
-                let said = if note.reason == token {
-                    note.detail.clone()
-                } else {
-                    note.sentence()
-                };
-                format!("{} ({said})", note.path)
-            })
-            .collect();
-        return Err(CoreError::refused(
-            token,
-            format!(
-                "the vault holds {} note(s) {which}, and a marketplace built \
-                 without them would sweep away what they publish: {}. Nothing was written",
-                notes.len(),
-                notes.join("; ")
-            ),
-        ));
+    if skipped.is_empty() {
+        return Ok(());
     }
-    let discovered = scan.components.clone();
+    let (token, which) = skipped_wording(skipped.iter().copied());
+    // A note's own reason is said only when it differs from the token.
+    let notes: Vec<String> = skipped
+        .iter()
+        .map(|note| {
+            let said = if note.reason == token {
+                note.detail.clone()
+            } else {
+                note.sentence()
+            };
+            format!("{} ({said})", note.path)
+        })
+        .collect();
+    Err(CoreError::refused(
+        token,
+        format!(
+            "the vault holds {} note(s) {which}, and a marketplace built \
+             without them would sweep away what they publish: {}. Nothing was written",
+            notes.len(),
+            notes.join("; ")
+        ),
+    ))
+}
+
+/// One marketplace's members, read in pass 1 and not yet resolved.
+struct Members {
+    /// The marketplace folder.
+    market: String,
+    cascade: Cascade,
+    plugins: BTreeMap<String, Plugin>,
+    uncarried: Vec<Component>,
+    /// The scan's warnings about these members, and the missing versions.
+    warnings: Vec<DiscoveryWarning>,
+    /// How many skills it holds.
+    checked: usize,
+}
+
+/// The members of the marketplace `scope` names, grouped by plugin.
+///
+/// # Errors
+///
+/// What [`resolve_marketplace`] and [`group_by_plugin`] refuse;
+/// `refused: malformed` for a container block value of the wrong kind,
+/// `missing-description` and `empty-marketplace`.
+fn members(
+    scan: &DiscoveryReport,
+    scope: &BuildScope,
+    defaults: &SharedDefaults,
+    vault_root: &Path,
+) -> Result<Members, CoreError> {
+    let discovered = &scan.components;
     // Which marketplaces the vault holds is read from every kind, not from the
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing to build rather than that it is not there.
-    let market = resolve_marketplace(&discovered, marketplace)?;
-    let cascade = Cascade::over(&discovered, &market, defaults);
+    let market = resolve_marketplace(discovered, scope.marketplace())?;
+    let cascade = Cascade::over(discovered, &market, defaults);
     // Before members inherit a block, so a wrong value names its container.
     crate::harness::manifest::check_block_values(&cascade.config)?;
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
-        .filter(|component| belongs_to(component, &market))
+        .filter(|c| c.position.marketplace() == market)
         .collect();
     // Only this marketplace's notes: another marketplace's gap neither
     // refuses this build nor appears in its report.
@@ -222,22 +276,14 @@ pub(crate) fn load_for(
         .filter(|w| ours.contains(w.path.as_str()))
         .cloned()
         .collect();
-    // Named, never dropped: a pack has a place for skills and commands and
-    // for nothing else, and a build that quietly omitted an agent would be
-    // the failure this crate is built around.
+    // Named, never dropped: a pack has a place for skills and for commands
+    // and for nothing else, and a build that quietly omitted an agent would
+    // be the failure this crate is built around.
     let uncarried: Vec<Component> = belonging
         .iter()
-        .filter(|c| !pack_kind(c.kind))
+        .filter(|c| !pack_kind(c.position.kind()))
         .map(|c| unread(c))
         .collect();
-    let of_kind = |kind: EntityKind| -> Vec<&DiscoveredComponent> {
-        belonging
-            .iter()
-            .copied()
-            .filter(|component| component.kind == kind)
-            .collect()
-    };
-    let (skills, commands) = (of_kind(EntityKind::Skill), of_kind(EntityKind::Command));
     // Before `empty-marketplace`, so an undescribed note is named.
     refuse_undescribed(
         belonging
@@ -245,12 +291,8 @@ pub(crate) fn load_for(
             .filter(|c| c.lacks_description())
             .map(|c| c.vault_relative_path.as_str()),
     )?;
-    let plugin_notes: Vec<&DiscoveredComponent> = belonging
-        .iter()
-        .copied()
-        .filter(|c| c.kind == EntityKind::Plugin && c.plugin.is_some())
-        .collect();
-    if plugin_notes.is_empty() && skills.is_empty() && commands.is_empty() {
+    let plugins = group_by_plugin(&belonging)?;
+    if plugins.is_empty() {
         return Err(CoreError::refused(
             refusal::EMPTY_MARKETPLACE,
             format!(
@@ -262,77 +304,53 @@ pub(crate) fn load_for(
             ),
         ));
     }
-    let name = cascade
-        .config
-        .name
-        .clone()
-        .unwrap_or_else(|| market.clone());
-    let mut plugins = group_by_plugin(&plugin_notes, &skills, &commands)?;
-    let config = &cascade.config;
-    warnings.extend(missing_versions(&discovered, &market, &plugins, config));
-    pack_files(vfs, layout, &market, &mut plugins)?;
-    warnings.extend(changelog_warnings(vfs, layout, &market, config));
-    warnings.extend(load_hooks_files(vfs, layout, &market, roots, &mut plugins)?);
-
-    // Pass 2. One index for every call, over every skill, command and agent
-    // in the marketplace under the plugin it ships in, whether or not a given
-    // harness ships it: which harness ships what is asked when the call is
-    // written.
-    let checked = skills.len();
-    let index = skill_index(
-        plugins
-            .values()
-            .flat_map(|plugin| plugin.components())
-            .chain(&uncarried)
-            .map(|c| &c.discovered),
-    );
-    let hand_written = hand_written_forms(&plugins, roots, config)?;
-    let calls = CallContext {
-        skills: &index.skills,
-        hand_written,
-        warnings: RefCell::new(Vec::new()),
-    };
-    for plugin in plugins.values_mut() {
-        let plugin_name = plugin.name.clone();
-        for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
-            if !roots
-                .iter()
-                .any(|root| root.format().carries(component.kind))
-            {
-                continue;
-            }
-            let mut note = read_vault_note(vfs, &component.discovered.entry_path, component.kind)?;
-            cascade.apply(&mut note, component.kind, Some(&plugin_name));
-            component.extensions = extensions(&note.frontmatter, &component.discovered)?;
-            component.resolved = Some(resolve_body(
-                vfs,
-                layout,
-                &component.discovered,
-                note,
-                component.kind,
-                &calls,
-            )?);
-        }
-        plugin.references = shared_references(vfs, layout, &market, &plugin_name, &calls)?;
-    }
-    for warning in calls.warnings.into_inner() {
-        if !warnings.contains(&warning) {
-            warnings.push(warning);
-        }
-    }
-    warnings.sort_by(|a, b| a.path.cmp(&b.path));
-    apply_naming(&mut plugins, config)?;
-
-    Ok(Marketplace {
-        name,
-        folder: market,
-        config: cascade.config,
+    warnings.extend(missing_versions(&belonging, &plugins, &cascade.config));
+    let checked = plugins.values().map(|p| p.skills.len()).sum();
+    Ok(Members {
+        market,
+        cascade,
         plugins,
         uncarried,
         warnings,
         checked,
-        vault_root,
     })
+}
+
+/// Pass 2 over every member some harness in `roots` carries, and each
+/// plugin's shared references. One index for every call, over every skill,
+/// command and agent in the marketplace under the plugin it ships in,
+/// whether or not a given harness ships it: which harness ships what is
+/// asked when the call is written.
+///
+/// # Errors
+///
+/// What [`read_vault_note`], [`resolve_body`] and [`shared_references`]
+/// refuse.
+fn resolve_members(
+    vfs: &dyn Vfs,
+    layout: &Layout,
+    market: &str,
+    cascade: &Cascade,
+    roots: &[Harness],
+    calls: &CallContext<'_>,
+    plugins: &mut BTreeMap<String, Plugin>,
+) -> Result<(), CoreError> {
+    for plugin in plugins.values_mut() {
+        let plugin_name = plugin.name.clone();
+        for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
+            let kind = component.kind();
+            if !roots.iter().any(|root| root.format().carries(kind)) {
+                continue;
+            }
+            let found = &component.discovered;
+            let mut note = read_vault_note(vfs, &found.entry_path, kind)?;
+            cascade.apply(&mut note, kind, Some(&plugin_name));
+            component.extensions = extensions(&note.frontmatter, found)?;
+            component.resolved = Some(resolve_body(vfs, layout, found, note, calls)?);
+        }
+        plugin.references = shared_references(vfs, layout, market, &plugin_name, calls)?;
+    }
+    Ok(())
 }
 
 /// Pass 2 for one component: its body compiled once for every harness —
@@ -348,7 +366,6 @@ pub fn resolve_body(
     layout: &Layout,
     component: &DiscoveredComponent,
     note: VaultNote,
-    kind: EntityKind,
     calls: &CallContext<'_>,
 ) -> Result<Resolved, CoreError> {
     let VaultNote {
@@ -356,12 +373,20 @@ pub fn resolve_body(
         frontmatter,
     } = note;
     // Only the two kinds an invocation actually takes arguments at.
-    if matches!(kind, EntityKind::Skill | EntityKind::Command) {
+    if matches!(
+        component.position.kind(),
+        EntityKind::Skill | EntityKind::Command
+    ) {
         content.apply_arguments(&frontmatter.arguments);
     }
     let compiled = compile_note(
         vfs,
-        &CompileSource::new(layout, &component.entry_path, &component.name, calls),
+        &CompileSource::new(
+            layout,
+            &component.entry_path,
+            component.position.name(),
+            calls,
+        ),
         &content.body,
     )?;
     let record = &compiled.recorded;
@@ -397,31 +422,8 @@ pub fn resolve_body(
 }
 
 /// The components a call may name.
-#[derive(Debug, Clone, Default)]
-pub struct Index {
-    skills: SkillIndex,
-}
-
-fn skill_index<'a>(skills: impl Iterator<Item = &'a DiscoveredComponent>) -> Index {
-    let skills = SkillIndex::new(
-        skills
-            .filter(|c| {
-                matches!(
-                    c.kind,
-                    EntityKind::Skill | EntityKind::Command | EntityKind::Agent
-                )
-            })
-            // Every component sits in a plugin (spec section 3).
-            .filter_map(|c| Some((c, c.plugin.clone()?)))
-            .map(|(c, plugin)| IndexedSkill {
-                entry_path: c.entry_path.clone(),
-                plugin,
-                name: c.name.clone(),
-                kind: c.kind,
-            })
-            .collect::<Vec<_>>(),
-    );
-    Index { skills }
+fn skill_index<'a>(components: impl Iterator<Item = &'a DiscoveredComponent>) -> SkillIndex {
+    SkillIndex::new(components.filter_map(SkillId::of).collect::<Vec<_>>())
 }
 
 /// The call strings a body may not write by hand, each with the name to
@@ -455,9 +457,9 @@ fn hand_written_forms(
                     root.profile().runtime,
                     naming,
                     &plugin.name,
-                    &member.name,
+                    member.name(),
                 ) {
-                    forms.insert(form, member.name.clone());
+                    forms.insert(form, member.name().to_owned());
                 }
             }
         }
@@ -523,9 +525,6 @@ fn apply_naming(
 /// A node read in pass 1 and not yet resolved.
 fn unread(component: &DiscoveredComponent) -> Component {
     Component {
-        kind: component.kind,
-        name: component.name.clone(),
-        path: component.vault_relative_path.clone(),
         extensions: Extensions::default(),
         resolved: None,
         discovered: component.clone(),
@@ -565,8 +564,11 @@ fn extensions(
     frontmatter: &VaultFrontmatter,
     component: &DiscoveredComponent,
 ) -> Result<Extensions, CoreError> {
-    let blocks =
-        super::cascade::fold_harness_blocks(frontmatter, &component.entry_path, component.kind)?;
+    let blocks = super::cascade::fold_harness_blocks(
+        frontmatter,
+        &component.entry_path,
+        component.position.kind(),
+    )?;
     Ok(Extensions { blocks })
 }
 
@@ -575,19 +577,18 @@ fn extensions(
 /// compares versions to decide whether an installed pack is out of date, so a
 /// pack that never states one never looks updated.
 fn missing_versions(
-    discovered: &[DiscoveredComponent],
-    market: &str,
+    belonging: &[&DiscoveredComponent],
     plugins: &BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Vec<DiscoveryWarning> {
-    discovered
+    belonging
         .iter()
-        .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
-        .filter(|c| plugins.contains_key(c.folder()))
+        .filter(|c| c.position.kind() == EntityKind::Plugin)
+        .filter(|c| plugins.contains_key(c.position.name()))
         .filter(|c| {
             config
                 .plugins
-                .get(c.folder())
+                .get(c.position.name())
                 .and_then(|o| o.identity.version.as_ref())
                 .is_none()
         })
@@ -597,7 +598,7 @@ fn missing_versions(
             detail: format!(
                 "plugin `{}` states no version; published as `0.1.0`. Set `version` on \
                  its note so a harness can tell an update from what it has",
-                c.name
+                c.position.name()
             ),
         })
         .collect()
@@ -616,8 +617,8 @@ fn resolve_marketplace(
 ) -> Result<String, CoreError> {
     let present: BTreeSet<&str> = discovered
         .iter()
-        .filter(|c| c.kind == EntityKind::Marketplace)
-        .map(DiscoveredComponent::folder)
+        .filter(|c| c.position.kind() == EntityKind::Marketplace)
+        .map(|c| c.position.name())
         .collect();
     match (requested, present.len()) {
         (Some(name), _) if present.contains(name) => Ok(name.to_owned()),
@@ -657,52 +658,42 @@ fn named(names: &BTreeSet<&str>) -> String {
     }
 }
 
-/// Plugins, members in discovery's name order.
+/// Plugins, members in discovery's name order: one per plugin note, so a
+/// plugin with no component still builds, with its skills and commands.
 ///
 /// # Errors
 ///
 /// `refused: path-collision` — two members of the same kind landing on one
 /// directory.
 fn group_by_plugin(
-    notes: &[&DiscoveredComponent],
-    skills: &[&DiscoveredComponent],
-    commands: &[&DiscoveredComponent],
+    belonging: &[&DiscoveredComponent],
 ) -> Result<BTreeMap<String, Plugin>, CoreError> {
     type Pick = fn(&mut Plugin) -> &mut Vec<Component>;
-    let kinds: [(&[&DiscoveredComponent], Pick); 2] = [
-        (skills, |plugin| &mut plugin.skills),
-        (commands, |plugin| &mut plugin.commands),
+    let kinds: [(EntityKind, Pick); 2] = [
+        (EntityKind::Skill, |plugin| &mut plugin.skills),
+        (EntityKind::Command, |plugin| &mut plugin.commands),
     ];
-    // Every plugin note, so a plugin with no component still builds.
-    let mut plugins: BTreeMap<String, Plugin> = notes
+    let mut plugins: BTreeMap<String, Plugin> = BTreeMap::new();
+    let notes = belonging
         .iter()
-        .filter_map(|note| {
-            let name = note.plugin.clone()?;
-            let plugin = Plugin {
-                name: name.clone(),
-                ..Plugin::default()
-            };
-            Some((name, plugin))
-        })
-        .collect();
-    for (members, pick) in kinds {
-        for member in members {
-            let name = member.plugin.as_deref().unwrap_or_default();
-            let plugin = plugins.entry(name.to_owned()).or_insert_with(|| Plugin {
-                name: name.to_owned(),
-                ..Plugin::default()
-            });
-            let siblings = pick(plugin);
-            if let Some(first) = siblings.iter().find(|m| m.name == member.name) {
+        .filter(|c| c.position.kind() == EntityKind::Plugin);
+    for note in notes {
+        plugin_named(&mut plugins, note.position.name());
+    }
+    for (kind, pick) in kinds {
+        for member in belonging.iter().filter(|c| c.position.kind() == kind) {
+            let name = member.position.plugin().unwrap_or_default();
+            let siblings = pick(plugin_named(&mut plugins, name));
+            if let Some(first) = siblings.iter().find(|m| m.name() == member.position.name()) {
                 return Err(CoreError::refused(
                     refusal::PATH_COLLISION,
                     format!(
                         "`{}` and `{}` both render as {} `{}` of plugin `{name}` — two \
                          components cannot publish onto one directory",
-                        first.path,
+                        first.path(),
                         member.vault_relative_path,
-                        member.kind.as_str(),
-                        member.name
+                        kind.as_str(),
+                        member.position.name()
                     ),
                 ));
             }
@@ -710,6 +701,14 @@ fn group_by_plugin(
         }
     }
     Ok(plugins)
+}
+
+/// The plugin `name` of `plugins`, added empty when missing.
+fn plugin_named<'p>(plugins: &'p mut BTreeMap<String, Plugin>, name: &str) -> &'p mut Plugin {
+    plugins.entry(name.to_owned()).or_insert_with(|| Plugin {
+        name: name.to_owned(),
+        ..Plugin::default()
+    })
 }
 
 /// What a plugin ships at its pack root, read from the layout: its
@@ -871,7 +870,7 @@ fn load_hooks_files(
             .iter()
             .filter(|root| root.format().policy.carries_hooks)
         {
-            if !group.carried_by(|c| root.format().carries(c.kind)) {
+            if !group.carried_by(|c| root.format().carries(c.kind())) {
                 continue;
             }
             for hook in &hooks {
@@ -893,7 +892,7 @@ fn load_hooks_files(
             hooks,
         });
         let cursor_built = roots.contains(&Harness::Cursor)
-            && group.carried_by(|c| Harness::Cursor.format().carries(c.kind));
+            && group.carried_by(|c| Harness::Cursor.format().carries(c.kind()));
         if cursor_built {
             warnings.push(DiscoveryWarning {
                 path: file.rel.clone(),

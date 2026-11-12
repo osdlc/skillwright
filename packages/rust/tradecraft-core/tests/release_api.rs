@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    ExportMode, ExportReport, MemVfs, UNKNOWN_KEY_REASON, VaultRequest, Vfs, parse_root_file,
+    BuildScope, ExportReport, MemVfs, UNKNOWN_KEY_REASON, VaultRequest, Vfs, parse_root_file,
 };
 
 /// `build_vault` over the one marketplace a request covers: its report.
@@ -62,7 +62,7 @@ fn vault(market: &str, tools: &str, review: &str) -> MemVfs {
 
 fn request() -> VaultRequest {
     let mut request = VaultRequest::new("/vault");
-    request.marketplace = Some("house".to_owned());
+    request.scope = BuildScope::Marketplace("house".to_owned());
     request
 }
 
@@ -649,7 +649,7 @@ fn build_root(vfs: &MemVfs, frontmatter: &str) -> Result<ExportReport, String> {
         write(vfs, ROOT, &format!("---\n{frontmatter}---\n"));
     }
     let mut named = request();
-    named.marketplace = None;
+    named.scope = BuildScope::Vault;
     export(vfs, &named).map_err(|err| err.to_string())
 }
 
@@ -1017,7 +1017,7 @@ fn an_explicit_default_naming_records_nothing() {
 fn build_with(vfs: &MemVfs, root_file: &str) -> Result<ExportReport, String> {
     write(vfs, ROOT, root_file);
     let mut request = request();
-    request.marketplace = None;
+    request.scope = BuildScope::Vault;
     export(vfs, &request).map_err(|err| err.to_string())
 }
 
@@ -1141,14 +1141,14 @@ fn a_build_of_one_marketplace_ships_only_that_marketplace() {
         write(&vfs, &format!("/vault/marketplaces/{path}"), text);
     }
     let mut build = request();
-    build.marketplace = Some("b".to_owned());
+    build.scope = BuildScope::Marketplace("b".to_owned());
     export(&vfs, &build).unwrap();
     assert!(vfs.exists(Path::new(
         "/vault/dist/b/.claude-plugin/packs/own/.claude-plugin/plugin.json"
     )));
     assert!(!vfs.exists(Path::new("/vault/dist/b/.claude-plugin/packs/rev")));
 
-    build.marketplace = Some("a".to_owned());
+    build.scope = BuildScope::Marketplace("a".to_owned());
     export(&vfs, &build).unwrap();
     let manifest = "/vault/dist/a/.claude-plugin/packs/rev/.claude-plugin/plugin.json";
     assert!(vfs.exists(Path::new(manifest)));
@@ -1169,11 +1169,11 @@ fn a_marketplace_named_skillwright_loads_and_builds() {
         &format!("{market}/plugins/p/skills/a/a.md"),
         "---\ndescription: A.\n---\n\nX.\n",
     );
-    let loaded = tradecraft_core::load_vault(&vfs, Path::new("/w"), None).unwrap();
+    let loaded = tradecraft_core::load_vault(&vfs, Path::new("/w"), &BuildScope::Vault).unwrap();
     let found = loaded.marketplace("skillwright").unwrap();
     assert_eq!(found.dir, PathBuf::from(market));
     assert_eq!(found.dist, PathBuf::from("/w/dist/skillwright"));
-    let request = loaded.vault_request(found, ExportMode::Build);
+    let request = VaultRequest::for_marketplace(&loaded.root, &found.name);
     export(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new(
         "/w/dist/skillwright/.claude-plugin/marketplace.json"
@@ -1189,7 +1189,7 @@ fn a_malformed_root_file_is_refused_with_one_token() {
         "---\nbuild:\n  harnesses: [claude]\n",
     ] {
         let vfs = root_vault(root, &[TOOL_SKILL]);
-        let err = tradecraft_core::load_vault(&vfs, Path::new("/vault"), None)
+        let err = tradecraft_core::load_vault(&vfs, Path::new("/vault"), &BuildScope::Vault)
             .unwrap_err()
             .to_string();
         assert!(err.contains("malformed-root-file: "), "{root}: {err}");

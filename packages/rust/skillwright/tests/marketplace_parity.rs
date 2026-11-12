@@ -101,12 +101,11 @@ fn the_cli_and_a_host_request_render_identical_trees() {
     assert!(cli_out.is_dir());
     assert!(!copy.join("dist/labs").exists());
 
-    build_vault(&NativeVfs, &{
-        // The core reads the root file itself, as the CLI's build does.
-        let mut request = VaultRequest::new(host_copy.clone());
-        request.marketplace = Some("acme".to_string());
-        request
-    })
+    // The core reads the root file itself, as the CLI's build does.
+    build_vault(
+        &NativeVfs,
+        &VaultRequest::for_marketplace(host_copy.clone(), "acme"),
+    )
     .unwrap();
     assert!(host_out.is_dir());
 

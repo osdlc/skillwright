@@ -247,7 +247,7 @@ fn throwable(message: &str) -> JsValue {
 mod tests {
     use std::path::Path;
 
-    use tradecraft_core::{ExportMode, MemVfs, Vfs};
+    use tradecraft_core::{BuildScope, ExportMode, MemVfs, Vfs};
 
     use super::*;
 
@@ -255,10 +255,10 @@ mod tests {
     fn a_vault_request_s_absences_are_the_core_defaults() {
         let request: VaultRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
         assert_eq!(request.vault_root, PathBuf::from("/vault"));
-        assert_eq!(request.mode, ExportMode::Build);
-        assert_eq!(request.marketplace, None);
-        assert!(request.harnesses.is_empty());
-        assert_eq!(request.compare_with, None);
+        assert_eq!(request.options.mode, ExportMode::Build);
+        assert_eq!(request.scope, BuildScope::Vault);
+        assert!(request.options.harnesses.is_empty());
+        assert_eq!(request.options.compare_with, None);
     }
 
     #[test]
@@ -272,8 +272,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(request.mode, ExportMode::Check);
-        assert_eq!(request.marketplace.as_deref(), Some("house"));
+        assert_eq!(request.options.mode, ExportMode::Check);
+        assert_eq!(request.scope, BuildScope::Marketplace("house".to_owned()));
     }
 
     #[test]
@@ -335,7 +335,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|c| c["kind"] == "skill")
+            .find(|c| c["position"]["kind"] == "skill")
             .unwrap();
         assert_eq!(skill["identity"], serde_json::json!({}), "{json}");
     }

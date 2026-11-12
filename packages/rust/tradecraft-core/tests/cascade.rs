@@ -5,7 +5,9 @@
 use std::path::Path;
 
 use serde_json::Value;
-use tradecraft_core::{DiscoveryWarning, ExportMode, Harness, MemVfs, Vfs, load_vault};
+use tradecraft_core::{
+    BuildScope, DiscoveryWarning, Harness, MemVfs, VaultRequest, Vfs, load_vault,
+};
 
 /// `build_vault` over the one marketplace a request covers: its report.
 fn export(
@@ -54,10 +56,10 @@ fn vault(extra: &[(&str, &str)]) -> MemVfs {
 
 /// Builds every marketplace in `vfs` into `/v/dist`, its warnings.
 fn build(vfs: &MemVfs) -> Vec<DiscoveryWarning> {
-    let loaded = load_vault(vfs, Path::new("/v"), None).unwrap();
+    let loaded = load_vault(vfs, Path::new("/v"), &BuildScope::Vault).unwrap();
     let mut warnings = Vec::new();
     for marketplace in &loaded.marketplaces {
-        let request = loaded.vault_request(marketplace, ExportMode::Build);
+        let request = VaultRequest::for_marketplace(&loaded.root, &marketplace.name);
         let report = export(vfs, &request).unwrap();
         warnings.extend(report.warnings);
     }
@@ -66,12 +68,12 @@ fn build(vfs: &MemVfs) -> Vec<DiscoveryWarning> {
 
 /// The build's error for `vfs`, as text.
 fn build_error(vfs: &MemVfs) -> String {
-    let loaded = match load_vault(vfs, Path::new("/v"), None) {
+    let loaded = match load_vault(vfs, Path::new("/v"), &BuildScope::Vault) {
         Ok(loaded) => loaded,
         Err(err) => return err.to_string(),
     };
     for marketplace in &loaded.marketplaces {
-        let request = loaded.vault_request(marketplace, ExportMode::Build);
+        let request = VaultRequest::for_marketplace(&loaded.root, &marketplace.name);
         if let Err(err) = export(vfs, &request) {
             return err.to_string();
         }

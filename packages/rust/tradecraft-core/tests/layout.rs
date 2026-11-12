@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use tradecraft_core::{
-    CoreError, EntityKind, ExportMode, MemVfs, VaultRequest, Vfs, build_vault, check_vault_root,
-    discover_components, find_vault_root, load_vault, read_layout,
+    BuildScope, CoreError, EntityKind, ExportMode, MemVfs, VaultRequest, Vfs, build_vault,
+    check_vault_root, discover_components, find_vault_root, load_vault, read_layout,
 };
 
 /// `build_vault` over the one marketplace a request covers: its report.
@@ -89,17 +89,18 @@ fn listed(vfs: &MemVfs) -> Vec<String> {
         .iter()
         .filter(|c| {
             matches!(
-                c.kind,
+                c.position.kind(),
                 EntityKind::Skill | EntityKind::Agent | EntityKind::Command
             )
         })
         .map(|c| {
+            let at = &c.position;
             format!(
                 "{}/{}/{:?}/{}",
-                c.marketplace.as_deref().unwrap_or("-"),
-                c.plugin.as_deref().unwrap_or("-"),
-                c.kind,
-                c.name
+                at.marketplace(),
+                at.plugin().unwrap_or("-"),
+                at.kind(),
+                at.name()
             )
         })
         .collect();
@@ -154,8 +155,8 @@ fn files_beside_the_root_file_are_not_read_and_a_build_leaves_them() {
         .iter()
         .map(|rel| vfs.read_file(&Path::new("/v").join(rel)).unwrap())
         .collect();
-    let loaded = load_vault(&vfs, Path::new("/v"), None).unwrap();
-    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let loaded = load_vault(&vfs, Path::new("/v"), &BuildScope::Vault).unwrap();
+    let request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
     export(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme")));
     let after: Vec<Vec<u8>> = ["README.md", "notes/plain.md", "notes/marketplaces/x/x.md"]
@@ -529,8 +530,8 @@ fn node_modules_is_skipped_in_a_plugin_and_a_skill() {
 /// Builds the first marketplace of the vault at `/v`. Returns each warning
 /// as `path: reason: detail`, and every file written under `dist/`.
 fn build(vfs: &MemVfs) -> (Vec<String>, Vec<String>) {
-    let loaded = load_vault(vfs, Path::new("/v"), None).unwrap();
-    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let loaded = load_vault(vfs, Path::new("/v"), &BuildScope::Vault).unwrap();
+    let request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
     let report = export(vfs, &request).unwrap();
     let warnings = report
         .warnings
@@ -743,7 +744,7 @@ fn case_7_removed_build_keys_are_reported_together() {
     }
     // `load_vault` stops on the same report.
     let vfs = vault_of(&files);
-    let err = load_vault(&vfs, Path::new("/v"), None).unwrap_err();
+    let err = load_vault(&vfs, Path::new("/v"), &BuildScope::Vault).unwrap_err();
     assert_eq!(err.to_string(), said);
 }
 
@@ -757,7 +758,7 @@ fn case_7_build_namespace_is_refused() {
     let said = refusal(&vault_of(&files));
     assert!(said.contains("`build.namespace`"), "{said}");
     let vfs = vault_of(&files);
-    let err = load_vault(&vfs, Path::new("/v"), None).unwrap_err();
+    let err = load_vault(&vfs, Path::new("/v"), &BuildScope::Vault).unwrap_err();
     assert_eq!(err.to_string(), said);
 }
 
@@ -800,7 +801,7 @@ fn case_7_packs_in_a_marketplace_or_plugin_block_is_refused() {
         files.retain(|(path, _)| path != note);
         files.push((note.to_owned(), text));
         let mut request = VaultRequest::new("/v");
-        request.mode = ExportMode::Check;
+        request.options.mode = ExportMode::Check;
         // A check lists the refusal in its report.
         let report = build_vault(&vault_of(&files), &request).unwrap();
         let said = &report.refused[0].detail;
@@ -1028,8 +1029,8 @@ fn a_symlinked_folder_in_a_skill_builds() {
     .unwrap();
 
     let vfs = tradecraft_core::NativeVfs;
-    let result = load_vault(&vfs, &tmp, None).and_then(|loaded| {
-        let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let result = load_vault(&vfs, &tmp, &BuildScope::Vault).and_then(|loaded| {
+        let request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
         export(&vfs, &request)
     });
     let shipped = tmp.join("dist/acme/.claude-plugin/packs/tools/skills/review/references/x.md");

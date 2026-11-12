@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::{ExportMode, MemVfs, NativeVfs, Vfs, load_vault};
+use tradecraft_core::{BuildScope, MemVfs, NativeVfs, VaultRequest, Vfs, load_vault};
 
 /// `build_vault` over the one marketplace a request covers: its report.
 fn export(
@@ -51,8 +51,8 @@ fn put(vfs: &MemVfs, rel: &str, text: &str) {
 
 /// Builds the vault at `root`.
 fn build(vfs: &dyn Vfs, root: &Path) -> Result<(), tradecraft_core::CoreError> {
-    let loaded = load_vault(vfs, root, None)?;
-    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let loaded = load_vault(vfs, root, &BuildScope::Vault)?;
+    let request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
     export(vfs, &request).map(|_| ())
 }
 

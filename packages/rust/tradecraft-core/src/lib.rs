@@ -81,9 +81,7 @@ pub mod vault;
 pub mod vfs;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
-pub use compile::{
-    CallContext, CompileSource, CompiledNote, IndexedSkill, SkillIndex, compile_note,
-};
+pub use compile::{CallContext, CompileSource, CompiledNote, SkillIndex, compile_note};
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, UNKNOWN_KEY_REASON,
@@ -104,7 +102,7 @@ pub use layout::{
     check_vault_root, find_vault_root, is_vault_root, name_problem, read_layout,
 };
 pub use paths::{
-    LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file, resolve_path,
+    BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file, resolve_path,
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
