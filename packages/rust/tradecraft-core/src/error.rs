@@ -217,4 +217,18 @@ mod tests {
         assert_eq!(err.detail(), err.to_string());
         assert_eq!(err.reason(), err.to_string());
     }
+
+    #[test]
+    fn a_duplicated_io_error_keeps_its_kind_and_words() {
+        let err = CoreError::io(
+            "/tmp/SKILL.md",
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+        );
+        let copy = err.duplicate();
+        assert_eq!(copy.to_string(), err.to_string());
+        let CoreError::Io { source, .. } = copy else {
+            panic!("{copy:?}");
+        };
+        assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
+    }
 }

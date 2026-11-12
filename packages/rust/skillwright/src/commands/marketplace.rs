@@ -3,9 +3,8 @@
 //!
 //! One function for both verbs, because in the core they are one path: a
 //! single render, compared once against `dist/<m>/`. `build` acts on that
-//! comparison and `check` returns it. This file's whole contribution is which
-//! mode goes on the request, and what a drifted report means for the exit
-//! code.
+//! comparison and `check` returns it. This file picks the mode in
+//! `BuildOptions` and decides what a drifted report means for the exit code.
 //!
 //! Nothing about the marketplace is decided here. Which skills ship, how they
 //! group into plugins, what each manifest says, which harnesses are built,
@@ -25,7 +24,8 @@
 use std::collections::BTreeSet;
 
 use tradecraft_core::{
-    BuildOptions, ExportMode, ExportReport, ExportUnit, LoadedVault, NativeVfs, owned_paths, plan,
+    BuildOptions, ExportMode, ExportReport, ExportUnit, LoadedVault, NativeVfs, VaultReport,
+    owned_paths, plan,
 };
 
 use crate::ctx::CommandContext;
@@ -132,14 +132,14 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         dry_run_notice(ctx, "the drift a build would act on");
     }
 
-    // With several marketplaces, `--json` prints one document, the core's
-    // `VaultReport`.
-    let document = (flags.json && several).then(|| planned.report());
     if let Err(err) = planned.commit(&NativeVfs) {
         return failed(ctx.err, verb.as_str(), &err.reason());
     }
+    // With several marketplaces, `--json` prints one document, the core's
+    // `VaultReport`.
+    let one_document = flags.json && several;
     let mut exit = EXIT_OK;
-    for outcome in outcomes {
+    for outcome in &outcomes {
         let code = match outcome {
             Err(refusal) => {
                 header(&refusal.marketplace, ctx);
@@ -148,15 +148,13 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
             Ok(market) => {
                 header(&market.marketplace, ctx);
                 let advise = name_market.then(|| market.marketplace.clone());
-                export_one(verb, flags, &market.report, advise, document.is_none(), ctx)
+                export_one(verb, flags, &market.report, advise, !one_document, ctx)
             }
         };
         // A refusal (2) outranks drift (1): exit 1 means drift and nothing else.
         exit = exit.max(code);
     }
-    if let Some(document) = document
-        && let Err(code) = print_json(ctx, &document)
-    {
+    if one_document && let Err(code) = print_json(ctx, &VaultReport::from(outcomes)) {
         exit = exit.max(code);
     }
     exit
