@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { fakeWindowsFs, mount, onDisk } from './fake-windows-fs.ts'
-import { exportSkills } from '../src/core.ts'
+import { buildVault } from '../src/core.ts'
 import { toCorePath, UNSUPPORTED_PATH } from '../src/host-path.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
@@ -45,17 +45,15 @@ function vaultAt(vault: string, disk: (p: string) => string = (p) => onDisk(root
   return `${vault}\\marketplaces\\house\\plugins\\tools\\skills\\review\\review.md`
 }
 
+/** The one marketplace's report from a build of `vault`. */
 function build(vault: string, host: Vfs = vfs) {
-  return exportSkills(host, {
-    vault_root: core(vault),
-    mode: 'build',
-  })
+  return buildVault(host, { vault_root: core(vault), mode: 'build' }).marketplaces[0]?.report
 }
 
 describe('a Windows host', () => {
   test('builds a vault into its dist folder', () => {
     vaultAt('C:\\repo\\src')
-    expect(build('C:\\repo\\src').changed).toBe(true)
+    expect(build('C:\\repo\\src')?.changed).toBe(true)
     expect(
       existsSync(onDisk(root, 'C:\\repo\\src\\dist\\house\\.claude-plugin\\marketplace.json')),
     ).toBe(true)
@@ -64,7 +62,7 @@ describe('a Windows host', () => {
   test('works on a UNC share, and on a mapped drive that resolves to one', () => {
     const shareDisk = (p: string) => path.join(root, 'UNC', ...p.slice(2).split('\\'))
     vaultAt('\\\\server\\share\\vault', shareDisk)
-    expect(build('\\\\server\\share\\vault').changed).toBe(true)
+    expect(build('\\\\server\\share\\vault')?.changed).toBe(true)
 
     // Drive Z: is mapped to \\nas\team; realpath answers with the share.
     vaultAt('Z:\\vault')
@@ -91,7 +89,7 @@ describe('a Windows host', () => {
 
   test('a `..` at a share root stays on that share, as on Windows', () => {
     vaultAt('\\\\server\\share\\share2\\v')
-    expect(build('\\\\server\\share\\..\\share2\\v').changed).toBe(true)
+    expect(build('\\\\server\\share\\..\\share2\\v')?.changed).toBe(true)
     expect(
       existsSync(
         onDisk(root, '\\\\server\\share\\share2\\v\\dist\\house\\.claude-plugin\\marketplace.json'),

@@ -17,13 +17,12 @@
  * |---|---|---|
  * | `discoverComponents` | the vault scan | `build`, `check`, and whatever needs a roster |
  * | `buildVault` | every marketplace, planned then written all or none | `build`, and `check` through `mode` |
- * | `exportSkills` | the marketplace renderer, one marketplace | `build`, and `check` through `mode` |
  * | `loadMarketplace` | the marketplace, loaded and resolved, in the binding's own narrow shape | a host that wants structure rather than files |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
  * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
  *
  * A mode is a key on a request, never an export of its own — `check` is
- * `exportSkills` with `mode: "check"`. This file never predicts what it would
+ * `buildVault` with `mode: "check"`. This file never predicts what it would
  * do: the core runs the identical path over a capturing overlay and hands back
  * the report the write would have produced.
  *
@@ -34,7 +33,6 @@
 import {
   buildVault as buildVaultWasm,
   discoverComponents as discoverComponentsWasm,
-  exportSkills as exportSkillsWasm,
   loadMarketplace as loadMarketplaceWasm,
   knownTargets as knownTargetsWasm,
   parseRootFile as parseRootFileWasm,
@@ -45,8 +43,6 @@ import type { Vfs } from './node-vfs.ts'
 import type {
   DiscoverRequest,
   DiscoveryReport,
-  ExportReport,
-  ExportRequest as GeneratedExportRequest,
   LoadRequest as GeneratedLoadRequest,
   Marketplace,
   RootFile,
@@ -60,7 +56,7 @@ import type {
  * `tradecraft-typegen` and re-exported here so this file stays the package's
  * one door to the core.
  *
- * Re-exported, never re-declared, except for the `harnesses` of the three
+ * Re-exported, never re-declared, except for the `harnesses` of the two
  * requests, below, typed as {@link Target}s.
  * Everything else here is exactly what
  * `tradecraft-typegen` read off the Rust source.
@@ -100,11 +96,6 @@ export type {
   WasmRequests,
   WasmResponses,
 } from './core.generated.ts'
-
-/** The generated `ExportRequest`, with `harnesses` typed as {@link Target}s. */
-export type ExportRequest = Omit<GeneratedExportRequest, 'harnesses'> & {
-  harnesses?: Target[]
-}
 
 /** The generated `VaultRequest`, with `harnesses` typed as {@link Target}s. */
 export type VaultRequest = Omit<GeneratedVaultRequest, 'harnesses'> & {
@@ -198,26 +189,6 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
 // --- the marketplace ---------------------------------------------------------
 
 /**
- * Render one marketplace of the vault into `<vault_root>/dist/<m>/`, one tree
- * per harness, written through `vfs` — and, per `mode`, either swap the
- * drifted harness trees into place or report the drift and write nothing.
- * `marketplace` names it, and is required when the vault holds more than one.
- *
- * `build` and `check` are this one call with one key different, because in the
- * core they are one render and one comparison. That is the whole reason their
- * verdicts cannot disagree, and it is why there is no second function here to
- * keep pointed at the first.
- *
- * Throws {@link CoreError} for everything an export refuses — no
- * `marketplace` on a vault of several, an empty marketplace, a failed swap.
- * There is no per-unit refusal to look for inside the report: an export
- * refuses before anything is staged.
- */
-export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
-  return callCore<ExportReport>(() => exportSkillsWasm(vfs, JSON.stringify(request)))
-}
-
-/**
  * Build or check every marketplace of the vault, or the one `marketplace`
  * names, each into its `<vault_root>/dist/<m>/`. Every marketplace is planned
  * before any is written, and a build writes all of them or none: a failed
@@ -236,7 +207,7 @@ export function buildVault(vfs: Vfs, request: VaultRequest): VaultReport {
  * carries. `marketplace` names it, and is required when the vault holds more
  * than one.
  *
- * The structure of the model `exportSkills` translates into files, so a host
+ * The structure of the model `buildVault` translates into files, so a host
  * that wants a vault's structure reads it here rather than parsing a built
  * tree. The rendered bodies do not cross.
  *

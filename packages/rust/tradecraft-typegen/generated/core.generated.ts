@@ -316,47 +316,47 @@ export interface DiscoveryWarning {
   detail: string;
 }
 
-/**
- * One marketplace export: this vault, built into its `dist/<m>/` or checked
- * against it.
- */
-export interface ExportRequest {
-  /**
-   * Absolute path to the vault root. Discovery, compilation, the output
-   * folder and the provenance markers all resolve against it.
-   */
+/** A build or check of every marketplace in a vault, or of the one named. */
+export interface VaultRequest {
+  /** Absolute path to the vault root. */
   vault_root: string;
 
-  /**
-   * Which marketplace this build renders, by folder. `None` names the
-   * vault's only one; a vault holding more than one is refused.
-   */
+  /** Which marketplace to build, by folder. `None` builds every one. */
   marketplace?: string;
 
   /**
-   * Which harnesses to build, by name. It replaces the root file's
-   * `build.harnesses` for this run; empty means that list, and with no
-   * list, every harness.
-   *
-   * A name no harness answers to is refused rather than ignored: silently
-   * publishing other than was asked for is the failure this crate is
-   * built around.
+   * Which harnesses to build. It replaces the root file's
+   * `build.harnesses`, as [`ExportRequest::harnesses`] does.
    */
   harnesses?: string[];
 
   /** Build, or check. Absent on the wire means [`ExportMode::Build`]. */
   mode?: ExportMode;
-
-  /**
-   * Check only: the built marketplace to compare the render with, in place
-   * of `<root>/dist/<m>/`. `bump --changed-since` compares with a baseline
-   * this way. A build refuses it: a build always writes `dist/<m>/`.
-   */
-  compare_with?: string;
 }
 
 /** Whether an export writes the marketplace, or only reports its drift. */
 export type ExportMode = "build" | "check";
+
+/** What [`build_vault`] did, or would do, per marketplace. */
+export interface VaultReport {
+  /** One report per marketplace, in folder order. */
+  marketplaces: MarketplaceReport[];
+
+  /**
+   * A check's refused marketplaces, in folder order. A build that meets a
+   * refusal fails whole, so its report holds none.
+   */
+  refused?: MarketplaceRefusal[];
+}
+
+/** One marketplace's report in a [`VaultReport`]. */
+export interface MarketplaceReport {
+  /** The marketplace's folder name. */
+  marketplace: string;
+
+  /** Its export report. */
+  report: ExportReport;
+}
 
 /** What one export did, or would do — per plugin, per root. */
 export interface ExportReport {
@@ -495,45 +495,6 @@ export interface VersionBumpSuggestion {
  */
 export type StaleKind = "plugin" | "file" | "empty-dir";
 
-/** A build or check of every marketplace in a vault, or of the one named. */
-export interface VaultRequest {
-  /** Absolute path to the vault root. */
-  vault_root: string;
-
-  /** Which marketplace to build, by folder. `None` builds every one. */
-  marketplace?: string;
-
-  /**
-   * Which harnesses to build. It replaces the root file's
-   * `build.harnesses`, as [`ExportRequest::harnesses`] does.
-   */
-  harnesses?: string[];
-
-  /** Build, or check. Absent on the wire means [`ExportMode::Build`]. */
-  mode?: ExportMode;
-}
-
-/** What [`build_vault`] did, or would do, per marketplace. */
-export interface VaultReport {
-  /** One report per marketplace, in folder order. */
-  marketplaces: MarketplaceReport[];
-
-  /**
-   * A check's refused marketplaces, in folder order. A build that meets a
-   * refusal fails whole, so its report holds none.
-   */
-  refused?: MarketplaceRefusal[];
-}
-
-/** One marketplace's report in a [`VaultReport`]. */
-export interface MarketplaceReport {
-  /** The marketplace's folder name. */
-  marketplace: string;
-
-  /** Its export report. */
-  report: ExportReport;
-}
-
 /** A marketplace a check could not plan, in a [`VaultReport`]. */
 export interface MarketplaceRefusal {
   /** The marketplace's folder name. */
@@ -670,7 +631,6 @@ export type Target = "claude" | "codex" | "cursor" | "pi";
  */
 export interface WasmRequests {
   discoverComponents: DiscoverRequest;
-  exportSkills: ExportRequest;
   buildVault: VaultRequest;
   loadMarketplace: LoadRequest;
 }
@@ -682,7 +642,6 @@ export interface WasmResponses {
   knownTargets: string[];
   parseRootFile: RootFile;
   discoverComponents: DiscoveryReport;
-  exportSkills: ExportReport;
   buildVault: VaultReport;
   loadMarketplace: Marketplace;
 }

@@ -53,7 +53,7 @@ export interface BaseVfs {
    * a rendered root beside the live one and swaps the two by rename. They are
    * optional on a host, which fails only when something actually renames or
    * removes — see
-   * `packages/rust/tradecraft-wasm/src/js_vfs.rs` — but `exportSkills` renames,
+   * `packages/rust/tradecraft-wasm/src/js_vfs.rs` — but `buildVault` renames,
    * so this host implements both.
    *
    * Deliberately narrower than `fs.renameSync`: `to` must NOT exist. POSIX

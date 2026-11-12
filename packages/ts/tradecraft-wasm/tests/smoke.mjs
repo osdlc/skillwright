@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { CoreError, createNodeVfs, exportSkills, knownTargets } from '@osdlc/tradecraft-wasm'
+import { buildVault, CoreError, createNodeVfs, knownTargets } from '@osdlc/tradecraft-wasm'
 
 assert.ok(knownTargets().includes('claude'))
 
@@ -31,16 +31,16 @@ try {
   writeFileSync(join(folder, 'review.md'), '---\ndescription: Reviews a diff.\n---\n\n# Review\n')
   const out = join(vault, 'dist/house')
 
-  const report = exportSkills(createNodeVfs(), {
+  const report = buildVault(createNodeVfs(), {
     vault_root: vault,
     mode: 'build',
   })
-  assert.equal(report.changed, true)
+  assert.equal(report.marketplaces[0].report.changed, true)
   assert.match(readFileSync(join(out, '.claude-plugin/marketplace.json'), 'utf-8'), /house/)
 
   assert.throws(
     () =>
-      exportSkills(createNodeVfs(), {
+      buildVault(createNodeVfs(), {
         vault_root: join(root, 'missing'),
         mode: 'build',
       }),

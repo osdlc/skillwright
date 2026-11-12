@@ -12,14 +12,13 @@
 //! |---|---|---|
 //! | `discoverComponents` | `discover::discover_components` | the vault scan every other verb needs |
 //! | `buildVault` | `export::build_vault` | `build` and `check` of every marketplace, through `mode` |
-//! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode`, of one marketplace |
 //! | `loadMarketplace` | `model::load::load`, through `wire::marketplace` | any host that wants the structure rather than files |
 //! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a target name |
 //! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
 //!
 //! `build` and `check` share an export, because a mode is a key on the
 //! request rather than an export of its own. There is deliberately no
-//! `checkSkills` beside `exportSkills`.
+//! `checkVault` beside `buildVault`.
 //!
 //! No request carries configuration. The core reads the root file's shared
 //! defaults and `build.harnesses` from `skillwright.md` through the host's
@@ -33,9 +32,8 @@
 //!   call into JS and what happens when the host throws.
 //! - **The request and report cross as JSON strings**, deserialized and
 //!   serialized by the same `serde_json` the core is compiled against, through
-//!   the core's own derives. `buildVault`, `exportSkills` and
-//!   `loadMarketplace` read the core's `VaultRequest`, `ExportRequest` and
-//!   `LoadRequest` directly. `WireDiscoverRequest`
+//!   the core's own derives. `buildVault` and `loadMarketplace` read the
+//!   core's `VaultRequest` and `LoadRequest` directly. `WireDiscoverRequest`
 //!   is the one request shape this crate owns, because `discover_components`
 //!   takes loose parameters rather than a struct. Every request refuses an
 //!   unknown key.
@@ -51,8 +49,8 @@
 //!   a guard working, and a caller that wants to tell it from a genuine I/O
 //!   failure reads `.name` rather than pattern-matching on a message.
 //!
-//! An export has no per-unit refusal: it refuses before anything is staged,
-//! so every refusal is a throw.
+//! A build refuses before anything is staged, so its refusals throw. A check
+//! lists each marketplace that refused in its report.
 
 mod js_vfs;
 mod wire;
@@ -62,10 +60,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tradecraft_core::CoreError;
 use tradecraft_core::discover::discover_components as core_discover_components;
-use tradecraft_core::export::{
-    ExportRequest, VaultRequest, build_vault as core_build_vault,
-    export_skills as core_export_skills,
-};
+use tradecraft_core::export::{VaultRequest, build_vault as core_build_vault};
 use tradecraft_core::harness::KNOWN_TARGETS;
 use tradecraft_core::model::load::LoadRequest;
 use tradecraft_core::settings::parse_root_file as core_parse_root_file;
@@ -153,48 +148,6 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
 
 // --- the marketplace ---------------------------------------------------------
 
-/// Render one marketplace of the vault into one tree per harness under
-/// `<vault_root>/dist/<m>/`, written through `vfs`, and, per the request's
-/// `mode`, either swap the drifted roots into place or report the drift and
-/// write nothing. The request's `marketplace` names it, and is required when
-/// the vault holds more than one.
-///
-/// `vfs` is the host's filesystem object; `request_json` is a serialized
-/// `ExportRequest`. Returns a serialized `ExportReport`.
-///
-/// # `build` and `check` are one export, because they are one path
-///
-/// `mode` is `"build"`, or `"check"` to render into the overlay, compare, and
-/// write nothing under any outcome. The key is optional and absent means
-/// `"build"`.
-///
-/// `check`'s verdict cannot disagree with `build`'s: there is one render and
-/// one comparison behind both. See `tradecraft_core::export`'s module doc.
-///
-/// The exit code is the caller's, not this layer's: `ExportReport.changed` is
-/// the fact, and a `check` that exits 1 on drift is the CLI reading it.
-///
-/// # Errors
-///
-/// * `Refused` — `ambiguous-marketplace` (several and none named),
-///   `empty-marketplace` (a marketplace with no plugin), `compare-with` on a
-///   build, and everything discovery and compilation refuse.
-/// * `SwapFailed` — the commit failed part-way; the message says what the
-///   rollback restored. Its own `.name`, because a host has to be able to tell
-///   "nothing happened" from "something happened and was undone".
-///
-/// There is no per-unit refusal to look for inside the report: an export
-/// refuses before anything is staged.
-#[wasm_bindgen(js_name = exportSkills)]
-pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
-    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let request: ExportRequest = serde_json::from_str(request_json)
-        .map_err(|e| throwable(&format!("request is not a valid ExportRequest: {e}")))?;
-    let report = core_export_skills(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
-
-    report_json("export report", &report)
-}
-
 /// Build or check every marketplace of the vault, or the one the request's
 /// `marketplace` names, each into its `<vault_root>/dist/<m>/`.
 ///
@@ -227,13 +180,13 @@ pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> 
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
 /// `LoadRequest`. Returns a serialized `wire::WireMarketplace`: the
-/// structure of the model `exportSkills` translates into files, so a host
+/// structure of the model `buildVault` translates into files, so a host
 /// that wants to show a vault reads it here rather than re-deriving it from a
 /// built tree.
 ///
 /// # Errors
 ///
-/// Everything the load refuses, thrown as on `exportSkills`: a vault outside
+/// Everything the load refuses, thrown as on `buildVault`: a vault outside
 /// the layout, `ambiguous-marketplace` (several and none named), an
 /// unreadable member note, a call or link that does not resolve, an empty
 /// marketplace.
@@ -289,21 +242,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_export_request_s_absences_are_the_core_defaults() {
-        let request: ExportRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+    fn a_vault_request_s_absences_are_the_core_defaults() {
+        let request: VaultRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
         assert_eq!(request.vault_root, PathBuf::from("/vault"));
         assert_eq!(request.mode, ExportMode::Build);
         assert_eq!(request.marketplace, None);
-        assert_eq!(request.compare_with, None);
         assert!(request.harnesses.is_empty());
-        let request: VaultRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
-        assert_eq!(request.mode, ExportMode::Build);
-        assert_eq!(request.marketplace, None);
     }
 
     #[test]
     fn check_mode_crosses_in_the_request() {
-        let request: ExportRequest = serde_json::from_str(
+        let request: VaultRequest = serde_json::from_str(
             r#"{
                 "vault_root": "/vault",
                 "marketplace": "house",
@@ -333,8 +282,6 @@ mod tests {
     fn every_request_refuses_an_unknown_key() {
         for key in ["config", "defaults"] {
             let json = format!(r#"{{ "vault_root": "/vault", "{key}": {{}} }}"#);
-            let export = serde_json::from_str::<ExportRequest>(&json).unwrap_err();
-            assert!(export.to_string().contains(key), "{export}");
             let vault = serde_json::from_str::<VaultRequest>(&json).unwrap_err();
             assert!(vault.to_string().contains(key), "{vault}");
             let load = serde_json::from_str::<LoadRequest>(&json).unwrap_err();

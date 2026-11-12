@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { discoverComponents, exportSkills } from '../src/core.ts'
+import { buildVault, discoverComponents } from '../src/core.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
 let tmp: string
@@ -96,17 +96,15 @@ function repoWithVault(name: string): { repo: string; vault: string } {
   return { repo, vault }
 }
 
+/** The one marketplace's report from a build of `vault`. */
 function build(vfs: Vfs, vault: string) {
-  return exportSkills(vfs, {
-    vault_root: vault,
-    mode: 'build',
-  })
+  return buildVault(vfs, { vault_root: vault, mode: 'build' }).marketplaces[0]?.report
 }
 
 describe('export', () => {
   test("builds into the vault's dist/<m>/ when the host can see links", () => {
     const { vault } = repoWithVault('repo')
-    expect(build(createNodeVfs(), vault).changed).toBe(true)
+    expect(build(createNodeVfs(), vault)?.changed).toBe(true)
     expect(existsSync(path.join(vault, 'dist/house/.claude-plugin/marketplace.json'))).toBe(true)
   })
 })

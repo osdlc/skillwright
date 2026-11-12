@@ -28,27 +28,24 @@ ESM only. Node.js 22 or later, or Bun.
 ## Quick start
 
 ```ts
-import { createNodeVfs, exportSkills } from '@osdlc/tradecraft-wasm'
+import { buildVault, createNodeVfs } from '@osdlc/tradecraft-wasm'
 
 const vfs = createNodeVfs()
-const report = exportSkills(vfs, {
+const report = buildVault(vfs, {
   vault_root: '/work/vault', // absolute: holds skillwright.md and marketplaces/
   marketplace: 'house', // marketplaces/house/, built into dist/house/
   mode: 'build', // 'check' reports drift and writes nothing
 })
-console.log(report.changed)
+console.log(report.marketplaces[0]?.report.changed)
 ```
 
-`marketplace` may be left out when the vault holds one marketplace. With
-several and none named, the call throws, naming them. The core reads the
+Leave `marketplace` out to build every marketplace. A build writes all of
+them or none. The core reads the
 shared defaults and `build.harnesses` from `skillwright.md` itself, and
 everything else from the vault's notes; a request carries no configuration.
 `harnesses` picks some of `'claude'`, `'codex'`, `'cursor'` and `'pi'`, and
 replaces the root file's list for that call. The root file's list is only
 the default.
-
-`buildVault(vfs, { vault_root })` builds every marketplace, and writes all of
-them or none.
 
 ## API
 
@@ -59,8 +56,7 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 | ----------------------------- | ------------------------------------------------------------------------------- |
 | `discoverComponents(vfs, request)` | Scans a vault's `marketplaces/` for components, and reports the notes it could not read. |
 | `loadMarketplace(vfs, request)` | Loads one marketplace of the vault and writes nothing: its plugins, and each component's description, harness blocks, calls and files. The rendered bodies do not cross. |
-| `buildVault(vfs, request)`    | Renders every marketplace into its `<vault_root>/dist/<m>/`, and writes all of them or none. `mode: 'check'` reports drift and writes nothing. |
-| `exportSkills(vfs, request)`  | Renders one marketplace into `<vault_root>/dist/<m>/`, one tree per agent. `mode: 'check'` reports drift and writes nothing. |
+| `buildVault(vfs, request)`    | Renders every marketplace, or the one `marketplace` names, into its `<vault_root>/dist/<m>/`, one tree per agent, and writes all of them or none. `mode: 'check'` reports drift and writes nothing. |
 | `parseRootFile(text)`         | Reads the text of `skillwright.md`: its shared defaults, its `build` settings and a warning per unknown key. |
 | `knownTargets()`              | The target names the core accepts: the `Target` type's four names.              |
 | `createNodeVfs(options?)`     | The `Vfs` over `node:fs`.                                                       |
