@@ -26,7 +26,7 @@ use tradecraft_core::{
     BumpLevel, CoreError, DiscoveredComponent, EntityKind, ExportMode, ExportReport, ExportUnit,
     NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest, Vfs, build_vault,
     dist_dir, is_vault_root, next_version, owned_paths, packs_path, parse_semver,
-    plugin_manifest_path, read_version, set_version,
+    plugin_manifest_path, read_version, refusal, set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -149,6 +149,14 @@ struct VersionNote {
     rel: String,
 }
 
+/// The reason on a row whose `version` is not semver.
+fn non_semver_reason(current: &str) -> String {
+    format!(
+        "{}: `version` reads `{current}`",
+        refusal::NON_SEMVER.as_str()
+    )
+}
+
 fn plan_bump(
     note: VersionNote,
     level: BumpLevel,
@@ -157,7 +165,8 @@ fn plan_bump(
 ) -> Result<Planned, String> {
     let VersionNote { path, rel } = note;
     let bytes = NativeVfs.read_file(&path).map_err(|e| e.to_string())?;
-    let source = String::from_utf8(bytes).map_err(|e| format!("{rel} is not valid UTF-8: {e}"))?;
+    let source = String::from_utf8(bytes)
+        .map_err(|e| CoreError::unreadable(&path, format!("not UTF-8: {e}")).reason())?;
     let found = read_version(&source).map_err(|e| e.reason())?;
     let versioned = found.is_some();
     // No version key in either shape is not a refusal — the core's stated
@@ -308,7 +317,7 @@ fn run_one(
         Err(err) => return failed(ctx.err, "bump", &err),
     };
     let Some(new) = planned.new.clone() else {
-        let reason = format!("non-semver: `version` reads `{}`", planned.current);
+        let reason = non_semver_reason(&planned.current);
         let row = Row::refused(plugin, &planned.rel, &planned.current, reason).single();
         if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
@@ -559,7 +568,7 @@ fn run_changed(
                 row.explain = Some(skip.text());
                 row
             } else if planned.new.is_none() {
-                let reason = format!("non-semver: `version` reads `{}`", planned.current);
+                let reason = non_semver_reason(&planned.current);
                 Row::refused(name, &planned.rel, &planned.current, reason)
             } else {
                 Row::bump(name, planned)
