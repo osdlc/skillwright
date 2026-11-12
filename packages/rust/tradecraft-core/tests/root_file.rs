@@ -1,5 +1,5 @@
-//! The root file's key set, the key table's refusals, the `name` key and the
-//! four `targets` values (spec sections 2, 3 rule 4, 6 and 9 rule 12, and
+//! The root file's key set, the key table's refusals, the `name` and
+//! `targets` keys and the four harness names (spec sections 2, 3 rule 4, 6 and 9 rule 12, and
 //! section 11 cases 2 and 7), at the core's public API.
 
 use std::path::Path;

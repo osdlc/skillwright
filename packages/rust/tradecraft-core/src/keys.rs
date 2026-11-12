@@ -541,8 +541,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 - **Value** is the kind of value the key takes. [Other accepted forms](#other-accepted-forms) notes what the column cannot say.
 - **Owner** says who the key belongs to:
-  - `skillwright`: skillwright reads the key and removes it when it publishes.
-  - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written.
+  - `skillwright`: skillwright reads the key and leaves it out of what it builds.
+  - `spec`: the key belongs to the Agent Skills spec or a harness. It ships as written.
 - **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, the marketplace note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
 
 ## What is checked

@@ -122,7 +122,7 @@ impl CoreError {
         })
     }
 
-    /// A refusal prefixed with a reason token, such as `unknown-target` or
+    /// A refusal prefixed with a reason token, such as `unknown-harness` or
     /// `path-collision`.
     ///
     /// The token leads the message so a report, a test, or a later UI can find

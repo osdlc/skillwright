@@ -137,7 +137,6 @@ pub(crate) fn built_harnesses(
 /// * `refused: path-collision` — two components of one name in one plugin.
 /// * What [`crate::hooks_file::parse_hooks_file`] refuses in a plugin's
 ///   `hooks/hooks.json`.
-/// * `refused: unknown-target` — a harness block named for no known harness.
 /// * `refused: malformed` — a container block key holding the wrong
 ///   kind of value.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
