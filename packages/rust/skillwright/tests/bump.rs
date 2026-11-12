@@ -247,6 +247,31 @@ fn a_non_semver_version_is_refused_and_the_note_is_untouched() {
     assert_eq!(before, after, "a refusal must not touch the note's bytes");
 }
 
+/// A single-plugin `--json` row carries the reason it was refused, as the
+/// text output does.
+#[test]
+fn a_single_plugin_json_refusal_carries_its_reason() {
+    let (dir, vault) = fixture(Some("version: banana"));
+    let result = run(
+        &[
+            "bump",
+            "widget",
+            "--yes",
+            "--json",
+            "--vault",
+            &vault_str(&vault),
+        ],
+        dir.path(),
+    );
+    assert_eq!(result.code, 1, "{}", result.stderr);
+    let row: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_eq!(row["status"], "refused", "{row}");
+    assert_eq!(
+        row["reason"], "non-semver: `version` reads `banana`",
+        "{row}"
+    );
+}
+
 #[test]
 fn no_yes_off_a_tty_is_a_usage_error_and_writes_nothing() {
     let (dir, vault) = fixture(Some("version: 0.2.1"));

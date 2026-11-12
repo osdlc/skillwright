@@ -684,8 +684,8 @@ struct Row {
 /// The two `--json` row objects `bump` prints.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum JsonShape {
-    /// A single-plugin run's object: the note, its status and versions. It
-    /// names no plugin and carries no reason.
+    /// A single-plugin run's object: the note, its status and versions, and
+    /// why when there is a reason. It names no plugin.
     Single,
     /// A `--changed-since` row: the plugin, and why when there is a reason.
     Changed,
@@ -776,7 +776,7 @@ impl Row {
             status: self.status,
             current: &self.current,
             new: self.new.as_deref(),
-            reason: self.reason.as_deref().filter(|_| changed),
+            reason: self.reason.as_deref(),
         }
     }
 }
