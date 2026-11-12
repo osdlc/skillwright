@@ -24,7 +24,7 @@ test('loadMarketplace returns the model with calls resolved', () => {
     writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
     writeFileSync(
       path.join(skills, 'review/review.md'),
-      '---\ndescription: Reviews a diff.\ntargets: [claude, pi]\n---\n\nRun /[[lint]] first.\n',
+      '---\ndescription: Reviews a diff.\n---\n\nRun /[[lint]] first.\n',
     )
     writeFileSync(path.join(skills, 'lint/lint.md'), '---\ndescription: Lints.\n---\n\nLint it.\n')
 
@@ -37,7 +37,6 @@ test('loadMarketplace returns the model with calls resolved', () => {
     // Every component sits in a plugin.
     expectTypeOf<SkillId['plugin']>().toEqualTypeOf<string>()
     expect(review?.description).toBe('Reviews a diff.')
-    expect(review?.targets).toEqual(['claude', 'pi'])
 
     // Only the narrow shape crosses: no body segments, no model folder, no
     // agent-adapt content.
@@ -63,7 +62,6 @@ test('loadMarketplace returns the model with calls resolved', () => {
       'name',
       'path',
       'resources',
-      'targets',
     ])
     expect(JSON.stringify(market)).not.toMatch(/"(segments|folder|resolved|content)"/)
   } finally {
@@ -84,7 +82,8 @@ test('parseRootFile reads a root file with the core reader', () => {
   expect(() => parseRootFile('---\nbuild:\n  out: dist\n---\n')).toThrow(/build\.out/)
   expect(() => parseRootFile('---\nowner: acme\n---\n')).toThrow(/<m>\.md/)
   expect(() => parseRootFile('---\nname: house\n---\n')).toThrow(/delete it/)
-  expect(() => parseRootFile('---\ntargets: [opencode]\n---\n')).toThrow(
+  expect(() => parseRootFile('---\nbuild:\n  harnesses: [opencode]\n---\n')).toThrow(
     /`claude`, `codex`, `cursor` and `pi`/,
   )
+  expect(() => parseRootFile('---\ntargets: [claude]\n---\n')).toThrow(/--harness/)
 })

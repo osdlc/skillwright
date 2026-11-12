@@ -12,8 +12,7 @@ marketplaces/
 │     ├─ core.md
 │     ├─ references/tone.md        shared by the plugin, reached by wikilink
 │     ├─ skills/
-│     │  ├─ review/review.md       narrowed to one target · foreign `license` key
-│     │  ├─ secret/secret.md       `targets: []` — built for no harness
+│     │  ├─ review/review.md       foreign `license` key
 │     │  └─ bundled/               owns a directory · embeds, links, dangles
 │     │     ├─ bundled.md
 │     │     └─ scripts/run.sh      the execute bit travels
@@ -30,9 +29,6 @@ marketplaces/
 
 **Two marketplaces.** A build writes `dist/acme/` and `dist/labs/`, and
 `--marketplace acme` builds one.
-
-**`targets`, all three readings.** Absent on most (`all`), an empty list on
-`secret` (`none`), one name on `review`.
 
 **Kinds a pack may not carry.** `scout` is an agent, which no harness's pack
 holds, so it is named rather than written wrongly.

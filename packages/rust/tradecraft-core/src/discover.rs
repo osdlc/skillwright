@@ -50,10 +50,6 @@ use crate::vault::frontmatter_map;
 use crate::vfs::Vfs;
 
 /// One component, as discovery hands it to the verbs.
-///
-/// `targets` keeps the three-outcome `targets` reading instead of being
-/// expanded to an explicit all-targets list, so the layer that knows what
-/// "every harness" means today is the one that decides it.
 // No `Eq`: `identity` carries JSON for the two manifest fields
 // whose dialects allow an object, and `serde_json::Value` is only `PartialEq`
 // because it can hold a float. Nothing keys a map or a set on a whole
@@ -69,10 +65,6 @@ pub struct DiscoveredComponent {
     pub description: String,
     /// What this component is, from its position.
     pub kind: EntityKind,
-    /// `targets` exactly as [`VaultFrontmatter::targets`] read it, every
-    /// name checked against [`KNOWN_TARGETS`]. `None` is absent — every
-    /// harness; `Some(vec![])` is nowhere.
-    pub targets: Option<Vec<String>>,
     /// The plugin folder holding this note. `None` for a marketplace's note.
     pub plugin: Option<String>,
     /// The marketplace folder this sits under. `None` for a marketplace's
@@ -367,7 +359,7 @@ pub struct SkippedNote {
     /// spelling every other report prints.
     pub path: String,
     /// A closed-set reason token. The refusals that already carry one keep it
-    /// (`unknown-target`); everything else — frontmatter that will not parse,
+    /// (`malformed`); everything else — frontmatter that will not parse,
     /// a name the Agent Skills spec does not admit, an unreadable file — is
     /// `unreadable-note`, the vocabulary's entry for "this note does not
     /// parse".
@@ -420,8 +412,8 @@ impl SkippedNote {
 ///
 /// # A bad note stops itself, not the scan
 ///
-/// Everything wrong with *one* note (an over-long description, a `targets`
-/// this build does not know, frontmatter that will not parse) lands in
+/// Everything wrong with *one* note (an over-long description, a removed
+/// key such as `targets`, frontmatter that will not parse) lands in
 /// [`DiscoveryReport::skipped`] and the walk carries on. A note with no
 /// `description` is listed, and named in [`DiscoveryReport::warnings`] with
 /// [`MISSING_DESCRIPTION_REASON`], which a build refuses.
@@ -604,24 +596,6 @@ fn read_source(
     {
         return Err(CoreError::malformed(entry_path, refusal));
     }
-    if let Some(declared) = ours.targets.as_deref() {
-        let unknown: Vec<&str> = declared
-            .iter()
-            .map(String::as_str)
-            .filter(|name| !KNOWN_TARGETS.contains(name))
-            .collect();
-        if !unknown.is_empty() {
-            return Err(CoreError::refused(
-                "unknown-target",
-                format!(
-                    "{}: `targets` {}",
-                    entry_path.display(),
-                    crate::harness::profile::unknown_targets_detail(&unknown)
-                ),
-            ));
-        }
-    }
-
     let bundle_root = entry_path.parent().map(Path::to_path_buf);
     let resources = bundle_root
         .as_deref()
@@ -636,7 +610,6 @@ fn read_source(
         name,
         description,
         kind,
-        targets: ours.targets,
         plugin: position.plugin().map(str::to_owned),
         marketplace: (kind != EntityKind::Marketplace).then(|| position.marketplace().to_owned()),
         entry_path: entry_path.to_path_buf(),
@@ -981,7 +954,7 @@ mod tests {
             ),
             (
                 "marketplaces/acme/plugins/tools/skills/aim/aim.md",
-                "---\ndescription: d\ntargets: [nowhere]\n---\n",
+                "---\ndescription: d\ntargets: [claude]\n---\n",
             ),
             ("marketplaces/acme/plugins/tools/skills/ok/ok.md", SKILL),
         ]);
@@ -996,7 +969,7 @@ mod tests {
             [
                 (
                     "marketplaces/acme/plugins/tools/skills/aim/aim.md",
-                    "unknown-target"
+                    "malformed"
                 ),
                 (
                     "marketplaces/acme/plugins/tools/skills/long/long.md",

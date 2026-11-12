@@ -326,19 +326,6 @@ pub(crate) fn plugin_identity(config: &MarketplaceConfig, plugin: &str) -> Conta
     identity
 }
 
-/// `plugin`'s `targets`: its own, else the marketplace's where the key table
-/// says a plugin inherits them. It is not part of [`plugin_identity`]: see
-/// [`crate::keys::identity_keys`].
-pub(crate) fn plugin_targets(config: &MarketplaceConfig, plugin: &str) -> Option<Vec<String>> {
-    overrides_for(config, plugin)
-        .and_then(|overrides| overrides.targets.clone())
-        .or_else(|| {
-            crate::keys::inherits(EntityKind::Plugin, "targets")
-                .then(|| config.targets.clone())
-                .flatten()
-        })
-}
-
 /// The version a plugin ships as when nothing states one.
 pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
 

@@ -137,11 +137,9 @@ pub fn read_vault_note(
         description,
         argument_hint: take_hint(&mut fields),
         // Claude Code's own key, hand-written. Empty and absent both read as
-        // `None` — see `SkillContent::argument_names`'s own doc for why that
-        // simplification is fine here where it is not for `targets`: an
-        // author has no reason to write `arguments: []` on purpose the way
-        // they would `targets: []`, so there is no second outcome worth
-        // keeping distinct from "derive it".
+        // `None` — see `SkillContent::argument_names`'s own doc: an author
+        // has no reason to write `arguments: []` on purpose, so there is no
+        // second outcome worth keeping distinct from "derive it".
         argument_names: {
             let names = take_argument_names(&mut fields);
             (!names.is_empty()).then_some(names)
@@ -433,7 +431,7 @@ mod tests {
         assert!(content.user_invocable);
 
         // A note that declares nothing of ours reads as the ordinary vault.
-        assert_eq!(note.frontmatter.targets, None);
+        assert!(note.frontmatter.arguments.is_empty());
     }
 
     #[test]
@@ -549,19 +547,19 @@ mod tests {
 
     #[test]
     fn our_keys_are_typed_and_never_land_in_annotations() {
-        // `targets` is ours and typed; annotations holds foreign keys only,
+        // `arguments` is ours and typed; annotations holds foreign keys only,
         // and a prefixed key is foreign.
         let (vfs, path) = vault(
             "adopted",
             "---\n\
              description: d\n\
              owner: kelly\n\
-             targets:\n  - claude\n\
+             arguments:\n  - name: pr\n\
              sw-targets: keep me\n\
              ---\nb\n",
         );
         let note = read_vault_skill(&vfs, &path).unwrap();
-        assert_eq!(note.frontmatter.targets, Some(vec!["claude".to_owned()]));
+        assert_eq!(note.frontmatter.arguments.len(), 1);
         assert!(note.frontmatter.unknown.contains(&"sw-targets".to_owned()));
 
         let annotations = note.content.annotations;

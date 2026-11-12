@@ -3,7 +3,7 @@
 //!
 //! `HarnessTranslator`'s default methods do the work every harness shares,
 //! reading the harness's [`HarnessProfile`] for what differs as data:
-//! admission by kind and `targets`, how a published skill is named, how a
+//! admission by kind, how a published skill is named, how a
 //! call is spelled, where a pack's files land, and a skill's files through
 //! `agent-adapt`. A harness overrides what is its own code — its manifests,
 //! mostly.
@@ -36,7 +36,7 @@ use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
-use crate::model::load::{admits, targets_name};
+use crate::model::load::kind_carried;
 use crate::model::{
     Body, Call, Component, Marketplace, Plugin, PluginRootPath, ResolvedRef, ResourceContent,
     Segment,
@@ -118,10 +118,9 @@ pub(crate) trait HarnessTranslator: Sync {
         self.profile().format()
     }
 
-    /// Does this pack carry this member? Its kind has a place in the pack, and
-    /// its `targets` names this harness.
+    /// Does this pack carry this member? Its kind has a place in the pack.
     fn admits(&self, component: &Component) -> bool {
-        admits(&component.discovered, self.profile())
+        kind_carried(&component.discovered, self.profile())
     }
 
     /// The name a skill of `plugin` publishes under: its directory, its
@@ -153,11 +152,10 @@ pub(crate) trait HarnessTranslator: Sync {
         )
     }
 
-    /// Whether this harness's pack contains what `call` names: a skill its
-    /// `targets` admit, or such a command where the pack has commands.
+    /// Whether this harness's pack contains what `call` names: any skill,
+    /// or a command where the pack has commands.
     fn carries_call(&self, call: &Call) -> bool {
-        (call.skill.kind != EntityKind::Command || self.format().carries_commands)
-            && targets_name(call.targets.as_deref(), self.profile().name)
+        call.skill.kind != EntityKind::Command || self.format().carries_commands
     }
 
     /// A link of `plugin`, written from where its text lands in this
@@ -370,10 +368,10 @@ pub(crate) trait HarnessTranslator: Sync {
     /// One plugin's pack into `tree` under `base`: its skills, its commands
     /// where the pack has a place for one, its hooks, its assets and its
     /// manifest. Returns the carried skills' names, or `None` when this
-    /// harness carries nothing of the plugin — a plugin whose every member is
-    /// narrowed away is absent entirely: no directory, no manifest, no
-    /// listing. A plugin with no member is carried, as its manifest alone,
-    /// by the harnesses its `targets` name.
+    /// harness carries nothing of the plugin — a plugin whose every member's
+    /// kind this pack has no place for is absent entirely: no directory, no
+    /// manifest, no listing. A plugin with no member is carried, as its
+    /// manifest alone, by every harness built.
     ///
     /// # Errors
     ///
@@ -387,7 +385,7 @@ pub(crate) trait HarnessTranslator: Sync {
     ) -> Result<Option<Vec<&'p str>>, CoreError> {
         let skills: Vec<&Component> = plugin.skills.iter().filter(|c| self.admits(c)).collect();
         let commands: Vec<&Component> = plugin.commands.iter().filter(|c| self.admits(c)).collect();
-        if !plugin.carried_by(self.profile().name, |c| self.admits(c)) {
+        if !plugin.carried_by(|c| self.admits(c)) {
             return Ok(None);
         }
         for skill in &skills {

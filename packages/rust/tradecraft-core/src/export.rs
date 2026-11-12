@@ -13,9 +13,7 @@
 //! top-level tree inside it (`HarnessProfile::tree`): `.claude-plugin/`,
 //! `.agents/`, `.cursor-plugin/` and `.pi/`. Each tree carries that harness's
 //! marketplace manifest (Pi has none), its pack manifests in its own dialect,
-//! and only the skills whose `targets` admit it, at
-//! `<packs>/<plugin>/skills/<name>/`. A skill narrowed away from a harness is
-//! absent from its tree entirely, not merely unlisted.
+//! and every skill, at `<packs>/<plugin>/skills/<name>/`.
 //!
 //! The trees are disjoint by construction: the harnesses translate a skill's
 //! tool names and frontmatter differently, so the same skill is one file per
@@ -26,14 +24,13 @@
 //! format has a place for them
 //! ([`crate::harness::PluginFormat::carries_commands`]). A command narrowed
 //! out this way has no file and no manifest mention there, and the report
-//! names it as [`ExportUnit::NotCarried`] for that harness. One narrowed
-//! out by `targets` is absent with no report line: the author asked.
+//! names it as [`ExportUnit::NotCarried`] for that harness.
 //!
-//! Which harnesses a build renders is the root file's `build.harnesses`
-//! (all of them when absent), narrowed by [`ExportRequest::harnesses`]. A
-//! name no harness answers to, or one the root file does not build, is
-//! refused rather than ignored — publishing other than was asked for, quietly,
-//! is the failure this crate is built around.
+//! Which harnesses a build renders is [`ExportRequest::harnesses`] when it
+//! names any, else the root file's `build.harnesses`, else all of them. A
+//! name no harness answers to is refused rather than ignored — publishing
+//! other than was asked for, quietly, is the failure this crate is built
+//! around.
 //!
 //! # One model, one tree per harness
 //!
@@ -109,7 +106,7 @@ use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
 use crate::layout::Layout;
-use crate::model::load::{built_harnesses, kind_carried, load_for, targets_admit};
+use crate::model::load::{built_harnesses, kind_carried, load_for};
 use crate::model::{Component, Marketplace};
 use crate::paths::{LoadedVault, VaultMarketplace, load_vault, read_root_file};
 use crate::settings::RootFile;
@@ -188,9 +185,6 @@ pub(crate) struct MarketplaceConfig {
     /// The marketplace's manifest fields. Each field the key table says a
     /// plugin inherits is each plugin's default.
     pub identity: ContainerIdentity,
-    /// Which harnesses get what the marketplace holds. A plugin or member
-    /// with no `targets` of its own inherits it.
-    pub targets: Option<Vec<String>>,
     /// The marketplace's harness blocks, keyed by harness (`codex`, …), each
     /// a map of that harness's own manifest keys. Merged over the generated
     /// marketplace manifest, and inherited by every plugin key by key.
@@ -208,9 +202,6 @@ pub(crate) struct PluginOverrides {
     /// The plugin's manifest fields. Each [`crate::keys::inherits`] key it
     /// leaves unset is the marketplace's.
     pub identity: ContainerIdentity,
-    /// Which harnesses the plugin's members go to. Default the marketplace
-    /// `targets`.
-    pub targets: Option<Vec<String>>,
     /// The plugin note's harness blocks, keyed by harness. Merged over the
     /// marketplace's blocks key by key, then over the plugin's manifest and
     /// its marketplace entry.
@@ -293,8 +284,7 @@ pub enum ExportUnit {
     ///
     /// `root` is the root that cannot carry it — a command on Codex, say.
     /// `None` when no root can, as for an agent: the reason is the layout's,
-    /// so it is listed once. A member `targets` narrowed away from a root
-    /// is not named there; the author asked for that.
+    /// so it is listed once.
     NotCarried {
         /// The root that cannot carry the component, or `None` when no root can.
         root: Option<String>,
@@ -866,9 +856,7 @@ fn plan_with(
             .plugins
             .values()
             .flat_map(|plugin| &plugin.commands)
-            .filter(|c| {
-                !kind_carried(&c.discovered, spec) && targets_admit(&c.discovered, spec.name)
-            })
+            .filter(|c| !kind_carried(&c.discovered, spec))
             .collect();
         uncarried.sort_by(|a, b| a.path.cmp(&b.path));
         units.extend(uncarried.into_iter().map(|c| ExportUnit::NotCarried {
@@ -1148,7 +1136,7 @@ fn admitted_plugins<'m>(
         .plugins
         .iter()
         .filter_map(|(name, plugin)| {
-            let carried = plugin.carried_by(translator.profile().name, |c| translator.admits(c));
+            let carried = plugin.carried_by(|c| translator.admits(c));
             let skills = plugin
                 .skills
                 .iter()
@@ -1564,25 +1552,16 @@ mod tests {
     /// A skill note, with a caller-supplied
     /// body — for a test that needs to control what a skill's rendered text
     /// actually says (e.g. whether it calls the CLI at all).
-    fn note_with_body(name: &str, targets: &[&str], body: &str) -> String {
-        let mut out = format!("---\ndescription: Use {name}.\n");
-        if !targets.is_empty() {
-            out.push_str("targets:\n");
-            for target in targets {
-                out.push_str(&format!("  - {target}\n"));
-            }
-        }
-        out.push_str("---\n\n");
-        out.push_str(body);
-        out
+    fn note_with_body(name: &str, body: &str) -> String {
+        format!("---\ndescription: Use {name}.\n---\n\n{body}")
     }
 
     /// A skill note.
-    fn note(name: &str, targets: &[&str]) -> String {
-        note_with_body(name, targets, &format!("# {name}\n"))
+    fn note(name: &str) -> String {
+        note_with_body(name, &format!("# {name}\n"))
     }
 
-    /// The marketplace layout spec example 4: two plugins, one target narrowing.
+    /// The marketplace layout spec example 4: two plugins.
     fn example_vault() -> MemVfs {
         let vfs = MemVfs::new();
         vfs.create_dir_all(Path::new("/vault/marketplaces/house/plugins"))
@@ -1590,17 +1569,17 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/commit-helper/commit-helper.md",
-            &note("commit-helper", &[]),
+            &note("commit-helper"),
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/rebase-guide/rebase-guide.md",
-            &note("rebase-guide", &["claude"]),
+            &note("rebase-guide"),
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            &note("review-guide", &[]),
+            &note("review-guide"),
         );
         vfs
     }
@@ -1766,13 +1745,14 @@ mod tests {
         assert!(report.changed);
         // The whole output, byte-listed: one tree per harness, each with its
         // own manifest dialect and, where the harness has one, its own
-        // marketplace manifest; the narrowed skill in claude's alone — and no
-        // shared tree, no root-level manifests, no stage residue.
+        // marketplace manifest — and no shared tree, no root-level manifests,
+        // no stage residue.
         assert_eq!(
             paths_under(&vfs, Path::new("/vault/dist/house")),
             vec![
                 ".agents/packs/git-tools/.codex-plugin/plugin.json",
                 ".agents/packs/git-tools/skills/commit-helper/SKILL.md",
+                ".agents/packs/git-tools/skills/rebase-guide/SKILL.md",
                 ".agents/packs/tools/.codex-plugin/plugin.json",
                 ".agents/packs/tools/skills/review-guide/SKILL.md",
                 ".agents/plugins/marketplace.json",
@@ -1785,23 +1765,24 @@ mod tests {
                 ".cursor-plugin/marketplace.json",
                 ".cursor-plugin/packs/git-tools/.cursor-plugin/plugin.json",
                 ".cursor-plugin/packs/git-tools/skills/git-tools-commit-helper/SKILL.md",
+                ".cursor-plugin/packs/git-tools/skills/git-tools-rebase-guide/SKILL.md",
                 ".cursor-plugin/packs/tools/.cursor-plugin/plugin.json",
                 ".cursor-plugin/packs/tools/skills/tools-review-guide/SKILL.md",
                 ".pi/packs/git-tools/package.json",
                 ".pi/packs/git-tools/skills/git-tools-commit-helper/SKILL.md",
+                ".pi/packs/git-tools/skills/git-tools-rebase-guide/SKILL.md",
                 ".pi/packs/tools/package.json",
                 ".pi/packs/tools/skills/tools-review-guide/SKILL.md",
             ]
         );
-        // The per-root member counts say the narrowing happened where the
-        // listing says it did.
+        // Each root counts both of git-tools' skills.
         let git_claude = report.units.iter().any(|u| {
             matches!(u, ExportUnit::Plugin { root, name, skills, .. }
                 if root == "claude" && name == "git-tools" && *skills == 2)
         });
         let git_codex = report.units.iter().any(|u| {
             matches!(u, ExportUnit::Plugin { root, name, skills, .. }
-                if root == "codex" && name == "git-tools" && *skills == 1)
+                if root == "codex" && name == "git-tools" && *skills == 2)
         });
         assert!(git_claude && git_codex, "{report:?}");
     }
@@ -1847,11 +1828,7 @@ mod tests {
     fn a_plugin_folder_s_assets_land_whole_and_are_not_notes() {
         let vfs = example_vault();
         let assets = "/vault/marketplaces/house/plugins/tools/assets";
-        write(
-            &vfs,
-            &format!("{assets}/notes/helper.md"),
-            &note("helper", &[]),
-        );
+        write(&vfs, &format!("{assets}/notes/helper.md"), &note("helper"));
         write(&vfs, &format!("{assets}/docs/guide.txt"), "Guide.\n");
         write(&vfs, &format!("{assets}/tests/case.test.txt"), "Case.\n");
         let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
@@ -1956,12 +1933,12 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/a/skills/b-c/b-c.md",
-            &note("b-c", &[]),
+            &note("b-c"),
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/a-b/skills/c/c.md",
-            &note("c", &[]),
+            &note("c"),
         );
         let message = export_skills(&vfs, &request(ExportMode::Build))
             .unwrap_err()
@@ -2012,16 +1989,16 @@ mod tests {
     /// `a`'s body is the caller's.
     fn calls_vault(a_body: &str) -> MemVfs {
         let vfs = MemVfs::new();
-        write(&vfs, CALLS_SKILL_A, &note_with_body("a", &[], a_body));
+        write(&vfs, CALLS_SKILL_A, &note_with_body("a", a_body));
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/b/b.md",
-            &note_with_body("b", &[], "# b\n\n## Steps\n\nB's own prose.\n"),
+            &note_with_body("b", "# b\n\n## Steps\n\nB's own prose.\n"),
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/other/skills/c/c.md",
-            &note("c", &[]),
+            &note("c"),
         );
         write(
             &vfs,
@@ -2091,7 +2068,7 @@ mod tests {
         write(
             &vfs,
             &format!("{folder}/a.md"),
-            &note_with_body("a", &[], "# a\n\nPart of [[a]].\n"),
+            &note_with_body("a", "# a\n\nPart of [[a]].\n"),
         );
         write(
             &vfs,
@@ -2175,20 +2152,6 @@ mod tests {
         assert!(body.contains("and `\\/[[b]]` in code."), "{body}");
         assert!(body.contains("Cite /[[b]] too."), "{body}");
         assert!(!body.contains("/tools:b"), "{body}");
-    }
-
-    #[test]
-    fn a_call_to_a_skill_a_root_narrows_away_is_refused() {
-        let vfs = calls_vault("# a\n\nRun /[[b]].\n");
-        write(
-            &vfs,
-            "/vault/marketplaces/house/plugins/tools/skills/b/b.md",
-            &note_with_body("b", &["claude"], "# b\n"),
-        );
-        let err = export_refusal(&vfs);
-        assert!(err.contains("skill-call-not-shipped"), "{err}");
-        assert!(err.contains("tools:b"), "{err}");
-        assert!(err.contains("skills/a/a.md"), "{err}");
     }
 
     #[test]
@@ -2300,14 +2263,15 @@ mod tests {
         let skill = "s".repeat(31);
         let vfs = MemVfs::new();
         let path = format!("/vault/marketplaces/house/plugins/{plugin}/skills/{skill}/{skill}.md");
-        write(&vfs, &path, &note(&skill, &[]));
+        write(&vfs, &path, &note(&skill));
         let err = export_refusal(&vfs);
         assert!(err.contains("published-name-invalid"), "{err}");
         assert!(paths_under(&vfs, Path::new("/vault/dist/house")).is_empty());
 
-        // Narrowed away from Pi, the same skill builds.
-        write(&vfs, &path, &note(&skill, &["claude"]));
-        build(&vfs);
+        // Built for Claude Code alone, which keeps the bare name, it builds.
+        let mut claude = request(ExportMode::Build);
+        claude.harnesses = BTreeSet::from(["claude".to_owned()]);
+        export_skills(&vfs, &claude).unwrap();
     }
 
     #[test]
@@ -2376,19 +2340,19 @@ mod tests {
     }
 
     #[test]
-    fn a_plugin_narrowed_out_of_a_root_is_absent_from_it_entirely() {
+    fn a_plugin_a_root_carries_nothing_of_is_absent_from_it_entirely() {
         let vfs = MemVfs::new();
         vfs.create_dir_all(Path::new("/vault/marketplaces/house/plugins"))
             .unwrap();
         write(
             &vfs,
-            "/vault/marketplaces/house/plugins/git-tools/skills/rebase-guide/rebase-guide.md",
-            &note("rebase-guide", &["claude"]),
+            "/vault/marketplaces/house/plugins/git-tools/commands/rebase/rebase.md",
+            &note("rebase"),
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            &note("review-guide", &[]),
+            &note("review-guide"),
         );
         build(&vfs);
 
@@ -2740,8 +2704,7 @@ mod tests {
 }
 "#
         );
-        // The codex output describes its *own* members: rebase-guide is
-        // narrowed out of this root, so its manifest does not name it.
+        // The codex output describes its own members, in its own dialect.
         assert_eq!(
             text_at(
                 &vfs,
@@ -2750,7 +2713,7 @@ mod tests {
             r#"{
   "name": "git-tools",
   "version": "0.1.0",
-  "description": "Skills: commit-helper.",
+  "description": "Skills: commit-helper, rebase-guide.",
   "license": "UNLICENSED",
   "keywords": [],
   "skills": "./skills/",
@@ -3166,7 +3129,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/tool-pack/tool-pack.md",
-            &note("tool-pack", &[]),
+            &note("tool-pack"),
         );
         write(
             &vfs,
@@ -3322,7 +3285,7 @@ mod tests {
         write(
             vfs,
             "/repo/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            &note("review-guide", &[]),
+            &note("review-guide"),
         );
         write(vfs, "/repo/README.md", "# A repository\n");
         write(vfs, "/repo/dist/house/.git/HEAD", "ref: refs/heads/main\n");
@@ -3420,7 +3383,7 @@ mod tests {
         write(
             &vfs,
             "/repo/marketplaces/house/plugins/extra/skills/spare/spare.md",
-            &note("spare", &[]),
+            &note("spare"),
         );
         export_skills(&vfs, &request).unwrap();
         assert!(vfs.exists(Path::new("/repo/dist/house/.claude-plugin/packs/extra")));
@@ -3498,7 +3461,7 @@ mod tests {
         write(
             &vfs,
             "/repo/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            &note_with_body("review-guide", &[], "Revised.\n"),
+            &note_with_body("review-guide", "Revised.\n"),
         );
         let report = export_skills(&vfs, &request).unwrap();
 
@@ -3634,7 +3597,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let root = root.path();
         let guide = root.join("vault/marketplaces/house/plugins/tools/skills/guide/guide.md");
-        write(&NativeVfs, guide.to_str().unwrap(), &note("guide", &[]));
+        write(&NativeVfs, guide.to_str().unwrap(), &note("guide"));
         let out = root.join("vault/dist/house");
         let elsewhere = root.join("elsewhere");
         std::fs::create_dir_all(&out).unwrap();
@@ -3663,7 +3626,7 @@ mod tests {
         write(
             &vfs,
             "/repo/marketplaces/house/plugins/gear/skills/review-guide/review-guide.md",
-            &note("review-guide", &[]),
+            &note("review-guide"),
         );
 
         let report = export_skills(&vfs, &request).unwrap();
@@ -3719,12 +3682,12 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/acme/plugins/core/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         vfs
     }
@@ -3748,7 +3711,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/tools/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         vfs
     }
@@ -3794,7 +3757,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/tools/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         write(
             &vfs,
@@ -3804,7 +3767,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/vendor/skills/other/other.md",
-            &note("other", &[]),
+            &note("other"),
         );
         vfs
     }
@@ -3926,7 +3889,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/tools/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         build(&vfs);
 
@@ -4005,7 +3968,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         build(&vfs);
         let manifest = text_at(&vfs, "/vault/dist/house/.claude-plugin/marketplace.json");
@@ -4079,12 +4042,12 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/acme/plugins/core/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/agents/reviewer/reviewer.md",
-            &note("reviewer", &[]),
+            &note("reviewer"),
         );
 
         let request = ExportRequest {
@@ -4114,7 +4077,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/commands/ship/ship.md",
-            &note("ship", &[]),
+            &note("ship"),
         );
 
         let request = ExportRequest {
@@ -4188,7 +4151,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/commands/ship/ship.md",
-            &note("ship", &[]),
+            &note("ship"),
         );
 
         let build = ExportRequest {
@@ -4232,7 +4195,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         write(
             &vfs,
@@ -4254,20 +4217,19 @@ mod tests {
 
     /// A plugin with both a skill and a command: the Claude root carries
     /// both, the Codex root carries the skill alone — its own plugin format
-    /// simply has no place for the command, the same silent narrowing
-    /// `targets` already does per root.
+    /// simply has no place for the command.
     #[test]
     fn a_mixed_plugin_carries_its_command_only_where_the_root_has_a_layout() {
         let vfs = MemVfs::new();
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/skills/review/review.md",
-            &note("review", &[]),
+            &note("review"),
         );
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/commands/ship/ship.md",
-            &note("ship", &[]),
+            &note("ship"),
         );
 
         let request = ExportRequest {
@@ -4335,59 +4297,49 @@ mod tests {
         }
     }
 
-    /// A plugin with no component builds its manifest only for the harnesses
-    /// its `targets` name.
+    /// A plugin with no component builds its manifest for every harness
+    /// built.
     #[test]
-    fn an_empty_plugin_builds_only_for_its_targets() {
+    fn an_empty_plugin_builds_for_every_harness_built() {
         let vfs = MemVfs::new();
         write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/draft/draft.md",
-            "---\ntargets: [claude]\n---\n",
+            "---\n---\n",
         );
 
         build(&vfs);
-        assert!(vfs.exists(Path::new(
-            "/vault/dist/house/.claude-plugin/packs/draft/.claude-plugin/plugin.json"
-        )));
-        for root in [".agents", ".cursor-plugin", ".pi"] {
+        for root in [".claude-plugin", ".agents", ".cursor-plugin", ".pi"] {
             assert!(
-                !vfs.exists(Path::new(&format!("/vault/dist/house/{root}/packs/draft"))),
-                "{root} carries no pack for a claude-only plugin"
+                vfs.exists(Path::new(&format!("/vault/dist/house/{root}/packs/draft"))),
+                "{root} carries the empty plugin"
             );
-        }
-        let codex = "/vault/dist/house/.agents/plugins/marketplace.json";
-        if vfs.exists(Path::new(codex)) {
-            assert!(!text_at(&vfs, codex).contains("\"draft\""), "{codex}");
         }
     }
 
-    /// A plugin holding only agents is an empty pack, so it too builds only
-    /// for its `targets`.
+    /// A plugin holding only agents is an empty pack, so it too builds for
+    /// every harness built.
     #[test]
-    fn an_agents_only_plugin_builds_only_for_its_targets() {
+    fn an_agents_only_plugin_builds_for_every_harness_built() {
         let vfs = MemVfs::new();
         write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/crew/crew.md",
-            "---\ntargets: [claude]\n---\n",
+            "---\n---\n",
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/crew/agents/reviewer/reviewer.md",
-            &note("reviewer", &[]),
+            &note("reviewer"),
         );
 
         let report = build(&vfs);
-        assert!(vfs.exists(Path::new(
-            "/vault/dist/house/.claude-plugin/packs/crew/.claude-plugin/plugin.json"
-        )));
-        for root in [".agents", ".cursor-plugin", ".pi"] {
+        for root in [".claude-plugin", ".agents", ".cursor-plugin", ".pi"] {
             assert!(
-                !vfs.exists(Path::new(&format!("/vault/dist/house/{root}/packs/crew"))),
-                "{root} carries no pack for a claude-only plugin"
+                vfs.exists(Path::new(&format!("/vault/dist/house/{root}/packs/crew"))),
+                "{root} carries the agents-only plugin"
             );
         }
         assert!(report.units.iter().any(|unit| matches!(
@@ -4493,7 +4445,7 @@ mod tests {
 
     /// A command on a root whose pack format has no place for one is named
     /// on that root, not dropped from it. The root that carries it reports
-    /// nothing extra, and a root `targets` narrowed away stays silent.
+    /// nothing extra.
     #[test]
     fn a_command_a_root_cannot_carry_is_named_on_that_root() {
         let vfs = MemVfs::new();
@@ -4501,17 +4453,12 @@ mod tests {
         write(
             &vfs,
             &format!("{base}/skills/review/review.md"),
-            &note("review", &[]),
+            &note("review"),
         );
         write(
             &vfs,
             &format!("{base}/commands/ship/ship.md"),
-            &note("ship", &[]),
-        );
-        write(
-            &vfs,
-            &format!("{base}/commands/codex-only/codex-only.md"),
-            &note("codex-only", &["codex"]),
+            &note("ship"),
         );
 
         let report = check(&vfs);
@@ -4527,11 +4474,9 @@ mod tests {
             })
             .collect();
         let ship = "marketplaces/house/plugins/core/commands/ship/ship.md";
-        let codex_only = "marketplaces/house/plugins/core/commands/codex-only/codex-only.md";
         assert_eq!(
             named,
             vec![
-                (Some("codex"), codex_only, "command"),
                 (Some("codex"), ship, "command"),
                 (Some("cursor"), ship, "command"),
                 (Some("pi"), ship, "command"),

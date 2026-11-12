@@ -72,13 +72,12 @@ fn entry<'a>(manifest: &'a serde_json::Value, name: &str) -> &'a serde_json::Val
 
 #[test]
 fn a_bare_note_needs_no_prefix_and_none_of_its_keys_reach_a_harness() {
-    let vfs = vault("", "", "targets:\n  - claude\n");
+    let vfs = vault("", "", "arguments:\n  - name: pr\n");
     build(&vfs);
     let skill = text_at(&vfs, CLAUDE_REVIEW);
-    assert!(!skill.contains("targets"), "{skill}");
-    assert!(!vfs.exists(Path::new(
-        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
-    )));
+    // The typed list is ours: Claude Code gets its own `arguments` and a hint.
+    assert!(!skill.contains("name: pr"), "{skill}");
+    assert!(skill.contains("argument-hint"), "{skill}");
 }
 
 #[test]
@@ -179,35 +178,6 @@ fn a_skills_own_license_is_left_alone() {
     let vfs = vault("license: MIT\n", "", "license: ISC\n");
     build(&vfs);
     assert!(text_at(&vfs, CLAUDE_REVIEW).contains("license: ISC"));
-}
-
-#[test]
-fn targets_inherit_and_a_nearer_list_replaces_them() {
-    let vfs = vault(
-        "targets:\n  - claude\n",
-        "targets:\n  - claude\n  - codex\n",
-        "",
-    );
-    build(&vfs);
-    assert!(vfs.exists(Path::new(
-        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
-    )));
-    assert!(!vfs.exists(Path::new(
-        "/vault/dist/house/.agents/packs/other/skills/draft/SKILL.md"
-    )));
-}
-
-#[test]
-fn the_root_files_targets_reach_a_plugin_that_sets_none() {
-    let vfs = vault("", "targets:\n  - codex\n", "");
-    write(&vfs, ROOT, "---\ntargets: [claude]\n---\n");
-    build(&vfs);
-    assert!(vfs.exists(Path::new(
-        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
-    )));
-    assert!(!vfs.exists(Path::new(
-        "/vault/dist/house/.agents/packs/other/skills/draft/SKILL.md"
-    )));
 }
 
 /// The root file is the one channel besides the notes (spec section 2 rule
@@ -386,18 +356,12 @@ fn a_marketplace_is_matched_and_published_by_its_folder() {
     write(
         &vfs,
         MARKET,
-        &note(
-            "acme-house",
-            "owner: acme\nlicense: ISC\ntargets:\n  - claude\n",
-        ),
+        &note("acme-house", "owner: acme\nlicense: ISC\n"),
     );
     build(&vfs);
     let market = json_at(&vfs, "/vault/dist/house/.claude-plugin/marketplace.json");
     assert_eq!(market["name"], "house");
     assert!(text_at(&vfs, CLAUDE_REVIEW).contains("license: ISC"));
-    assert!(!vfs.exists(Path::new(
-        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
-    )));
 }
 
 #[test]
@@ -550,7 +514,7 @@ fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
     // `vault` gives the note `owner: acme`.
     let vfs = vault(
         "author: Note Author\ndisplay_name: Note House\nlicense: ISC\nversion: '2.0.0'\n\
-         targets: [codex, cursor]\nrepository: https://note.example/repo\n\
+         repository: https://note.example/repo\n\
          homepage: https://note.example\n",
         "",
         "",
@@ -558,11 +522,10 @@ fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
     write(
         &vfs,
         ROOT,
-        "---\nauthor: Root Author\nlicense: MIT\ntargets: [claude]\n\
+        "---\nauthor: Root Author\nlicense: MIT\n\
          repository: https://root.example/repo\nhomepage: https://root.example\n---\n",
     );
     build(&vfs);
-    assert!(!vfs.exists(Path::new(CLAUDE_REVIEW)));
     let codex = json_at(
         &vfs,
         "/vault/dist/house/.agents/packs/tools/.codex-plugin/plugin.json",
@@ -965,17 +928,11 @@ fn two_prefixed_cursor_names_that_meet_are_refused() {
     let vfs = root_vault(
         "---\n---\n",
         &[
-            (
-                "plugins/a/skills/b-c/b-c.md",
-                &note("b-c", "targets: [cursor]\n"),
-            ),
-            (
-                "plugins/a-b/skills/c/c.md",
-                &note("c", "targets: [cursor]\n"),
-            ),
+            ("plugins/a/skills/b-c/b-c.md", &note("b-c", "")),
+            ("plugins/a-b/skills/c/c.md", &note("c", "")),
         ],
     );
-    let err = build_root(&vfs, "").unwrap_err();
+    let err = build_root(&vfs, "build:\n  harnesses: [cursor]\n").unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     for part in ["Cursor skill `a-b-c`", "plugin `a`", "plugin `a-b`"] {
         assert!(err.contains(part), "{part}: {err}");
@@ -989,18 +946,12 @@ fn a_prefixed_cursor_name_after_a_bare_one_is_refused() {
     let vfs = root_vault(
         "---\n---\n",
         &[
-            (
-                "plugins/a/skills/z-hello/z-hello.md",
-                &note("z-hello", "targets: [cursor]\n"),
-            ),
-            (
-                "plugins/z/skills/hello/hello.md",
-                &note("hello", "targets: [cursor]\n"),
-            ),
+            ("plugins/a/skills/z-hello/z-hello.md", &note("z-hello", "")),
+            ("plugins/z/skills/hello/hello.md", &note("hello", "")),
         ],
     );
     plugin_note(&vfs, "a", "cursor:\n  naming: bare\n");
-    let err = build_root(&vfs, "").unwrap_err();
+    let err = build_root(&vfs, "build:\n  harnesses: [cursor]\n").unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     assert!(err.contains("Cursor skill `z-hello`"), "{err}");
 }
@@ -1027,11 +978,11 @@ fn a_prefixed_cursor_name_over_the_limit_refuses_the_build() {
         "---\n---\n",
         &[(
             &format!("plugins/{plugin}/skills/{skill}/{skill}.md"),
-            &note(&skill, "targets: [cursor]\n"),
+            &note(&skill, ""),
         )],
     );
     plugin_note(&vfs, &plugin, "cursor:\n  naming: prefixed\n");
-    let err = build_root(&vfs, "").unwrap_err();
+    let err = build_root(&vfs, "build:\n  harnesses: [cursor]\n").unwrap_err();
     assert!(err.contains("published-name-invalid"), "{err}");
 }
 
@@ -1171,7 +1122,7 @@ fn a_build_of_one_marketplace_ships_only_that_marketplace() {
     let vfs = MemVfs::new();
     write(&vfs, ROOT, "---\n---\n");
     for (path, text) in [
-        ("a/a.md", "---\ntargets: [claude]\n---\n"),
+        ("a/a.md", "---\n---\n"),
         ("a/plugins/rev/rev.md", "---\n---\n"),
         ("a/plugins/rev/skills/s/s.md", USE_IT),
         ("b/b.md", "---\n---\n"),
@@ -1192,9 +1143,6 @@ fn a_build_of_one_marketplace_ships_only_that_marketplace() {
     export_skills(&vfs, &build).unwrap();
     let manifest = "/vault/dist/a/.claude-plugin/packs/rev/.claude-plugin/plugin.json";
     assert!(vfs.exists(Path::new(manifest)));
-    // The marketplace note's `targets` reach the plugin.
-    let codex = "/vault/dist/a/.agents/plugins/marketplace.json";
-    assert!(!vfs.exists(Path::new(codex)) || !text_at(&vfs, codex).contains("rev"));
 }
 
 /// A marketplace named `skillwright` holds a note named `skillwright.md`,

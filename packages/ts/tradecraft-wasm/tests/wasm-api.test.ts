@@ -161,9 +161,9 @@ test('Target is the four names knownTargets() returns', () => {
   expectTypeOf<NonNullable<ExportRequest['harnesses']>>().toEqualTypeOf<Target[]>()
   expectTypeOf<NonNullable<LoadRequest['harnesses']>>().toEqualTypeOf<Target[]>()
   expectTypeOf<NonNullable<VaultRequest['harnesses']>>().toEqualTypeOf<Target[]>()
-  expectTypeOf<Component['targets']>().toEqualTypeOf<Target[] | null>()
   expectTypeOf<NonNullable<Plugin['bare_on']>>().toEqualTypeOf<Target[]>()
-  expectTypeOf<DiscoveredComponent['targets']>().toEqualTypeOf<Target[] | null>()
+  expectTypeOf<DiscoveredComponent>().not.toHaveProperty('targets')
+  expectTypeOf<Component>().not.toHaveProperty('targets')
 })
 
 test('the package names the types its exported types use', () => {

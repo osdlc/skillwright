@@ -1,6 +1,6 @@
 ---
 name: author
-description: "Author coding-agent skills, plugins and marketplaces as markdown notes in a skillwright vault: the fixed folder layout, the frontmatter (`description`, `version`, `targets` and the harness blocks), links, calls and embeds between notes, plugin-root paths, and building, checking, bumping and shipping the `dist/` output. Use when asked to write a new skill, add a plugin or marketplace, link or embed files, bump a plugin version, or build the vault for Claude Code, Codex, Cursor and Pi."
+description: "Author coding-agent skills, plugins and marketplaces as markdown notes in a skillwright vault: the fixed folder layout, the frontmatter (`description`, `version` and the harness blocks), links, calls and embeds between notes, plugin-root paths, and building, checking, bumping and shipping the `dist/` output. Use when asked to write a new skill, add a plugin or marketplace, link or embed files, bump a plugin version, or build the vault for Claude Code, Codex, Cursor and Pi."
 license: MIT OR Apache-2.0
 ---
 
@@ -57,12 +57,12 @@ To add a skill, create `marketplaces/<m>/plugins/<p>/skills/<s>/<s>.md`. To add 
 - `version` is a plugin's semver, in `<p>.md`. Without one the plugin ships as `0.1.0`, with a
   warning. A marketplace's `version` is optional.
 - `owner` goes in `<m>.md`. `keywords` and `category` go in `<p>.md`.
-- `targets` limits a component to some harnesses: `claude`, `codex`, `cursor` or `pi`. Absent
-  means all four.
+- There is no `targets` key. Every component is built for every harness built. Pick the harnesses
+  with `build.harnesses` in `skillwright.md`, or `--harness <name>` for one run.
 - `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads. `cursor:` and
   `pi:` take `naming: bare` on a plugin to keep plain skill names; by default those two harnesses
   name a skill `<p>-<s>`.
-- `author`, `license`, `repository`, `homepage`, `targets` and the harness blocks inherit: the
+- `author`, `license`, `repository`, `homepage` and the harness blocks inherit: the
   note, then the plugin, then the marketplace, then `skillwright.md`. Set them once, high up.
 - `build:` is read only in `skillwright.md`.
 - A key skillwright does not know warns. On a skill it ships under `metadata:`; on a plugin or

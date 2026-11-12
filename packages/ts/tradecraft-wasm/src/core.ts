@@ -43,9 +43,8 @@ import {
 import type { Vfs } from './node-vfs.ts'
 
 import type {
-  DiscoveredComponent as GeneratedDiscoveredComponent,
   DiscoverRequest,
-  DiscoveryReport as GeneratedDiscoveryReport,
+  DiscoveryReport,
   ExportReport,
   ExportRequest as GeneratedExportRequest,
   LoadRequest as GeneratedLoadRequest,
@@ -62,7 +61,7 @@ import type {
  * one door to the core.
  *
  * Re-exported, never re-declared, except for the `harnesses` of the three
- * requests and discovery's `targets`, below, typed as {@link Target}s.
+ * requests, below, typed as {@link Target}s.
  * Everything else here is exactly what
  * `tradecraft-typegen` read off the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
@@ -72,6 +71,8 @@ import type {
 export type {
   Asset,
   ContainerIdentity,
+  DiscoveredComponent,
+  DiscoveryReport,
   DiscoverRequest,
   DiscoveryWarning,
   EntityKind,
@@ -99,16 +100,6 @@ export type {
   WasmRequests,
   WasmResponses,
 } from './core.generated.ts'
-
-/** The generated `DiscoveredComponent`, with `targets` typed as {@link Target}s. */
-export type DiscoveredComponent = Omit<GeneratedDiscoveredComponent, 'targets'> & {
-  targets: Target[] | null
-}
-
-/** The generated `DiscoveryReport`, with its components' `targets` typed. */
-export type DiscoveryReport = Omit<GeneratedDiscoveryReport, 'components'> & {
-  components: DiscoveredComponent[]
-}
 
 /** The generated `ExportRequest`, with `harnesses` typed as {@link Target}s. */
 export type ExportRequest = Omit<GeneratedExportRequest, 'harnesses'> & {
@@ -181,7 +172,7 @@ function toCoreError(raw: unknown): CoreError {
 /**
  * Every target name this build knows — `tradecraft_core::harness::KNOWN_TARGETS`,
  * verbatim and in report order. A name typed on a command line and a name in
- * a note's `targets` are checked against the same values.
+ * `build.harnesses` are checked against the same values.
  */
 export function knownTargets(): Target[] {
   return callCore<Target[]>(() => knownTargetsWasm())

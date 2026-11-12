@@ -61,9 +61,8 @@ output are /[[author]].
    ---
    author: Ada Lovelace          # every marketplace, plugin and skill inherits this
    license: MIT
-   targets: [claude, codex]      # which harnesses get each component; absent means all four
    build:
-     harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all
+     harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all four
      bump:
        patch: increment          # or timestamp
    ---

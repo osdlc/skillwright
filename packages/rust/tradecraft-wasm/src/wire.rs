@@ -107,8 +107,6 @@ pub struct WireComponent {
     pub name: String,
     /// The note, vault-relative.
     pub path: String,
-    /// Its `targets`, as written. `None` publishes everywhere.
-    pub targets: Option<Vec<Target>>,
     /// Its harness blocks, by harness.
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
     /// Its `description`. `None` when no harness the load is for admits the
@@ -170,7 +168,6 @@ impl WireComponent {
             kind: c.kind,
             name: c.name.clone(),
             path: c.path.clone(),
-            targets: c.targets.as_deref().map(targets).transpose()?,
             blocks: c.extensions.blocks.clone(),
             description: c.content.as_ref().map(|s| s.description.clone()),
             calls: resolved

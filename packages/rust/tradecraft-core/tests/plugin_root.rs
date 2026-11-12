@@ -262,29 +262,6 @@ fn a_path_into_another_skill_follows_its_folder() {
 }
 
 #[test]
-fn a_path_into_a_skill_a_harness_leaves_out_fails_for_that_harness() {
-    let files = [
-        (
-            "skills/deploy/deploy.md",
-            "---\ndescription: Use it.\ntargets: [claude]\n---\n\nDeploy.\n",
-        ),
-        ("skills/deploy/scripts/run.sh", "echo\n"),
-    ];
-    let vfs = with_author("Run ${PLUGIN_ROOT}/skills/deploy/scripts/run.sh.", &files);
-    build_for(&vfs, &["claude"]).unwrap();
-    for harness in ["codex", "cursor", "pi"] {
-        let vfs = with_author("Run ${PLUGIN_ROOT}/skills/deploy/scripts/run.sh.", &files);
-        let err = refusal_for(&vfs, &[harness]);
-        names(
-            &err,
-            AUTHOR,
-            "${PLUGIN_ROOT}/skills/deploy/scripts/run.sh",
-            "section 4 rules 17 and 20",
-        );
-    }
-}
-
-#[test]
 fn a_path_into_another_skill_under_bare_naming_follows_its_folder() {
     let vfs = with_author(
         "Run ${PLUGIN_ROOT}/skills/setup/scripts/run.sh.",

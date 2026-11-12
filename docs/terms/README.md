@@ -15,7 +15,7 @@ The words used for skillwright's parts. One file per term. A term marked *planne
 | [Command](command.md) | current | A component a user invokes by name |
 | [Hook](hook.md) | current | A command a harness runs on an event |
 | [Harness](harness.md) | current | A coding-agent tool skillwright builds for: Claude Code, Codex, Cursor and Pi |
-| [Target](target.md) | current | A harness's name as written in `targets` or `build.harnesses` |
+| [Target](target.md) | current | A harness's name as written in `build.harnesses` or `--harness` |
 | [Drift](drift.md) | current | A difference between what `build` would write and what is in `dist/<m>/` |
 | [Marketplace model](marketplace-model.md) | current | The in-memory object graph a vault loads into: marketplace → plugins → skills, commands, hooks, assets |
 | [Load](load.md) | current | The first stage: read the vault into the [marketplace-model](marketplace-model.md) |

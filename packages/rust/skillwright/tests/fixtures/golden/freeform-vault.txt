@@ -2,6 +2,7 @@ acme/.agents/packs/core/.codex-plugin/plugin.json  ec6edac191e9a582f78d92928c81b
 acme/.agents/packs/core/references/tone.md  46f00692995a3c4c20ca826034261c00a7904dd52185f1351ee11ebec2f94255
 acme/.agents/packs/core/skills/bundled/SKILL.md  e69407a51c7b1189a60a861b0db2a7597918d53e8826cd10aa42ba77cfa8740a
 acme/.agents/packs/core/skills/bundled/scripts/run.sh  b4d644d4279594903f1a9911956432d9473041f2984fc6014c14d7402c7d126c
+acme/.agents/packs/core/skills/review/SKILL.md  8b27649fd5f69bd2b806227534ad1aa52c087d3854acaac4f1ac4c79373ad325
 acme/.agents/plugins/marketplace.json  949b1c703c0b970308fe8572dd4bcb8aa401576c3e1f52f3d4e7254c54fa6df3
 acme/.claude-plugin/marketplace.json  494d46688723408c0ad9d4e3f09a2a6c439caa48058f51bbc8e6f548303accea
 acme/.claude-plugin/packs/core/.claude-plugin/plugin.json  1a6f5706529fb13937113e860ca8d3e02aa40d142ee2a9ba78ca4fdfb6ef5e6a
@@ -15,10 +16,12 @@ acme/.cursor-plugin/packs/core/.cursor-plugin/plugin.json  1a6f5706529fb13937113
 acme/.cursor-plugin/packs/core/references/tone.md  46f00692995a3c4c20ca826034261c00a7904dd52185f1351ee11ebec2f94255
 acme/.cursor-plugin/packs/core/skills/core-bundled/SKILL.md  2decaa5dc7db4a47ca5104ef9275f10c7d6ca857c95bd46345f26cb6adbff031
 acme/.cursor-plugin/packs/core/skills/core-bundled/scripts/run.sh  b4d644d4279594903f1a9911956432d9473041f2984fc6014c14d7402c7d126c
+acme/.cursor-plugin/packs/core/skills/core-review/SKILL.md  0d1d6cc9be4b6384860346fd229ae0a29a0ba054ec4fd692c1db5c3a6a2d4052
 acme/.pi/packs/core/package.json  71e61b590e644e49c9137c59ba008dff8b33c30888b88b866307ea79a2b76621
 acme/.pi/packs/core/references/tone.md  46f00692995a3c4c20ca826034261c00a7904dd52185f1351ee11ebec2f94255
 acme/.pi/packs/core/skills/core-bundled/SKILL.md  2decaa5dc7db4a47ca5104ef9275f10c7d6ca857c95bd46345f26cb6adbff031
 acme/.pi/packs/core/skills/core-bundled/scripts/run.sh  b4d644d4279594903f1a9911956432d9473041f2984fc6014c14d7402c7d126c
+acme/.pi/packs/core/skills/core-review/SKILL.md  0d1d6cc9be4b6384860346fd229ae0a29a0ba054ec4fd692c1db5c3a6a2d4052
 labs/.agents/packs/spike/.codex-plugin/plugin.json  a7cf2d775b7b2a866e6ad28a93f9e29a08ca95d8d6081b6e7cc9777ffd5a529f
 labs/.agents/packs/spike/skills/probe/SKILL.md  c35fb7ce77627eb9b34402af45ebc5f8b6d905742694191f013f39c97997ccec
 labs/.agents/plugins/marketplace.json  584c815c061e6ada1d36c1abb602bbf87ee0c67b741a688044c13da2ea228300

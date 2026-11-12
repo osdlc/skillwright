@@ -82,7 +82,6 @@ author: Ada Lovelace            # or {name, email, url}
 license: MIT                    # an SPDX expression
 repository: https://github.com/acme/skills
 homepage: https://acme.dev/skills
-targets: [claude, codex]        # which harnesses get each component; absent means all
 claude: {}                      # harness blocks: fields only that harness reads (section 8)
 codex: {}
 cursor: {}                      # {naming: bare} keeps plain skill names (section 8)
@@ -90,7 +89,7 @@ pi: {}                          # {naming: bare} likewise
 
 # Tool settings.
 build:
-  harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all
+  harnesses: [claude, codex, cursor, pi]   # which harnesses to build by default; absent means all
   bump:
     patch: increment                       # or timestamp (section 10 rule 4)
 ---
@@ -103,8 +102,10 @@ build:
      inherited (section 7 rule 1);
    - `build:`, the tool settings.
 3. A key the key table does not list warns and is ignored, as
-   [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) says. There is one
-   exception: `workspace` is a removed key and is refused (section 11).
+   [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) says. There are two
+   exceptions, both removed keys and refused:
+   - `workspace` (section 11);
+   - `targets`, which is refused at every level (section 6 rule 7).
 4. A key the table lists but does not mark as inherited is refused here. The
    error names the note kinds that accept it:
 
@@ -470,8 +471,7 @@ marketplace (rule 8, decision D2).
 
      | Call to | Claude Code | Codex, Cursor, Pi |
      |---|---|---|
-     | a skill the pack contains | the call string above | the call string above |
-     | a skill the pack does not contain (`targets`) | an error for that harness | an error for that harness |
+     | a skill | the call string above | the call string above |
      | a command | `` `/tools:deploy` `` | an error: their packs contain no commands |
      | an agent | an error: no pack contains agents | an error |
    - A call string written by hand in prose is an error that says to write
@@ -628,7 +628,7 @@ harness's own form (decision D9).
     |---|---|---|
     | Claude Code | Yes | `${CLAUDE_PLUGIN_ROOT}` |
     | Codex | Yes | `${PLUGIN_ROOT}`, unchanged |
-    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. It warns only when it builds that plugin's Cursor pack: Cursor is in `build.harnesses` and in the plugin's `targets`. | nothing |
+    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. It warns only when it builds that plugin's Cursor pack: Cursor is among the harnesses built (section 10 rule 7). | nothing |
     | Pi | No: Pi has no shell hooks | nothing |
 
     - A hook runs as a shell command from the project folder, where a
@@ -818,6 +818,11 @@ fenced block whose info string comes from its extension (rule 10).
 6. Malformed frontmatter, such as an unclosed `---` or invalid YAML, is an
    error that names the note. This holds for every note, and for a note that
    is embedded (section 5 rule 4).
+7. `targets` is a removed key. A root file, marketplace, plugin or component
+   note that sets it is refused. The error says to pick the harnesses with
+   `build.harnesses` in the root file or with `--harness` (section 10 rule
+   7). No note narrows which harnesses get it: every component is built for
+   every harness built whose pack takes its kind.
 
 ## 7. The cascade
 
@@ -829,7 +834,7 @@ flowchart LR
 ```
 
 1. A key inherits only if the key table marks it as inherited. Those keys are
-   `author`, `license`, `repository`, `homepage`, `targets` and the harness
+   `author`, `license`, `repository`, `homepage` and the harness
    blocks. They are the root file's shared defaults (section 2). Harness
    blocks inherit key by key.
 2. The order for an inherited key is component, then plugin, then marketplace,
@@ -944,13 +949,10 @@ flowchart LR
    └── .pi/packs/tools/             Pi has no marketplace manifest
    ```
 
-3. Which packs contain a component is decided in two steps:
-   1. The harnesses built (section 10 rule 7) pick which harness trees are
-      written.
-   2. A component's `targets` picks which of those harnesses get it.
-
-   A harness's pack contains a component only when both name the harness, and
-   the harness takes its kind (the pack table below). A link, call or
+3. The harnesses built (section 10 rule 7) pick which harness trees are
+   written. Each of those harnesses' packs contains every component whose
+   kind it takes (the pack table below). A plugin with no component, or
+   only agents, is built for every harness built, as its manifest alone. A link, call or
    plugin-root path to a component a pack does not contain is an error for
    that harness (Appendix A5).
 4. A build replaces only what skillwright owns in `dist/<m>/`: each harness's
@@ -1011,7 +1013,7 @@ pack folder from the table above.
 10. A file keeps its exec bit. A file in `scripts/` that is meant to run must
     be executable in the source; the build does not set the bit.
 11. A pack holds no symlinks. Every shipped file is a copy.
-12. `targets` and `build.harnesses` accept only `claude`, `codex`, `cursor`
+12. `build.harnesses` and `--harness` accept only `claude`, `codex`, `cursor`
     and `pi`. Any other value is refused, and the error names the four.
 
 ### Install keeps a pack whole
@@ -1463,12 +1465,14 @@ Each case gives an input and the result.
    - Input: `[[layout]]`, with `references/design/layout.md` in the skill.
    - Result: it matches, at any depth. If `references/old/layout.md` also
      exists, it is an error that names both.
-5. **A component left out by `targets`.**
-   - Input: skill `deploy` sets `targets: [claude]`. Skill `review`, shipped
-     everywhere, contains `/[[deploy]]`.
+5. **A component a pack does not contain.**
+   - Input: `deploy` is a command. Skill `review`, shipped everywhere,
+     contains `/[[deploy]]`.
    - Result: Claude Code renders `` `/tools:deploy` ``. The build fails for
-     Codex, Cursor and Pi, naming `review.md` and the call.
-   - Fix: give `review` the same `targets`, or move the call out of it.
+     Codex, Cursor and Pi, whose packs contain no commands, naming
+     `review.md` and the call.
+   - Fix: make `deploy` a skill, or build only Claude Code with
+     `--harness claude`.
 6. **A plugin and a marketplace with one name.**
    - Input: marketplace `osdlc` holds plugin `osdlc`.
    - Result: `bump osdlc` bumps the plugin. `bump --marketplace osdlc` bumps

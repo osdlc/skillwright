@@ -106,7 +106,7 @@ fn cases_2_and_7_come_out_in_one_message() {
 #[test]
 fn the_inherited_keys_are_read_from_the_root_file() {
     let text = "---\nauthor: Ada\nlicense: MIT\nrepository: https://x.example/r\n\
-                homepage: https://x.example\ntargets: [claude, pi]\nclaude: {}\n\
+                homepage: https://x.example\nclaude: {}\n\
                 codex: {}\ncursor: {naming: bare}\npi: {}\n\
                 build:\n  harnesses: [claude]\n  bump: {patch: increment}\n---\n";
     let root = parse_root_file(text).unwrap();
@@ -235,7 +235,7 @@ fn names_the_four(said: &str) {
 }
 
 #[test]
-fn targets_accept_only_the_four_harness_names() {
+fn the_known_harnesses_are_the_four() {
     assert_eq!(
         tradecraft_core::KNOWN_TARGETS,
         ["claude", "codex", "cursor", "pi"]
@@ -243,19 +243,34 @@ fn targets_accept_only_the_four_harness_names() {
     for alias in ["claude-code", "codex-cli", "opencode", "amp"] {
         assert!(!tradecraft_core::KNOWN_TARGETS.contains(&alias), "{alias}");
     }
-    for value in ["opencode", "claude-code"] {
-        let line = format!("targets: [{value}]");
-        let err = parse_root_file(&format!("---\n{line}\n---\n")).unwrap_err();
-        names_the_four(&err.to_string());
-        assert!(err.to_string().contains(value), "{err}");
+}
 
-        let note = "marketplaces/acme/plugins/tools/skills/review/review.md";
+/// `targets` is removed at every level: the root file, a marketplace note,
+/// a plugin note and a component note each refuse it, saying what to use.
+#[test]
+fn targets_is_refused_at_every_level() {
+    let err = parse_root_file("---\ntargets: [claude]\n---\n").unwrap_err();
+    let said = err.to_string();
+    assert!(said.contains("`targets`"), "{said}");
+    assert!(
+        said.contains("`build.harnesses`") && said.contains("`--harness`"),
+        "{said}"
+    );
+    for note in [
+        "marketplaces/acme/acme.md",
+        "marketplaces/acme/plugins/tools/tools.md",
+        "marketplaces/acme/plugins/tools/skills/review/review.md",
+    ] {
         let said = build_error(&vault(&[(
             note,
-            &format!("---\ndescription: Use it.\n{line}\n---\n"),
+            "---\ndescription: Use it.\ntargets: [claude]\n---\n",
         )]));
-        assert!(said.contains(value), "{said}");
-        names_the_four(&said);
+        assert!(said.contains(note), "{note}: {said}");
+        assert!(
+            said.contains("`targets` is a removed key"),
+            "{note}: {said}"
+        );
+        assert!(said.contains("`--harness`"), "{note}: {said}");
     }
 }
 
@@ -285,6 +300,6 @@ fn build_harnesses_picks_the_trees_written() {
 #[test]
 fn a_bad_marketplace_note_fails_the_build_naming_it() {
     let note = "marketplaces/acme/acme.md";
-    let said = build_error(&vault(&[(note, "---\ntargets: claude\n---\n")]));
+    let said = build_error(&vault(&[(note, "---\nowner: [x]\n---\n")]));
     assert!(said.contains(note), "{said}");
 }

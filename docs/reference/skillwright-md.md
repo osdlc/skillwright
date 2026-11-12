@@ -29,13 +29,12 @@ author: Ada Lovelace # or {name, email, url}
 license: MIT
 repository: https://github.com/acme/skills
 homepage: https://acme.dev/skills
-targets: [claude, codex] # absent means all four
 claude: {}
 codex: {}
 cursor: { naming: bare } # keep plain skill names on Cursor
 pi: {}
 build:
-  harnesses: [claude, codex, cursor, pi] # absent means all four
+  harnesses: [claude, codex, cursor, pi] # the default; absent means all four
   bump:
     patch: increment # or timestamp
 ---
@@ -55,7 +54,6 @@ set itself. See [where a value comes from](#where-a-value-comes-from).
 | `license` | an SPDX expression |
 | `repository` | the source repository URL |
 | `homepage` | the documentation URL |
-| `targets` | which harnesses get each component: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. |
 | `claude`, `codex`, `cursor`, `pi` | harness blocks: fields only that harness reads. See [Harness blocks](#harness-blocks). |
 
 The marketplace and plugin keys that are not inherited, such as `owner`,
@@ -69,7 +67,7 @@ any other note it is refused.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `harnesses` | list | Which harnesses to build by default: `claude`, `codex`, `cursor`, `pi`. Absent means all four. A core request's `harnesses` replaces it for that run. Any other name is refused. |
+| `harnesses` | list | Which harnesses to build by default: `claude`, `codex`, `cursor`, `pi`. Absent means all four. `--harness`, or a core request's `harnesses`, replaces it for that run. Any other name is refused. |
 | `bump` | `{patch}` | How `bump` writes the patch number. `increment`, the default, adds one: `1.2.3` becomes `1.2.4`. `timestamp` sets it to the UTC time as `YYYYMMDDHHMMSS`, or to one more than the current patch when that is larger: `1.2.3` becomes `1.2.20261110153000`. Any other value is refused. |
 
 Output is fixed at `<root>/dist/<m>/`. No key moves it.
@@ -92,15 +90,17 @@ key. They exit 2 and write nothing.
 
 - `name`, also in a harness block. The folder's name is the name.
 - `workspace`. There is one root file, and every marketplace sits under it.
+- `targets`, here and on every note. Pick the harnesses with `build.harnesses`
+  or `--harness`.
 - A key the field reference lists but does not mark as inherited, such as
   `version`, `owner` or `description`. The message names the notes that take
   it.
 - The removed `build:` keys: `out`, `patterns`, `exclude`, `assets`, `hooks`,
   `destinations`, `scan_locations`, `launcher_path` and `namespace`.
 - `packs` in a harness block. Each harness's packs folder is fixed.
-- A name in `targets` or `build.harnesses` that is not `claude`, `codex`,
-  `cursor` or `pi`.
-- A known key with the wrong kind of value, such as `targets: claude`.
+- A name in `build.harnesses` that is not `claude`, `codex`, `cursor` or
+  `pi`.
+- A known key with the wrong kind of value, such as `license: [MIT]`.
 - Frontmatter that is not valid YAML, or that opens with `---` and never
   closes.
 
@@ -132,7 +132,7 @@ The first of these that has a value wins:
    with no warning.
 
 Only the inherited keys pass down: `author`, `license`, `repository`,
-`homepage`, `targets` and the harness blocks, key by key. Every other key
+`homepage` and the harness blocks, key by key. Every other key
 comes only from the note itself. Containers are matched by folder.
 
 For an inherited key that a harness reads, the harness block wins over the

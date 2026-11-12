@@ -19,8 +19,8 @@
 //!
 //! skillwright's keys are stripped at emit, so carrying a wrong-shaped one
 //! verbatim would lose it. An absent key and a present-but-wrong key must not
-//! share an outcome: `targets: claude` (a scalar where a list belongs) read
-//! as "every harness" would push files where the author meant not to.
+//! share an outcome: `arguments: 5` read as "no arguments" would publish a
+//! command that takes none.
 //!
 //! # The kind comes from the folder
 //!
@@ -263,10 +263,6 @@ impl ContainerIdentity {
 /// [`crate::projection::project_skill`] renders makes the strip structural.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VaultFrontmatter {
-    /// `targets`. **Three outcomes, not two:** `None` is absent and means
-    /// every harness (or what the plugin says); `Some(vec![])` is an
-    /// empty list and means nowhere; `Some(names)` narrows to those.
-    pub targets: Option<Vec<String>>,
     /// `arguments` — what this skill or command's invocation takes,
     /// validated: every name is a slug, every name is unique, no `values`
     /// list is empty, and every `default` is one of its own `values` when
@@ -323,7 +319,6 @@ impl VaultFrontmatter {
         refuse_keys(fields, &ours, path, kind)?;
         check_shapes(&ours, path, kind)?;
 
-        let targets = take_string_list(&mut ours, "targets", path)?;
         // A key the table does not list for this kind stays in `ours`, to be
         // reported as unknown.
         let reads = |key: &str| crate::keys::is_owned(kind, key);
@@ -371,7 +366,6 @@ impl VaultFrontmatter {
         unknown.dedup();
 
         Ok(Self {
-            targets,
             arguments,
             identity,
             blocks: overrides,
@@ -448,9 +442,9 @@ fn is_claude_arguments(value: &Value) -> bool {
 }
 
 /// Refuses a key no note may set: a [`crate::keys::Shape::Refused`] row
-/// (`name`, also in a harness block), `build`, which only the root file
-/// reads, `packs` in a harness block, and `naming` in a component's harness
-/// block (spec section 8 rule 6).
+/// (`name`, also in a harness block), the removed `targets`, `build`, which
+/// only the root file reads, `packs` in a harness block, and `naming` in a
+/// component's harness block (spec section 8 rule 6).
 fn refuse_keys(
     fields: &Map<String, Value>,
     ours: &Map<String, Value>,
@@ -463,6 +457,18 @@ fn refuse_keys(
         return Err(CoreError::wrong_kind(
             path,
             format!("`{key}` is refused: {}", crate::keys::NAME_REFUSAL),
+        ));
+    }
+    if fields.contains_key(crate::settings::TARGETS_KEY)
+        || ours.contains_key(crate::settings::TARGETS_KEY)
+    {
+        return Err(CoreError::wrong_kind(
+            path,
+            format!(
+                "`{}` is a removed key: {}",
+                crate::settings::TARGETS_KEY,
+                crate::settings::TARGETS_REFUSAL
+            ),
         ));
     }
     let mut named = crate::keys::named_blocks(ours);
@@ -535,47 +541,6 @@ fn take_harness_block(ours: &mut Map<String, Value>, key: &str) -> Option<Map<St
     match ours.remove(key) {
         Some(Value::Object(block)) => Some(block),
         _ => None,
-    }
-}
-
-/// Removes `key` and returns it as a list of strings, refusing any other
-/// shape — including a bare scalar, which would otherwise be one harness
-/// misread as none.
-fn take_string_list(
-    ours: &mut Map<String, Value>,
-    key: &str,
-    path: &Path,
-) -> Result<Option<Vec<String>>, CoreError> {
-    let Some(value) = ours.remove(key) else {
-        return Ok(None);
-    };
-    match value {
-        Value::Array(items) => {
-            let mut out = Vec::with_capacity(items.len());
-            for item in items {
-                match item {
-                    Value::String(s) => out.push(s),
-                    other => {
-                        return Err(CoreError::wrong_kind(
-                            path,
-                            format!(
-                                "`{key}` must be a list of strings; one entry is {}",
-                                type_name(&other)
-                            ),
-                        ));
-                    }
-                }
-            }
-            Ok(Some(out))
-        }
-        other => Err(CoreError::wrong_kind(
-            path,
-            format!(
-                "`{key}` must be a list, not {}. \
-                 An empty list means nowhere; removing the key means everywhere",
-                type_name(&other)
-            ),
-        )),
     }
 }
 
@@ -917,22 +882,25 @@ mod tests {
     }
 
     #[test]
-    fn targets_absent_empty_and_populated_are_three_outcomes() {
-        let target = |value: Value| bare(EntityKind::Skill, value).0.targets;
-        assert_eq!(target(json!({"description": "d"})), None);
-        assert_eq!(target(json!({"targets": []})), Some(vec![]));
-        assert_eq!(
-            target(json!({"targets": ["claude"]})),
-            Some(vec!["claude".to_owned()])
-        );
-    }
-
-    #[test]
-    fn a_scalar_targets_is_refused_not_read_as_everywhere() {
-        let err = read_kind(EntityKind::Skill, json!({"targets": "claude"}))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("`targets`"), "{err}");
+    fn targets_is_a_removed_key_on_every_note() {
+        for kind in [
+            EntityKind::Marketplace,
+            EntityKind::Plugin,
+            EntityKind::Skill,
+            EntityKind::Command,
+            EntityKind::Agent,
+        ] {
+            for value in [json!([]), json!(["claude"]), json!("claude")] {
+                let err = read_kind(kind, json!({"description": "d", "targets": value}))
+                    .unwrap_err()
+                    .to_string();
+                assert!(
+                    err.contains("`targets` is a removed key"),
+                    "{kind:?}: {err}"
+                );
+                assert!(err.contains("`--harness`"), "{err}");
+            }
+        }
     }
 
     #[test]
@@ -1004,7 +972,6 @@ mod tests {
         );
         assert_eq!(ours.unknown, vec!["sw".to_owned(), "sw-targets".to_owned()]);
         assert_eq!(ours.identity.version.as_deref(), Some("1.0.0"));
-        assert_eq!(ours.targets, None);
     }
 
     #[test]
@@ -1255,9 +1222,7 @@ mod tests {
             ("version: '1'", false),
             ("license: [a]", false),
             ("license: MIT", true),
-            ("targets: \"claude\"", false),
-            ("targets: [claude]", true),
-            ("targets: [nowhere]", false),
+            ("targets: [claude]", false),
             ("display_name: Acme", false),
             ("name: m", false),
             ("description: d", false),

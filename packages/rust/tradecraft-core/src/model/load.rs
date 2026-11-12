@@ -221,7 +221,7 @@ pub(crate) fn load_for(
             ),
         ));
     }
-    let mut discovered = scan.components.clone();
+    let discovered = scan.components.clone();
     // Which marketplaces the vault holds is read from every kind, not from the
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing to build rather than that it is not there.
@@ -229,7 +229,6 @@ pub(crate) fn load_for(
     let cascade = Cascade::over(&discovered, Some(&market), defaults);
     // Before members inherit a block, so a wrong value names its container.
     crate::harness::manifest::check_block_values(&cascade.config)?;
-    cascade.resolve_targets(&mut discovered);
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
         .filter(|component| belongs_to(component, Some(&market)))
@@ -316,7 +315,10 @@ pub(crate) fn load_for(
     for plugin in plugins.values_mut() {
         let plugin_name = plugin.name.clone();
         for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
-            if !roots.iter().any(|root| admits(&component.discovered, root)) {
+            if !roots
+                .iter()
+                .any(|root| kind_carried(&component.discovered, root))
+            {
                 continue;
             }
             let mut note = read_vault_note(vfs, &component.discovered.entry_path, component.kind)?;
@@ -329,7 +331,6 @@ pub(crate) fn load_for(
                 note,
                 component.kind,
                 &calls,
-                &index,
             )?;
             component.content = Some(content);
             component.resolved = Some(resolved);
@@ -372,7 +373,6 @@ pub fn resolve_body(
     note: VaultNote,
     kind: EntityKind,
     calls: &CallContext<'_>,
-    index: &Index,
 ) -> Result<(Resolved, SkillContent), CoreError> {
     let record = calls
         .record
@@ -422,24 +422,21 @@ pub fn resolve_body(
             }
         })
         .collect();
-    let mut resolved = Resolved {
+    let resolved = Resolved {
         body,
         resources,
         closures: compiled.closures,
     };
-    fill_targets(&mut resolved, &index.targets);
     Ok((resolved, content))
 }
 
-/// The components a call may name, and each one's `targets`.
+/// The components a call may name.
 #[derive(Debug, Clone, Default)]
 pub struct Index {
     skills: SkillIndex,
-    targets: BTreeMap<PathBuf, Option<Vec<String>>>,
 }
 
 fn skill_index<'a>(skills: impl Iterator<Item = &'a DiscoveredComponent>) -> Index {
-    let mut targets = BTreeMap::new();
     let skills = SkillIndex::new(
         skills
             .filter(|c| {
@@ -450,19 +447,16 @@ fn skill_index<'a>(skills: impl Iterator<Item = &'a DiscoveredComponent>) -> Ind
             })
             // Every component sits in a plugin (spec section 3).
             .filter_map(|c| Some((c, c.plugin.clone()?)))
-            .map(|(c, plugin)| {
-                targets.insert(normalize(&c.entry_path), c.targets.clone());
-                IndexedSkill {
-                    entry_path: c.entry_path.clone(),
-                    plugin,
-                    name: c.name.clone(),
-                    kind: c.kind,
-                    shipped: true,
-                }
+            .map(|(c, plugin)| IndexedSkill {
+                entry_path: c.entry_path.clone(),
+                plugin,
+                name: c.name.clone(),
+                kind: c.kind,
+                shipped: true,
             })
             .collect::<Vec<_>>(),
     );
-    Index { skills, targets }
+    Index { skills }
 }
 
 /// The call strings a body may not write by hand, each with the name to
@@ -528,13 +522,6 @@ fn no_render(_: &IndexedSkill) -> Result<String, CoreError> {
     Ok(String::new())
 }
 
-/// Gives every call the `targets` of the skill it names.
-fn fill_targets(resolved: &mut Resolved, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
-    for body in bodies_of(resolved) {
-        fill_body_targets(body, targets);
-    }
-}
-
 /// A resolved component's body and each resource's.
 fn bodies_of(resolved: &mut Resolved) -> impl Iterator<Item = &mut Body> {
     std::iter::once(&mut resolved.body).chain(resolved.resources.iter_mut().filter_map(
@@ -590,24 +577,12 @@ fn apply_naming(
     Ok(())
 }
 
-fn fill_body_targets(body: &mut Body, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
-    for segment in &mut body.segments {
-        if let Segment::Call { call } = segment {
-            call.targets = targets
-                .get(&normalize(&call.skill.entry_path))
-                .cloned()
-                .flatten();
-        }
-    }
-}
-
 /// A node read in pass 1 and not yet resolved.
 fn unread(component: &DiscoveredComponent) -> Component {
     Component {
         kind: component.kind,
         name: component.name.clone(),
         path: component.vault_relative_path.clone(),
-        targets: component.targets.clone(),
         extensions: Extensions::default(),
         content: None,
         resolved: None,
@@ -652,32 +627,12 @@ fn extensions(
 
 // --- What the build used to decide before it rendered ------------------------
 
-/// Does this harness's pack carry this member? Two gates: the harness's pack
-/// has a place for the member's kind, and its `targets` names the harness.
-pub(crate) fn admits(component: &DiscoveredComponent, spec: &HarnessProfile) -> bool {
-    kind_carried(component, spec) && targets_admit(component, spec.name)
-}
-
-/// Gate 1 of [`admits`]: whether this harness's pack format has a place for
-/// the member's kind.
+/// Whether this harness's pack carries this member: its pack format has a
+/// place for the member's kind.
 pub(crate) fn kind_carried(component: &DiscoveredComponent, spec: &HarnessProfile) -> bool {
     match component.kind {
         EntityKind::Command => spec.format().carries_commands,
         _ => true,
-    }
-}
-
-/// Gate 2 of [`admits`]: whether the member's `targets` names this
-/// harness. Absent is every harness, empty is none.
-pub(crate) fn targets_admit(component: &DiscoveredComponent, canonical: &str) -> bool {
-    targets_name(component.targets.as_deref(), canonical)
-}
-
-/// [`targets_admit`] over a bare list.
-pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool {
-    match targets {
-        None => true,
-        Some(names) => names.iter().any(|name| name == canonical),
     }
 }
 
@@ -791,7 +746,6 @@ fn group_by_plugin(
             let name = note.plugin.clone()?;
             let plugin = Plugin {
                 name: name.clone(),
-                targets: note.targets.clone(),
                 ..Plugin::default()
             };
             Some((name, plugin))
@@ -987,7 +941,7 @@ fn load_hooks_files(
         })?;
         let hooks = crate::hooks_file::parse_hooks_file(&text, &file.rel)?;
         for root in roots.iter().filter(|root| root.format().carries_hooks) {
-            if !group.carried_by(root.name, |c| admits(&c.discovered, root)) {
+            if !group.carried_by(|c| kind_carried(&c.discovered, root)) {
                 continue;
             }
             let runtime = crate::projection::parse_runtime_target(root.runtime)?;
@@ -1009,7 +963,7 @@ fn load_hooks_files(
             hooks,
         });
         let cursor_built = roots.iter().any(|root| {
-            root.name == "cursor" && group.carried_by(root.name, |c| admits(&c.discovered, root))
+            root.name == "cursor" && group.carried_by(|c| kind_carried(&c.discovered, root))
         });
         if cursor_built {
             warnings.push(DiscoveryWarning {

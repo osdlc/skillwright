@@ -755,7 +755,7 @@ fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
 /// Every harness, in report order.
 pub const PROFILES: [HarnessProfile; 4] = [CLAUDE, CODEX, CURSOR, PI];
 
-/// Every name `targets` and `build.harnesses` accept, in report order: the
+/// Every name `build.harnesses` and `--harness` accept, in report order: the
 /// list a refusal prints so the fix is on screen. There are no aliases.
 pub const KNOWN_TARGETS: &[&str] = &["claude", "codex", "cursor", "pi"];
 

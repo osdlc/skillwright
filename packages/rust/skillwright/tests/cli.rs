@@ -912,10 +912,9 @@ fn check_reports_a_hand_edit_inside_a_pack() {
     assert_eq!(fs::read_to_string(&skill).unwrap(), "hand-edited\n");
 }
 
-/// A skill whose `targets` name one harness ships in that harness's pack
-/// alone.
+/// `targets` is a removed key; the error says what to use instead.
 #[test]
-fn a_skill_targeting_claude_is_only_in_the_claude_pack() {
+fn a_skill_setting_targets_is_refused_naming_build_harnesses_and_harness() {
     let (_dir, vault) = fixture();
     write_all(
         &vault,
@@ -925,17 +924,14 @@ fn a_skill_targeting_claude_is_only_in_the_claude_pack() {
         )],
     );
     let built = run(&["build", "--yes"], &vault);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    let solo: Vec<PathBuf> = tree(&vault.join("dist/acme"))
-        .into_iter()
-        .filter(|path| path.to_string_lossy().contains("solo"))
-        .collect();
-    assert_eq!(
-        solo,
-        [PathBuf::from(
-            ".claude-plugin/packs/tools/skills/solo/SKILL.md"
-        )]
+    assert_eq!(built.code, 2, "{}", built.stderr);
+    assert!(
+        built.stderr.contains("`targets` is a removed key"),
+        "{}",
+        built.stderr
     );
+    assert!(built.stderr.contains("`--harness`"), "{}", built.stderr);
+    assert!(!vault.join("dist").exists());
 }
 
 /// The harness trees `dist/acme/` holds.

@@ -38,7 +38,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
 | `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -58,7 +57,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. Pi's `package.json` adds `pi-package`, the keyword its gallery lists a package by. |
 | `category` | string | skillwright | no | The plugin's category in a marketplace entry. Codex defaults it to Productivity. |
 | `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -71,7 +69,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
 | `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin, the marketplace or `skillwright.md`. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
@@ -93,7 +90,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 |---|---|---|---|---|
 | `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
 | `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
@@ -116,7 +112,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 |---|---|---|---|---|
 | `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
 | `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |

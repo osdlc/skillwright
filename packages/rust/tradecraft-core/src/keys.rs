@@ -14,7 +14,7 @@
 //!   a container, and every inheritance step asks it through [`inherits`]:
 //!   [`crate::frontmatter::ContainerIdentity::fill_unset_from`] for a
 //!   container's identity ([`identity_keys`]), and [`crate::model::cascade`]
-//!   for `targets` and the harness blocks.
+//!   for the harness blocks.
 //! * **The field reference** the docs publish, generated from [`KEYS`].
 //!
 //! The kind comes from the folder a note sits in, never from the note.
@@ -364,14 +364,6 @@ pub const KEYS: &[KeySpec] = &[
         summary: "The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor.",
     },
     KeySpec {
-        key: "targets",
-        kinds: PUBLISHED,
-        owner: Owner::Skillwright,
-        shape: Shape::StringList,
-        inherits: true,
-        summary: "Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused.",
-    },
-    KeySpec {
         key: "arguments",
         kinds: COMPONENTS,
         owner: Owner::Skillwright,
@@ -656,9 +648,9 @@ pub fn inherits(kind: EntityKind, key: &str) -> bool {
 }
 
 /// The keys a container's identity holds: the key table's rows for a
-/// marketplace or a plugin that skillwright owns, less the harness blocks
-/// and `targets`, which other kinds read too, and the refused `name`. In
-/// table order, deduplicated.
+/// marketplace or a plugin that skillwright owns, less the harness blocks,
+/// which other kinds read too, and the refused `name`. In table order,
+/// deduplicated.
 ///
 /// Any later skillwright-owned key a marketplace or plugin reads joins the
 /// identity by this rule, and a test fails until
@@ -670,9 +662,7 @@ pub fn identity_keys() -> impl Iterator<Item = &'static str> {
     KEYS.iter()
         .filter(|spec| spec.kinds.iter().any(|kind| CONTAINERS.contains(kind)))
         .filter(|spec| spec.owner == Owner::Skillwright)
-        .filter(|spec| {
-            !matches!(spec.shape, Shape::HarnessBlock | Shape::Refused) && spec.key != "targets"
-        })
+        .filter(|spec| !matches!(spec.shape, Shape::HarnessBlock | Shape::Refused))
         .map(|spec| spec.key)
         .filter(move |key| {
             let first = !seen.contains(key);
@@ -694,15 +684,6 @@ mod tests {
         assert!(!is_known(Agent, "license"));
     }
 
-    /// `targets` inherits on every published kind, which the cascade relies
-    /// on: it asks no kind whether `targets` inherits.
-    #[test]
-    fn targets_inherits_on_every_kind() {
-        for &kind in PUBLISHED {
-            assert!(inherits(kind, "targets"), "{kind:?}");
-        }
-    }
-
     /// The Decided block's list, for the kinds that carry each key.
     #[test]
     fn the_inherited_keys_are_the_decided_list() {
@@ -711,7 +692,7 @@ mod tests {
             .filter(|spec| spec.inherits)
             .map(|spec| spec.key)
             .collect();
-        let mut decided = vec!["author", "license", "repository", "homepage", "targets"];
+        let mut decided = vec!["author", "license", "repository", "homepage"];
         decided.extend(HARNESS_BLOCKS);
         assert_eq!(listed, decided.into_iter().collect());
         assert!(inherits(Skill, "license"));

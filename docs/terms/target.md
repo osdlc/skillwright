@@ -2,7 +2,7 @@
 
 Status: current.
 
-A harness's name as written in `targets` or `build.harnesses`: `claude`, `codex`, `cursor` or `pi`. Any other value is refused.
+A harness's name as written in `build.harnesses` or `--harness`: `claude`, `codex`, `cursor` or `pi`. Any other value is refused.
 
 ## In code
 

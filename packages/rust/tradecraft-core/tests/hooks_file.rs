@@ -195,18 +195,6 @@ fn the_cursor_warning_needs_cursor_in_the_build() {
 }
 
 #[test]
-fn the_cursor_warning_needs_cursor_in_the_plugins_targets() {
-    let vfs = vault(&canonical());
-    write(
-        &vfs,
-        &format!("{PLUGIN}/core.md"),
-        "---\ntargets: [claude, codex]\n---\n",
-    );
-    let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
-    assert!(cursor_warnings(&report).is_empty(), "{:?}", report.warnings);
-}
-
-#[test]
 fn the_cursor_warning_needs_a_hooks_file() {
     let vfs = without_hooks();
     let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();

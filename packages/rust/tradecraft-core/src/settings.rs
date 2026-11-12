@@ -10,9 +10,9 @@
 //! Finding the file stays with the caller: this module parses text and never
 //! touches a filesystem.
 //!
-//! An unknown key warns and is ignored. `workspace`, `name`, a key the table
-//! lists but does not mark as inherited, a removed `build:` key and `packs`
-//! in a harness block are refused. A known key with a value of the wrong
+//! An unknown key warns and is ignored. `workspace`, `targets`, `name`, a key
+//! the table lists but does not mark as inherited, a removed `build:` key and
+//! `packs` in a harness block are refused. A known key with a value of the wrong
 //! shape is refused, naming the key.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,9 +44,6 @@ pub struct SharedDefaults {
     /// `homepage`, the documentation URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
-    /// `targets`: which harnesses get each component. Absent means all.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub targets: Option<Vec<String>>,
     /// The harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`), keyed by
     /// harness. Inherited key by key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -202,11 +199,11 @@ fn frontmatter_map(text: &str) -> Result<serde_yaml::Mapping, SettingsError> {
 /// # Errors
 ///
 /// Frontmatter that is not a YAML mapping or never closes; a key the root
-/// file refuses (`workspace`, `name` at the top level or in a harness block,
-/// a key the table lists but does not mark as inherited, a removed `build:`
-/// key, `packs` in a harness block); a known key whose value has the wrong
-/// shape; an unknown harness in `targets` or `build.harnesses`; and an empty
-/// `build.harnesses`.
+/// file refuses (`workspace`, `targets`, `name` at the top level or in a
+/// harness block, a key the table lists but does not mark as inherited, a
+/// removed `build:` key, `packs` in a harness block); a known key whose value
+/// has the wrong shape; an unknown harness in `build.harnesses`; and an
+/// empty `build.harnesses`.
 pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
     let map = frontmatter_map(text)?;
     if let Some((key, detail)) = refused_in_root(&map).into_iter().next() {
@@ -281,7 +278,6 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         "the shared defaults",
     )?;
     root.defaults.blocks = blocks;
-    check_harness_names("targets", root.defaults.targets.as_deref())?;
     check_harness_names("build.harnesses", root.build.harnesses.as_deref())?;
     // The spec does not say what an empty list builds, so it is refused.
     if root.build.harnesses.as_ref().is_some_and(Vec::is_empty) {
@@ -320,6 +316,9 @@ fn check_harness_names(key: &str, names: Option<&[String]>) -> Result<(), Settin
 /// Why the root file refuses the top-level `key`, or `None` when it reads or
 /// warns about it (spec section 2 rules 3 and 4).
 fn root_key_refusal(key: &str) -> Option<String> {
+    if key == TARGETS_KEY {
+        return Some(format!("it is a removed key; {TARGETS_REFUSAL}"));
+    }
     if REFUSED_ROOT_KEYS.contains(&key) {
         return Some("it is a removed key; delete it".to_owned());
     }
@@ -387,6 +386,13 @@ pub(crate) fn refused_root_file_keys(text: &str) -> (Vec<(String, String)>, Vec<
     removed.extend(refused_blocks_in(&map));
     (refused_in_root(&map), removed)
 }
+
+/// The removed `targets` key, refused in the root file and on every note.
+pub(crate) const TARGETS_KEY: &str = "targets";
+
+/// What a refusal of `targets` says.
+pub(crate) const TARGETS_REFUSAL: &str = "the harnesses built are picked per run, with \
+    `build.harnesses` in skillwright.md or `--harness`; delete it";
 
 /// What a refusal of `packs` in a harness block says.
 pub(crate) const PACKS_REFUSAL: &str = "each harness's packs folder is fixed; delete it";
@@ -561,16 +567,8 @@ mod tests {
                 "`author` is not a name or a `{name, email, url}` mapping: it has no string `name`",
             ),
             (
-                "targets: \"claude\"",
-                "`targets` is not a list: it is a string.",
-            ),
-            (
                 "repository: ftp://x",
                 "`repository` is not an http or https URL: it is `ftp://x`",
-            ),
-            (
-                "targets: [1]",
-                "`targets` is not a list of strings: one entry is a number",
             ),
         ] {
             let err = parse_root_file(&format!("---\n{line}\n---\n")).unwrap_err();
@@ -589,16 +587,12 @@ mod tests {
     #[test]
     fn the_shared_defaults_are_the_table_s_inherited_rows() {
         let keys: Vec<&str> = shared_default_keys().collect();
-        assert_eq!(
-            keys,
-            ["author", "license", "repository", "homepage", "targets"]
-        );
+        assert_eq!(keys, ["author", "license", "repository", "homepage"]);
         let every = SharedDefaults {
             author: Some(serde_json::json!("Ada")),
             license: Some("MIT".to_owned()),
             repository: Some("https://x".to_owned()),
             homepage: Some("https://x".to_owned()),
-            targets: Some(Vec::new()),
             blocks: BTreeMap::from([("claude".to_owned(), serde_json::Map::new())]),
         };
         let fields = set_keys(&every);
@@ -625,7 +619,6 @@ mod tests {
             ("homepage", "5"),
             ("license", "[a]"),
             ("license", "MIT"),
-            ("targets", "\"claude\""),
             ("targets", "[claude]"),
         ];
         for (key, value) in cases {
@@ -677,6 +670,11 @@ mod tests {
         assert!(err.detail.contains("delete it"), "{err}");
         let err = parse_root_file("---\nworkspace: true\n---\n").unwrap_err();
         assert_eq!(err.key, "workspace");
+        let err = parse_root_file("---\ntargets: [claude]\n---\n").unwrap_err();
+        assert_eq!(err.key, "targets");
+        assert!(err.detail.contains("removed key"), "{err}");
+        assert!(err.detail.contains("`build.harnesses`"), "{err}");
+        assert!(err.detail.contains("`--harness`"), "{err}");
         assert_eq!(
             refused_root_file_keys("---\nowner: x\nlicense: MIT\nworkspace: true\n---\n")
                 .0
@@ -696,10 +694,10 @@ mod tests {
     }
 
     #[test]
-    fn a_target_that_is_not_one_of_the_four_is_refused() {
+    fn a_harness_that_is_not_one_of_the_four_is_refused() {
         for line in [
-            "targets: [emacs]",
-            "targets: [claude-code]",
+            "build: {harnesses: [emacs]}",
+            "build: {harnesses: [claude-code]}",
             "build: {harnesses: [amp]}",
         ] {
             let err = parse_root_file(&format!("---\n{line}\n---\n")).unwrap_err();
@@ -717,7 +715,6 @@ mod tests {
             "---\n\
              author: Ada\n\
              license: MIT\n\
-             targets: [claude]\n\
              build:\n  \
                harnesses: [claude]\n\
              ---\n\
@@ -730,7 +727,6 @@ mod tests {
         assert_eq!(config.description, None);
         assert_eq!(config.identity.author, Some(serde_json::json!("Ada")));
         assert_eq!(config.identity.license.as_deref(), Some("MIT"));
-        assert_eq!(config.targets, Some(vec!["claude".to_owned()]));
         assert_eq!(root.harness_set(), BTreeSet::from(["claude".to_owned()]));
     }
 
@@ -858,7 +854,6 @@ mod tests {
     /// A root file setting every shared default and a block of each harness.
     const EVERY_KEY: &str = "author: Ada\n\
          license: MIT\n\
-         targets: [claude, codex]\n\
          repository: https://ws.example/repo\n\
          homepage: https://ws.example\n\
          claude:\n  metadata: {from: ws}\n  strict: true\n\
@@ -882,7 +877,6 @@ mod tests {
         assert!(root.warnings.is_empty(), "{:?}", root.warnings);
         let folded = crate::model::cascade::root_config(&root.defaults);
         let mut config = set_keys(&folded.identity);
-        config.insert("targets".to_owned(), serde_json::json!(folded.targets));
         config.insert("blocks".to_owned(), serde_json::json!(folded.blocks));
         let defaults = set_keys(&root.defaults);
         for (key, value) in &defaults {

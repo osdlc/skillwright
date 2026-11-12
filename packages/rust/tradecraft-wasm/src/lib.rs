@@ -74,7 +74,7 @@ use wire::marketplace as wire_marketplace;
 
 pub use js_vfs::{HostVfs, JsVfs};
 
-/// Every name `targets` and `build.harnesses` accept, in report order:
+/// Every name `build.harnesses` and a request's `harnesses` accept, in report order:
 /// `tradecraft_core::harness::KNOWN_TARGETS`, verbatim.
 ///
 /// Exported so a host validating a name off a command line checks the same
@@ -418,7 +418,6 @@ mod tests {
                 "kind",
                 "name",
                 "path",
-                "targets",
                 "blocks",
                 "description",
                 "calls",

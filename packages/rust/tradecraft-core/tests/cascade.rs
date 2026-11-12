@@ -132,16 +132,6 @@ fn str_at(value: &Value, pointer: &str) -> String {
 }
 
 /// Which harnesses got skill `review`.
-fn harnesses_with_the_skill(vfs: &MemVfs) -> String {
-    ["claude", "codex", "cursor", "pi"]
-        .into_iter()
-        .filter(|harness| read(vfs, skill_file(harness)).is_some())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-const HARNESS_BY_LEVEL: [&str; 4] = ["claude", "codex", "cursor", "pi"];
-
 fn cases() -> Vec<Case> {
     vec![
         Case {
@@ -183,12 +173,6 @@ fn cases() -> Vec<Case> {
             read: |vfs| str_at(&json(vfs, plugin_manifest("codex")), "/homepage"),
         },
         Case {
-            key: "targets",
-            levels: EVERY_LEVEL,
-            line: |i| format!("targets: [{}]", HARNESS_BY_LEVEL[i]),
-            read: harnesses_with_the_skill,
-        },
-        Case {
             key: "claude.model (skill)",
             levels: EVERY_LEVEL,
             line: |i| format!("claude: {{model: m{i}}}"),
@@ -220,7 +204,6 @@ fn expected(case: &Case, k: usize) -> String {
         "license (plugin)" => format!("L{i}"),
         "repository" => format!("https://r{i}.example"),
         "homepage" => format!("https://h{i}.example"),
-        "targets" => HARNESS_BY_LEVEL[i].to_owned(),
         "claude.model (skill)" => format!("m{i}"),
         "claude.author (plugin)" => format!("b{i}"),
         "codex.keywords (plugin)" => format!("k{i}"),

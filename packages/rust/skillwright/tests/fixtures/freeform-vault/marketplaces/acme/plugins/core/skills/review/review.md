@@ -1,6 +1,5 @@
 ---
 description: Reviews a diff.
-targets: [claude]
 license: MIT
 arguments:
   - name: pr-number

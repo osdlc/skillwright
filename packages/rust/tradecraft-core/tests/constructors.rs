@@ -62,13 +62,13 @@ fn a_compile_source_takes_its_inputs() {
 #[test]
 fn the_settings_types_build_from_default() {
     let mut fields = SharedDefaults::default();
-    fields.targets = Some(vec!["claude".to_owned()]);
+    fields.license = Some("MIT".to_owned());
     let mut build = BuildSettings::default();
     build.harnesses = Some(vec!["claude".to_owned()]);
     let mut root = RootFile::default();
     root.defaults = fields;
     root.build = build;
-    assert_eq!(root.defaults.targets, Some(vec!["claude".to_owned()]));
+    assert_eq!(root.defaults.license.as_deref(), Some("MIT"));
     assert_eq!(root.harness_set().len(), 1);
 }
 

@@ -57,6 +57,10 @@ is still needed off a terminal.
   There is one root file, and every marketplace sits under it.
 - The `name` key on any note. The folder name is the name, and a `name` key is
   refused.
+- `targets`, at every level: the root file, a marketplace, plugin or component
+  note. It is refused. Every component is built for every harness built. Pick
+  the harnesses with `build.harnesses` in the root file, or with `--harness`
+  for one run (section 6 rule 7, section 10 rule 7).
 - `build.namespace` and prefixed keys (`sw-version`, an `sw:` block). A
   prefixed key is now an unknown key.
 
@@ -97,10 +101,10 @@ is still needed off a terminal.
   `<p>-<s>`, folder and `name`, as Pi already does. `cursor: {naming: bare}`
   keeps today's plain names (section 8 rule 6). A call to a Cursor skill
   renders `/<p>-<s>`, not `/<s>`.
-- `targets` values other than `claude`, `codex`, `cursor` and `pi`. The
+- Harness names other than `claude`, `codex`, `cursor` and `pi`. The
   publish targets (`amp`, `antigravity`, `copilot`, `opencode`, `portable`)
   and the aliases (`claude-code`, `codex-cli`, `github-copilot`) are now
-  refused (section 9 rule 12).
+  refused in `build.harnesses` and `--harness` (section 9 rule 12).
 - Hooks in the Cursor pack. The build now leaves them out and warns, until a
   probe confirms that Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands
   (section 4 rule 23, [#152](https://github.com/osdlc/skillwright/issues/152)).

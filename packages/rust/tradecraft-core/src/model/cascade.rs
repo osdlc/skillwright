@@ -47,7 +47,7 @@ use crate::discover::DiscoveredComponent;
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
-use crate::harness::manifest::{plugin_block, plugin_identity, plugin_targets};
+use crate::harness::manifest::{plugin_block, plugin_identity};
 use crate::keys;
 use crate::settings::SharedDefaults;
 use crate::vault::VaultNote;
@@ -58,10 +58,6 @@ pub(crate) struct Cascade {
     /// The root's shared defaults with the marketplace note over them, and
     /// each plugin note in [`MarketplaceConfig::plugins`].
     pub(crate) config: MarketplaceConfig,
-    /// The marketplace folded in.
-    market: Option<String>,
-    /// The root's own `targets`, for a component of another marketplace.
-    root_targets: Option<Vec<String>>,
 }
 
 impl Cascade {
@@ -86,9 +82,6 @@ impl Cascade {
             take_description(&mut config.description, note);
             drop_shadowed(&mut config.blocks, &note.identity, EntityKind::Marketplace);
             config.identity.overlay(&note.identity);
-            if note.targets.is_some() {
-                config.targets.clone_from(&note.targets);
-            }
             merge_blocks(&mut config.blocks, &note.blocks);
         }
         if config.name.is_none() {
@@ -109,66 +102,16 @@ impl Cascade {
             let overrides = config.plugins.entry(note.folder().to_owned()).or_default();
             take_description(&mut overrides.description, note);
             overrides.identity.overlay(&note.identity);
-            overrides.targets.clone_from(&note.targets);
             merge_blocks(&mut overrides.blocks, &note.blocks);
         }
 
-        Self {
-            config,
-            market: market.map(str::to_owned),
-            root_targets: root.targets.clone(),
-        }
+        Self { config }
     }
 
-    /// Gives every scanned component with no `targets` of its own what its
-    /// containers say.
-    pub(crate) fn resolve_targets(&self, components: &mut [DiscoveredComponent]) {
-        let from_plugins: BTreeMap<(Option<String>, String), Vec<String>> = components
-            .iter()
-            .filter(|c| c.kind == EntityKind::Plugin)
-            .filter_map(|c| {
-                c.targets
-                    .clone()
-                    .map(|targets| ((c.marketplace.clone(), c.folder().to_owned()), targets))
-            })
-            .collect();
-        let from_markets: BTreeMap<String, Vec<String>> = components
-            .iter()
-            .filter(|c| c.kind == EntityKind::Marketplace)
-            .filter_map(|c| {
-                c.targets
-                    .clone()
-                    .map(|targets| (c.folder().to_owned(), targets))
-            })
-            .collect();
-        // `targets` inherits on every kind (the key table), so only a
-        // marketplace's own note and a note that sets it are left alone.
-        for note in components.iter_mut() {
-            if note.kind == EntityKind::Marketplace || note.targets.is_some() {
-                continue;
-            }
-            let plugin = note
-                .plugin
-                .as_ref()
-                .and_then(|plugin| from_plugins.get(&(note.marketplace.clone(), plugin.clone())));
-            let own = note.marketplace.as_deref().or(self.market.as_deref());
-            let market = if own == self.market.as_deref() {
-                self.config.targets.as_ref()
-            } else {
-                own.and_then(|m| from_markets.get(m))
-                    .or(self.root_targets.as_ref())
-            };
-            note.targets = plugin.or(market).cloned();
-        }
-    }
-
-    /// Gives one read note what it leaves out: `targets`, a skill's `license`,
-    /// and each harness block key by key. `plugin` is the plugin holding it.
+    /// Gives one read note what it leaves out: a skill's `license` and each
+    /// harness block key by key. `plugin` is the plugin holding it.
     pub(crate) fn apply(&self, note: &mut VaultNote, kind: EntityKind, plugin: Option<&str>) {
         let plugin = plugin.unwrap_or_default();
-        if note.frontmatter.targets.is_none() {
-            note.frontmatter.targets = plugin_targets(&self.config, plugin);
-        }
         // A container's own `license` and blocks are the manifest's, read from
         // the config.
         if kind.holds_components() {
@@ -297,7 +240,6 @@ pub(crate) fn root_config(root: &SharedDefaults) -> MarketplaceConfig {
             homepage: root.homepage.clone(),
             ..ContainerIdentity::default()
         },
-        targets: root.targets.clone(),
         blocks: root.blocks.clone(),
         ..MarketplaceConfig::default()
     }

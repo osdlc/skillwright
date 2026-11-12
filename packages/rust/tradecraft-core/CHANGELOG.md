@@ -49,7 +49,7 @@ Behaviour:
 - `${PLUGIN_ROOT}/<path>` is checked against what each pack ships and written per harness. `${CLAUDE_PLUGIN_ROOT}` in a note or a hooks file is an error.
 - Cursor names a plugin's skill `<p>-<s>` by default. `cursor: {naming: bare}` keeps plain names.
 - A plugin's `references/`, `scripts/` and `assets/` ship under their own names. The Cursor pack ships no hooks for now, and packs no longer ship `hooks/gap-report.json`.
-- `targets` accepts only `claude`, `codex`, `cursor` and `pi`. `name` is refused on every note, and a prefixed key such as `sw-version` is an unknown key.
+- `targets` is removed, with `VaultFrontmatter::targets`, `DiscoveredComponent::targets`, `SharedDefaults::targets`, `model::Plugin::targets`, `model::Component::targets` and `model::Call::targets`. A note or root file that sets it is refused. `Plugin::carried_by` loses its harness argument, and `resolve_body` loses its index argument. The `unknown-target` refusal is gone. `name` is refused on every note, and a prefixed key such as `sw-version` is an unknown key.
 - The build's internal marks are the noncharacters U+FDD0 to U+FDD2, not private-use code points, so private-use text such as icon-font glyphs ships unchanged. A Markdown body or embedded file that holds one of them is refused (`noncharacter`).
 
 ### Added

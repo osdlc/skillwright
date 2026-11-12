@@ -45,9 +45,6 @@ export interface SharedDefaults {
   /** `homepage`, the documentation URL. */
   homepage?: string;
 
-  /** `targets`: which harnesses get each component. Absent means all. */
-  targets?: string[];
-
   /**
    * The harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`), keyed by
    * harness. Inherited key by key.
@@ -109,13 +106,7 @@ export interface DiscoveryReport {
   warnings: DiscoveryWarning[];
 }
 
-/**
- * One component, as discovery hands it to the verbs.
- *
- * `targets` keeps the three-outcome `targets` reading instead of being
- * expanded to an explicit all-targets list, so the layer that knows what
- * "every harness" means today is the one that decides it.
- */
+/** One component, as discovery hands it to the verbs. */
 export interface DiscoveredComponent {
   /** The folder's name, which the layout has checked against the name rule. */
   name: string;
@@ -129,13 +120,6 @@ export interface DiscoveredComponent {
 
   /** What this component is, from its position. */
   kind: EntityKind;
-
-  /**
-   * `targets` exactly as [`VaultFrontmatter::targets`] read it, every
-   * name checked against [`KNOWN_TARGETS`]. `None` is absent — every
-   * harness; `Some(vec![])` is nowhere.
-   */
-  targets: string[] | null;
 
   /** The plugin folder holding this note. `None` for a marketplace's note. */
   plugin: string | null;
@@ -297,7 +281,7 @@ export interface SkippedNote {
 
   /**
    * A closed-set reason token. The refusals that already carry one keep it
-   * (`unknown-target`); everything else — frontmatter that will not parse,
+   * (`malformed`); everything else — frontmatter that will not parse,
    * a name the Agent Skills spec does not admit, an unreadable file — is
    * `unreadable-note`, the vocabulary's entry for "this note does not
    * parse".
@@ -462,8 +446,7 @@ export type ExportUnit =
    *
    * `root` is the root that cannot carry it — a command on Codex, say.
    * `None` when no root can, as for an agent: the reason is the layout's,
-   * so it is listed once. A member `targets` narrowed away from a root
-   * is not named there; the author asked for that.
+   * so it is listed once.
    */
   | {
       unit: "not-carried";
@@ -639,9 +622,6 @@ export interface Component {
   /** The note, vault-relative. */
   path: string;
 
-  /** Its `targets`, as written. `None` publishes everywhere. */
-  targets: Target[] | null;
-
   /** Its harness blocks, by harness. */
   blocks: Record<string, Record<string, unknown>>;
 
@@ -660,9 +640,6 @@ export interface Component {
   /** The paths of the files it carries, relative to its own directory. */
   resources: string[];
 }
-
-/** A harness name: one of `KNOWN_TARGETS`. */
-export type Target = "claude" | "codex" | "cursor" | "pi";
 
 /** A skill or command as a call names it. */
 export interface SkillId {
@@ -684,6 +661,9 @@ export interface Asset {
   /** Whether it is executable. */
   executable: boolean;
 }
+
+/** A harness name: one of `KNOWN_TARGETS`. */
+export type Target = "claude" | "codex" | "cursor" | "pi";
 
 /**
  * The request each export deserializes, by the name JavaScript calls it.

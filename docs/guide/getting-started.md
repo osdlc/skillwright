@@ -76,8 +76,9 @@ skillwright check          # exits 1 if the output differs from the vault
 the manifests it writes. Without `--yes`, `build` shows what it will write and
 asks first.
 
-Set `build.harnesses` in `skillwright.md` to build for fewer harnesses, and
-`targets` on a note to limit that note.
+Set `build.harnesses` in `skillwright.md` to build for fewer harnesses, or
+pass `--harness <name>` to `build` and `check` for one run. Repeat it for
+several.
 
 ## 4. Release a change
 

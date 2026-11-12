@@ -604,7 +604,7 @@ mod tests {
         // `SkillContent` is public and a caller can build one from anywhere,
         // so the emit seam checks too. A prefixed key is not ours.
         let mut c = content("alpha");
-        for key in ["targets", "arguments", "claude"] {
+        for key in ["arguments", "claude"] {
             c.annotations
                 .insert(key.into(), serde_json::Value::from("ours"));
         }

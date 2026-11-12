@@ -29,9 +29,9 @@
 //! to ask it. A node's harness-only fields ([`Extensions`], D-ISOU) are
 //! folded on load and checked for the harnesses a load is for.
 //!
-//! A load resolves only what some requested harness admits. A skill narrowed
-//! away from every harness a build renders was never compiled before, and a
-//! fault in it must not stop a build that does not include it.
+//! A load resolves only what some requested harness admits. A command when
+//! no harness built carries commands is not compiled, and a fault in it must
+//! not stop a build that does not include it.
 //!
 //! # Embeds are expanded on load
 //!
@@ -99,8 +99,6 @@ pub struct Plugin {
     /// profile's default: `<harness>: {naming: bare}` where the default
     /// prefixes.
     pub bare_on: Vec<String>,
-    /// The plugin note's `targets`, cascaded. `None` is every harness.
-    pub targets: Option<Vec<String>>,
 }
 
 impl Plugin {
@@ -109,15 +107,12 @@ impl Plugin {
         self.skills.iter().chain(&self.commands)
     }
 
-    /// Whether `harness`, admitting what `admits` admits, carries this
+    /// Whether a harness, admitting what `admits` admits, carries this
     /// plugin: it admits one of its components, or the plugin has none (an
-    /// agent is not one) and its `targets` name the harness.
-    pub fn carried_by(&self, harness: &str, admits: impl FnMut(&Component) -> bool) -> bool {
+    /// agent is not one), which every harness built carries.
+    pub fn carried_by(&self, admits: impl FnMut(&Component) -> bool) -> bool {
         let mut components = self.components().peekable();
-        if components.peek().is_none() {
-            return load::targets_name(self.targets.as_deref(), harness);
-        }
-        components.any(admits)
+        components.peek().is_none() || components.any(admits)
     }
 }
 
@@ -131,8 +126,6 @@ pub struct Component {
     pub name: String,
     /// The note, vault-relative.
     pub path: String,
-    /// Its `targets`, as written. `None` publishes everywhere.
-    pub targets: Option<Vec<String>>,
     /// Its harness-only fields, by harness.
     pub extensions: Extensions,
     /// Its content: name, description, the modeled fields and the
@@ -317,8 +310,6 @@ pub struct LinkedComponent {
 pub struct Call {
     /// The skill or command it names.
     pub skill: SkillId,
-    /// Its `targets`, which decide whether a harness ships it.
-    pub targets: Option<Vec<String>>,
     /// The harnesses that name the skill bare against their profile's
     /// default, as its plugin's [`Plugin::bare_on`].
     pub bare_on: Vec<String>,
@@ -468,7 +459,6 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
             kind: site.skill.kind,
             entry_path: site.skill.entry_path.clone(),
         },
-        targets: None,
         bare_on: Vec::new(),
         destination: site.destination.clone(),
         caller: site.caller.clone(),

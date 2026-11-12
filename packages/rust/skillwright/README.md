@@ -139,10 +139,11 @@ build:
 ```
 
 Its top-level keys are shared defaults: `author`, `license`, `repository`,
-`homepage`, `targets` and the harness blocks. Every marketplace, plugin and
+`homepage` and the harness blocks. Every marketplace, plugin and
 component takes each one it does not set. `build:` holds `harnesses`, which
 harnesses to build, and `bump`, how `bump` writes a patch number. An unknown
-key warns. A removed key, such as `build.out` or `workspace`, is refused. See
+key warns. A removed key, such as `build.out`, `workspace` or `targets`, is
+refused. See
 the [`skillwright.md` reference](../../../docs/reference/skillwright-md.md),
 and the [field reference](../../../docs/reference/fields.md) for every
 frontmatter key.
