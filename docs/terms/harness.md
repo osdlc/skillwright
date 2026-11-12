@@ -6,7 +6,7 @@ A coding-agent tool skillwright builds for: Claude Code, Codex, Cursor and Pi.
 
 ## In code
 
-`PROFILES` in `harness/profile.rs`, one row per harness; `KNOWN_TARGETS` holds their names.
+The `Harness` enum in `harness/profile.rs`; `Harness::profile` gives its row of data.
 
 ## Not to be confused with
 

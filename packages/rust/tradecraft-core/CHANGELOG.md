@@ -25,10 +25,17 @@ API:
 - `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
 - A note that is not UTF-8 is refused with `unreadable-note` (`CoreError::Refused`), not reported as `CoreError::Io`.
 - `read_vault_note` refuses a skill, agent or command note with no `description` as `missing-description` (`CoreError::Refused`), not `CoreError::Io`.
+- `Harness` is added, one enum for the four harnesses, with `ALL`, `as_str`, `parse`, `profile` and `format`. `PluginDialect`, `keys::HARNESS_BLOCKS`, `PROFILES`, the `CLAUDE`, `CODEX`, `CURSOR` and `PI` rows, `profile_named`, `with_plugin_format`, `HarnessProfile::name` and `PluginPolicy::dialect` are removed. `KNOWN_TARGETS` is a `&[Harness]`.
+- `HarnessProfile::{format, owned_paths, split_pack, accepted_override_keys, block_keys}` are removed. Use `Harness::format`.
+- `PluginFormat` holds `policy: &'static PluginPolicy` and the facts resolved from it, in place of a copy of each policy field. `PluginFormat::carries(kind)` says whether a pack has a place for a member of that kind.
+- `ExportUnit`'s `root`, `model::Plugin::bare_on` and `model::Call::bare_on` hold `Harness`, and `owned_paths` returns `(Harness, &str)` pairs. `marketplace_manifest_path`, `plugin_manifest_path` and `packs_path` are removed; use `Harness::format`.
+- The `projection` module is no longer public.
+- `refusal::UNKNOWN_TARGET` is removed. No refusal used it.
 
 ### Changed
 
 - Messages say "vault root" in place of "corpus root".
+- A name that is not a harness is refused one way, in a request and in `build.harnesses`: `` `<name>` is not a harness. The harnesses are `claude`, `codex`, `cursor` and `pi` ``, with `unknown-harness` on a request. Of several unknown names, the first is named.
 
 ## [0.50.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.0...tradecraft-core/v0.50.1) - 2026-11-12
 

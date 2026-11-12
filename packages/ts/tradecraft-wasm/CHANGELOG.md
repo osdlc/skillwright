@@ -23,6 +23,7 @@
 - A `Refused` `CoreError` carries its reason token as `token`. `MarketplaceRefusal` has `token` and `detail` in place of `error`.
 - `CoreErrorName` loses `RootNotFound`, which the core never threw.
 - A note that is not UTF-8 or whose frontmatter does not parse throws `Refused` (`unreadable-note`), not `Io`: a caller that branches on `coreName === 'Io'` sees a refusal instead.
+- `Target` is renamed `Harness`. `ExportUnit`'s `root` is typed as `Harness`, not `string`, and `knownTargets()` is typed as `Harness[]` in `WasmResponses` too.
 
 ## 0.2.0
 
