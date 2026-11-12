@@ -11,9 +11,8 @@ Accepted 2026-11-04. [Review](../parley/discuss-architecture.json). Part of
   paths, manifest locations, naming rule, which kinds a pack carries and
   accepted harness-block keys. Tests check it
   against `harness-reference/`.
-- A **harness translator** implements one shared trait. Its default methods
-  do the common work from the profile. Each harness overrides only what
-  needs code, mostly manifests and hooks.
+- One **harness translator** does the common work from the profile. What
+  needs code, mostly manifests, is a `match` on the harness.
 - Frontmatter dialects and tool names stay in `agent-adapt`.
 
 ## Why
@@ -31,4 +30,4 @@ is not enough.
 
 ## Reopen if
 
-Most harnesses need to override most of the default methods.
+Most of the translator becomes a `match` on the harness.

@@ -24,7 +24,7 @@ The words used for skillwright's parts. One file per term. A term marked *planne
 | [Annotations](annotations.md) | current | Frontmatter keys that are neither skillwright's nor modeled, carried to every harness as written |
 | [Translate](translate.md) | current | The third stage: turn the validated [marketplace-model](marketplace-model.md) into one [file-tree](file-tree.md) per harness, with no I/O ([D-COMG](../decisions/D-COMG-marketplace-model-and-translators.md)) |
 | [Harness profile](harness-profile.md) | current | One row of data per [harness](harness.md): paths, manifest locations, naming rule, which kinds a pack carries, accepted harness-block keys and the plugin-root variable |
-| [Harness translator](harness-translator.md) | current | The code half of a harness: one implementation of a shared trait |
+| [Harness translator](harness-translator.md) | current | The code half of a harness: one translator, with a `match` on the harness for its manifests |
 | [File tree](file-tree.md) | current | What a translator returns: paths mapped to bytes, the execute bit, and the notes each file came from |
 | [Emit](emit.md) | current | The last stage: write a [file-tree](file-tree.md) out to `dist/<m>/`, or diff it for `check` |
 | [Vfs](vfs.md) | current, moving | The file-access trait every read and write goes through; osdlc's `vfs-seam` |

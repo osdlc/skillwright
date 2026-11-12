@@ -97,10 +97,10 @@ impl SkillContent {
 
     /// Carries the checked per-harness override blocks onto this content.
     ///
-    /// Keyed by the canonical harness name, which is what
-    /// [`crate::projection::project_skill`] looks one up by. Called by a
-    /// harness translator between the model and the projection — never by
-    /// [`crate::vault::read_vault_note`], which has no harness roster.
+    /// Keyed by the harness name, which is what the projection looks one up
+    /// by. Called by the translator between the model and the projection —
+    /// never by [`crate::vault::read_vault_note`], which has no harness
+    /// roster.
     pub fn apply_overrides(
         &mut self,
         overrides: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,

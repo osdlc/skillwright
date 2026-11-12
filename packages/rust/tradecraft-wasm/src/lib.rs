@@ -13,7 +13,7 @@
 //! | `discoverComponents` | `discover::discover_components` | the vault scan every other verb needs |
 //! | `buildVault` | `export::build_vault` | `build` and `check` of every marketplace, through `mode` |
 //! | `loadMarketplace` | `model::load::load`, through `wire::marketplace` | any host that wants the structure rather than files |
-//! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a target name |
+//! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a harness name |
 //! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
 //!
 //! `build` and `check` share an export, because a mode is a key on the

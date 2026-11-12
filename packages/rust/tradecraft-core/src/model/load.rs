@@ -26,7 +26,7 @@ use crate::export::MarketplaceConfig;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
-use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
+use crate::harness::{Harness, SkillNaming};
 use crate::refusal;
 use crate::settings::{RootFile, SharedDefaults};
 use crate::vault::{VaultNote, read_vault_note};
@@ -67,40 +67,20 @@ impl LoadRequest {
     }
 }
 
-/// The harnesses `names` selects, every one when empty.
+/// The harnesses `names` selects, every one when empty, in report order.
 ///
 /// # Errors
 ///
-/// `refused: unknown-harness` — a name no such harness answers to. Refused
-/// rather than ignored: silently building less than was asked for is the
-/// failure this crate is built around.
-pub(crate) fn selected_harnesses(
-    names: &BTreeSet<String>,
-) -> Result<Vec<&'static HarnessProfile>, CoreError> {
+/// `refused: unknown-harness` — a name no harness answers to.
+pub(crate) fn selected_harnesses(names: &BTreeSet<String>) -> Result<Vec<Harness>, CoreError> {
     if names.is_empty() {
-        return Ok(with_plugin_format().collect());
+        return Ok(Harness::ALL.to_vec());
     }
-    let unknown: Vec<&str> = names
+    let chosen: BTreeSet<Harness> = names
         .iter()
-        .map(String::as_str)
-        .filter(|name| !with_plugin_format().any(|spec| spec.name == *name))
-        .collect();
-    if !unknown.is_empty() {
-        return Err(CoreError::refused(
-            refusal::UNKNOWN_HARNESS,
-            format!(
-                "no harness named {} — this build renders {}. Nothing was written",
-                unknown.join(", "),
-                with_plugin_format()
-                    .map(|spec| spec.name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        ));
-    }
-    Ok(with_plugin_format()
-        .filter(|spec| names.contains(spec.name))
-        .collect())
+        .map(|name| Harness::parse(name))
+        .collect::<Result<_, _>>()?;
+    Ok(chosen.into_iter().collect())
 }
 
 /// The harnesses a build renders: those `chosen` names, else the root
@@ -113,7 +93,7 @@ pub(crate) fn selected_harnesses(
 pub(crate) fn built_harnesses(
     root: &RootFile,
     chosen: &BTreeSet<String>,
-) -> Result<Vec<&'static HarnessProfile>, CoreError> {
+) -> Result<Vec<Harness>, CoreError> {
     if chosen.is_empty() {
         selected_harnesses(&root.harness_set())
     } else {
@@ -176,7 +156,7 @@ pub(crate) fn load_for(
     layout: &Layout,
     scan: &DiscoveryReport,
     marketplace: Option<&str>,
-    roots: &[&'static HarnessProfile],
+    roots: &[Harness],
     defaults: &SharedDefaults,
 ) -> Result<Marketplace, CoreError> {
     let vault_root = layout.root.clone();
@@ -317,7 +297,7 @@ pub(crate) fn load_for(
         for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
             if !roots
                 .iter()
-                .any(|root| kind_carried(&component.discovered, root))
+                .any(|root| root.format().carries(component.kind))
             {
                 continue;
             }
@@ -456,11 +436,11 @@ fn skill_index<'a>(skills: impl Iterator<Item = &'a DiscoveredComponent>) -> Ind
 /// What [`crate::harness::manifest::naming_of`] refuses.
 fn hand_written_forms(
     plugins: &BTreeMap<String, Plugin>,
-    roots: &[&'static HarnessProfile],
+    roots: &[Harness],
     config: &MarketplaceConfig,
 ) -> Result<BTreeMap<String, String>, CoreError> {
     let mut forms = BTreeMap::new();
-    for root in roots {
+    for &root in roots {
         for plugin in plugins.values() {
             let naming = crate::harness::manifest::naming_of(config, &plugin.name, root)?;
             if naming == SkillNaming::Bare {
@@ -469,10 +449,10 @@ fn hand_written_forms(
             let commands = plugin
                 .commands
                 .iter()
-                .filter(|_| root.format().carries_commands);
+                .filter(|_| root.format().carries(EntityKind::Command));
             for member in plugin.skills.iter().chain(commands) {
                 if let Ok(form) = crate::export::rendered_skill_call(
-                    root.runtime,
+                    root.profile().runtime,
                     naming,
                     &plugin.name,
                     &member.name,
@@ -504,16 +484,16 @@ fn apply_naming(
     config: &MarketplaceConfig,
 ) -> Result<(), CoreError> {
     // Per plugin, the harnesses that name it bare.
-    let mut bare_on: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for profile in crate::harness::with_plugin_format().filter(|p| p.format().naming_choice) {
-        let default = profile.format().naming;
+    let mut bare_on: BTreeMap<String, Vec<Harness>> = BTreeMap::new();
+    for harness in Harness::ALL {
+        let format = harness.format();
+        if !format.policy.naming_choice {
+            continue;
+        }
         for name in plugins.keys() {
-            let naming = crate::harness::manifest::naming_of(config, name, profile)?;
-            if naming == SkillNaming::Bare && naming != default {
-                bare_on
-                    .entry(name.clone())
-                    .or_default()
-                    .push(profile.name.to_owned());
+            let naming = crate::harness::manifest::naming_of(config, name, harness)?;
+            if naming == SkillNaming::Bare && naming != format.naming {
+                bare_on.entry(name.clone()).or_default().push(harness);
             }
         }
     }
@@ -588,17 +568,6 @@ fn extensions(
     let blocks =
         super::cascade::fold_harness_blocks(frontmatter, &component.entry_path, component.kind)?;
     Ok(Extensions { blocks })
-}
-
-// --- What the build used to decide before it rendered ------------------------
-
-/// Whether this harness's pack carries this member: its pack format has a
-/// place for the member's kind.
-pub(crate) fn kind_carried(component: &DiscoveredComponent, spec: &HarnessProfile) -> bool {
-    match component.kind {
-        EntityKind::Command => spec.format().carries_commands,
-        _ => true,
-    }
 }
 
 /// A warning for each plugin of `market` whose note states no `version`. It
@@ -880,7 +849,7 @@ fn load_hooks_files(
     vfs: &dyn Vfs,
     layout: &Layout,
     market: &str,
-    roots: &[&'static HarnessProfile],
+    roots: &[Harness],
     plugins: &mut BTreeMap<String, Plugin>,
 ) -> Result<Vec<DiscoveryWarning>, CoreError> {
     let mut warnings = Vec::new();
@@ -898,18 +867,22 @@ fn load_hooks_files(
             )
         })?;
         let hooks = crate::hooks_file::parse_hooks_file(&text, &file.rel)?;
-        for root in roots.iter().filter(|root| root.format().carries_hooks) {
-            if !group.carried_by(|c| kind_carried(&c.discovered, root)) {
+        for root in roots
+            .iter()
+            .filter(|root| root.format().policy.carries_hooks)
+        {
+            if !group.carried_by(|c| root.format().carries(c.kind)) {
                 continue;
             }
             for hook in &hooks {
-                if let Some(why) = agent_adapt::render::hook_refusal(hook, root.runtime) {
+                if let Some(why) = agent_adapt::render::hook_refusal(hook, root.profile().runtime) {
                     warnings.push(DiscoveryWarning {
                         path: file.rel.clone(),
                         reason: "hook-left-out".to_owned(),
                         detail: format!(
                             "plugin `{plugin}`'s {} pack leaves out a `{}` hook: {why}",
-                            root.label, hook.event
+                            root.profile().label,
+                            hook.event
                         ),
                     });
                 }
@@ -919,9 +892,8 @@ fn load_hooks_files(
             path: file.rel.clone(),
             hooks,
         });
-        let cursor_built = roots.iter().any(|root| {
-            root.name == "cursor" && group.carried_by(|c| kind_carried(&c.discovered, root))
-        });
+        let cursor_built = roots.contains(&Harness::Cursor)
+            && group.carried_by(|c| Harness::Cursor.format().carries(c.kind));
         if cursor_built {
             warnings.push(DiscoveryWarning {
                 path: file.rel.clone(),

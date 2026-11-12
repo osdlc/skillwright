@@ -19,10 +19,11 @@ use agent_adapt::RuntimeId;
 use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::refusal;
+use crate::skill::forward_slashed;
 
 /// One file projection wants on disk, relative to a pack root.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectedFile {
+pub(crate) struct ProjectedFile {
     /// Forward-slashed, relative to the pack root.
     pub relative_path: String,
     /// The file's bytes.
@@ -31,40 +32,35 @@ pub struct ProjectedFile {
     pub executable: bool,
 }
 
-/// Renders one snapshot for every given runtime target.
-///
-/// Output is sorted by path — the stable order the hash, the manifest, and
-/// the tests all rely on. Unknown target names are refused, not skipped: a
-/// target this build cannot render is a configuration error, and skipping
-/// would ship less, silently.
-///
-/// `overrides_target` is the canonical harness whose harness block this
-/// render applies, which need not be the runtime target it renders with.
-/// `None` renders no override block.
-pub fn project_skill(
+/// Renders one snapshot as a skill through the runtime `id`, with the
+/// override block named `block` applied. Output is sorted by path.
+pub(crate) fn project_skill(
     snapshot: &SkillProjection,
-    targets: &[RuntimeId],
-    overrides_target: Option<&str>,
+    id: RuntimeId,
+    block: &str,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
-    let mut out = Vec::new();
-    for &id in targets {
-        let target = id.as_str();
-        let skill = to_adapt_skill(snapshot, overrides_target);
-        let runtime = agent_adapt::runtimes::skill_renderer_for(id)
-            .ok_or_else(|| CoreError::Projection(format!("{target}: runtime renders no skills")))?;
-        let files = runtime
-            .render_skill(&skill)
-            .map_err(|e| refusal(target, e))?;
-        for file in files {
-            out.push(ProjectedFile {
-                relative_path: forward_slashed(&file.path),
-                content: file.content,
-                executable: file.executable,
-            });
-        }
-    }
+    let skill = to_adapt_skill(snapshot, block);
+    let runtime = agent_adapt::runtimes::skill_renderer_for(id).ok_or_else(|| {
+        CoreError::Projection(format!("{}: runtime renders no skills", id.as_str()))
+    })?;
+    let files = runtime
+        .render_skill(&skill)
+        .map_err(|e| refusal(id.as_str(), e))?;
+    Ok(projected(files))
+}
+
+/// Rendered files as projected ones, sorted by path.
+fn projected(files: Vec<agent_adapt::ExportedFile>) -> Vec<ProjectedFile> {
+    let mut out: Vec<ProjectedFile> = files
+        .into_iter()
+        .map(|file| ProjectedFile {
+            relative_path: forward_slashed(&file.path),
+            content: file.content,
+            executable: file.executable,
+        })
+        .collect();
     out.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    Ok(out)
+    out
 }
 
 /// A render failure, as the variant that says what actually happened.
@@ -93,7 +89,7 @@ fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
     }
 }
 
-/// Renders one note as a **slash command** for every given runtime target.
+/// Renders one note as a **slash command** for `harness`.
 ///
 /// The second entry point beside [`project_skill`], and separate for a
 /// reason: a different file at a different path, from a different reading of
@@ -105,46 +101,34 @@ fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
 /// either of those refuses `no-renderer` instead of landing somewhere the
 /// harness never looks.
 ///
-/// `overrides_target` is the canonical harness whose harness block
-/// this render applies, or `None` for a snapshot that carries none.
-///
 /// A key the command has no field for (`disable-model-invocation`,
 /// `user-invocable`, `context`, a foreign key) is written into its
 /// frontmatter as the author spelled it, unless the target's
 /// [`agent_adapt::FrontmatterDialect::omit_fields`] leaves it out. The
 /// harness block merges over those.
-pub fn project_command(
+pub(crate) fn project_command(
     snapshot: &SkillProjection,
-    targets: &[RuntimeId],
-    overrides_target: Option<&str>,
+    id: RuntimeId,
+    block: &str,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
-    let mut out = Vec::new();
-    for &id in targets {
-        let target = id.as_str();
-        let command = to_adapt_command(snapshot, id, overrides_target)?;
-        let runtime = agent_adapt::runtimes::command_renderer_for(id).ok_or_else(|| {
-            CoreError::refused(
-                refusal::NO_RENDERER,
-                format!("{target} has no command layout, so a command cannot be published there"),
-            )
-        })?;
-        let files = runtime
-            .render_command(&command)
-            .map_err(|e| refusal(target, e))?;
-        for file in files {
-            out.push(ProjectedFile {
-                relative_path: forward_slashed(&file.path),
-                content: file.content,
-                executable: file.executable,
-            });
-        }
-    }
-    out.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    Ok(out)
+    let command = to_adapt_command(snapshot, id, block)?;
+    let runtime = agent_adapt::runtimes::command_renderer_for(id).ok_or_else(|| {
+        CoreError::refused(
+            refusal::NO_RENDERER,
+            format!(
+                "{} has no command layout, so a command cannot be published there",
+                id.as_str()
+            ),
+        )
+    })?;
+    let files = runtime
+        .render_command(&command)
+        .map_err(|e| refusal(id.as_str(), e))?;
+    Ok(projected(files))
 }
 
 /// Renders a plugin's hooks as the bytes of one `hooks/hooks.json`, in the
-/// shape the target's own `HookCapability` writes.
+/// shape the runtime's own `HookCapability` writes.
 ///
 /// The third entry point, and the one that is not per note: a harness reads
 /// one hooks file per plugin, so every hook of a pack renders together or the
@@ -156,9 +140,9 @@ pub fn project_command(
 ///
 /// # Errors
 ///
-/// * `refused: no-renderer` — the target has no hooks layout at all.
-/// * [`CoreError::Projection`] -- the target does not carry one of the events; see the docs of `agent_adapt::render::render_hooks_json` (<https://docs.rs/agent-adapt>) for the refusal contract.
-pub fn project_plugin_hooks(
+/// * `refused: no-renderer` — the runtime has no hooks layout at all.
+/// * [`CoreError::Projection`] -- the runtime does not carry one of the events; see the docs of `agent_adapt::render::render_hooks_json` (<https://docs.rs/agent-adapt>) for the refusal contract.
+pub(crate) fn project_plugin_hooks(
     hooks: &[agent_adapt::Hook],
     id: RuntimeId,
 ) -> Result<Option<Vec<u8>>, CoreError> {
@@ -193,7 +177,7 @@ pub fn project_plugin_hooks(
 ///
 /// `agent_adapt::Command` has no field for the keys [`unplaced_keys`]
 /// collects, so they ride verbatim in the command's override map. That map
-/// skips the renderer's omit list, so a key `id`'s dialect omits is dropped
+/// skips the renderer's omit list, so a key the runtime's dialect omits is dropped
 /// here, the same answer the override roster gives for it. A foreign key has
 /// no roster entry and passes, as on the skill path. The author's own
 /// harness block, already checked by
@@ -207,7 +191,7 @@ pub fn project_plugin_hooks(
 fn to_adapt_command(
     snapshot: &SkillProjection,
     id: RuntimeId,
-    overrides_target: Option<&str>,
+    block: &str,
 ) -> Result<agent_adapt::Command, CoreError> {
     let content = &snapshot.content;
     let slug = agent_adapt::naming::slugify_skill_name(&content.name).map_err(|e| {
@@ -228,7 +212,7 @@ fn to_adapt_command(
         .into_iter()
         .filter(|(key, _)| !omitted_by(id, key))
         .collect();
-    if let Some(own) = overrides_target.and_then(|dest| content.overrides.get(dest)) {
+    if let Some(own) = content.overrides.get(block) {
         command
             .overrides
             .extend(own.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -290,10 +274,7 @@ fn omitted_by(id: RuntimeId, key: &str) -> bool {
     })
 }
 
-fn to_adapt_skill(
-    snapshot: &SkillProjection,
-    overrides_target: Option<&str>,
-) -> agent_adapt::Skill {
+fn to_adapt_skill(snapshot: &SkillProjection, block: &str) -> agent_adapt::Skill {
     let content = &snapshot.content;
     let mut skill = agent_adapt::Skill::new(
         content.name.clone(),
@@ -324,10 +305,7 @@ fn to_adapt_skill(
         .collect();
     // An invariant, not an oversight: nothing an override says for one
     // harness is visible to the render of another.
-    skill.overrides = overrides_target
-        .and_then(|dest| content.overrides.get(dest))
-        .cloned()
-        .unwrap_or_default();
+    skill.overrides = content.overrides.get(block).cloned().unwrap_or_default();
     // Through the override, not `Skill::annotations`: the renderer writes
     // annotations as JSON strings, and a nested value must stay YAML. A
     // harness block's `metadata` merges over the note's own, key by key.
@@ -368,17 +346,25 @@ pub(crate) fn skill_metadata(
     metadata
 }
 
-fn forward_slashed(path: &std::path::Path) -> String {
-    path.components()
-        .filter_map(|c| c.as_os_str().to_str())
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::content::SkillContent;
+    use crate::harness::Harness;
+
+    fn project_skill(
+        snapshot: &SkillProjection,
+        harness: Harness,
+    ) -> Result<Vec<ProjectedFile>, CoreError> {
+        super::project_skill(snapshot, harness.profile().runtime, harness.as_str())
+    }
+
+    fn project_command(
+        snapshot: &SkillProjection,
+        harness: Harness,
+    ) -> Result<Vec<ProjectedFile>, CoreError> {
+        super::project_command(snapshot, harness.profile().runtime, harness.as_str())
+    }
 
     fn content(name: &str) -> SkillContent {
         SkillContent {
@@ -432,11 +418,11 @@ mod tests {
     fn per_target_layouts_match_the_live_corpus() {
         let snap = snapshot("alpha", vec![]);
         let cases = [
-            (RuntimeId::ClaudeCode, ".claude/skills/alpha/SKILL.md"),
-            (RuntimeId::CodexCli, ".agents/skills/alpha/SKILL.md"),
+            (Harness::Claude, ".claude/skills/alpha/SKILL.md"),
+            (Harness::Codex, ".agents/skills/alpha/SKILL.md"),
         ];
         for (target, expected) in cases {
-            let files = project_skill(&snap, &[target], None).unwrap();
+            let files = project_skill(&snap, target).unwrap();
             assert_eq!(files.len(), 1, "{target:?}");
             assert_eq!(files[0].relative_path, expected, "{target:?}");
         }
@@ -451,7 +437,7 @@ mod tests {
                 ("helper.ts".to_owned(), b"export {}\n".to_vec(), false),
             ],
         );
-        let files = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
+        let files = project_skill(&snap, Harness::Claude).unwrap();
         let paths: Vec<_> = files.iter().map(|f| f.relative_path.as_str()).collect();
         assert_eq!(
             paths,
@@ -479,7 +465,7 @@ mod tests {
             content: c,
             resources: vec![],
         };
-        let files = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
+        let files = project_skill(&snap, Harness::Claude).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         let close = text.find("\n---\n").expect("closing fence");
@@ -505,7 +491,7 @@ mod tests {
             "sorted key order"
         );
         // Rendering twice with the same input is byte-stable.
-        let again = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
+        let again = project_skill(&snap, Harness::Claude).unwrap();
         assert_eq!(files[0].content, again[0].content);
     }
 
@@ -526,7 +512,7 @@ mod tests {
             resources: vec![],
         };
 
-        let files = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
+        let files = project_skill(&snap, Harness::Claude).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         assert!(!text.contains("ours"), "{text}");
@@ -547,7 +533,7 @@ mod tests {
             "C:\\Windows\\evil.md",
         ] {
             let snap = snapshot("alpha", vec![(escape.to_owned(), b"x".to_vec(), true)]);
-            let err = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap_err();
+            let err = project_skill(&snap, Harness::Claude).unwrap_err();
             let message = err.to_string();
 
             assert!(
@@ -569,21 +555,8 @@ mod tests {
         // A name with no legal slug is refused by the renderer too, and it is
         // not a path escape — so the `unsafe-path` mapping must not swallow it.
         let snap = snapshot("!!!", vec![]);
-        let err = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap_err();
+        let err = project_skill(&snap, Harness::Claude).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)), "{err}");
-    }
-
-    #[test]
-    fn multi_target_projection_renders_every_target_once() {
-        let snap = snapshot("alpha", vec![("h.ts".to_owned(), b"x".to_vec(), false)]);
-        let files =
-            project_skill(&snap, &[RuntimeId::ClaudeCode, RuntimeId::CodexCli], None).unwrap();
-        assert_eq!(files.len(), 4);
-        assert!(
-            files
-                .iter()
-                .any(|f| f.relative_path == ".agents/skills/alpha/h.ts")
-        );
     }
 
     // --- Commands, across every runtime with a command renderer ------------
@@ -592,11 +565,11 @@ mod tests {
     fn a_command_projects_into_every_verified_runtimes_layout() {
         let snap = snapshot("ship", vec![]);
         let cases = [
-            (RuntimeId::ClaudeCode, ".claude/commands/ship.md"),
-            (RuntimeId::CodexCli, ".codex/prompts/ship.md"),
+            (Harness::Claude, ".claude/commands/ship.md"),
+            (Harness::Codex, ".codex/prompts/ship.md"),
         ];
         for (target, expected) in cases {
-            let files = project_command(&snap, &[target], None).unwrap();
+            let files = project_command(&snap, target).unwrap();
             assert_eq!(files.len(), 1, "{target:?}");
             assert_eq!(files[0].relative_path, expected, "{target:?}");
         }
@@ -605,8 +578,8 @@ mod tests {
     #[test]
     fn a_command_has_no_renderer_for_cursor_or_pi() {
         let snap = snapshot("ship", vec![]);
-        for target in [RuntimeId::Cursor, RuntimeId::Pi] {
-            let err = project_command(&snap, &[target], None).unwrap_err();
+        for target in [Harness::Cursor, Harness::Pi] {
+            let err = project_command(&snap, target).unwrap_err();
             assert!(
                 matches!(err, CoreError::Refused { .. }),
                 "{target:?}: {err}"
@@ -642,7 +615,7 @@ mod tests {
         snap.content.user_invocable = false;
         snap.content.context_mode = Some("fork".into());
         snap.content.annotations = keys(serde_json::json!({"foo": "bar"}));
-        let text = only_file(&project_command(&snap, &[RuntimeId::CodexCli], None).unwrap());
+        let text = only_file(&project_command(&snap, Harness::Codex).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("foo"), Some(&serde_json::json!("bar")), "{text}");
         for key in ["disable-model-invocation", "user-invocable", "context"] {
@@ -660,7 +633,7 @@ mod tests {
         snap.content.context_mode = Some("fork".into());
         snap.content.annotations = keys(serde_json::json!({"foo": "bar"}));
 
-        let text = only_file(&project_command(&snap, &[RuntimeId::ClaudeCode], None).unwrap());
+        let text = only_file(&project_command(&snap, Harness::Claude).unwrap());
         let fm = frontmatter(&text);
         for (key, value) in [
             ("disable-model-invocation", serde_json::json!(true)),
@@ -673,13 +646,10 @@ mod tests {
 
         // The author's own override for this harness still has the last
         // word over a carried key.
-        snap.content.overrides.insert(
-            "claude-code".into(),
-            keys(serde_json::json!({"foo": "baz"})),
-        );
-        let text = only_file(
-            &project_command(&snap, &[RuntimeId::ClaudeCode], Some("claude-code")).unwrap(),
-        );
+        snap.content
+            .overrides
+            .insert("claude".into(), keys(serde_json::json!({"foo": "baz"})));
+        let text = only_file(&project_command(&snap, Harness::Claude).unwrap());
         assert_eq!(
             frontmatter(&text).get("foo"),
             Some(&serde_json::json!("baz")),

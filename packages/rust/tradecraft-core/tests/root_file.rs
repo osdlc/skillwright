@@ -246,12 +246,13 @@ fn names_the_four(said: &str) {
 
 #[test]
 fn the_known_harnesses_are_the_four() {
-    assert_eq!(
-        tradecraft_core::KNOWN_TARGETS,
-        ["claude", "codex", "cursor", "pi"]
-    );
+    let names: Vec<&str> = tradecraft_core::KNOWN_TARGETS
+        .iter()
+        .map(|harness| harness.as_str())
+        .collect();
+    assert_eq!(names, ["claude", "codex", "cursor", "pi"]);
     for alias in ["claude-code", "codex-cli", "opencode", "amp"] {
-        assert!(!tradecraft_core::KNOWN_TARGETS.contains(&alias), "{alias}");
+        assert!(tradecraft_core::Harness::parse(alias).is_err(), "{alias}");
     }
 }
 

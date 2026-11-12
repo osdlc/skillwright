@@ -38,7 +38,7 @@ export type {
   SkillId,
   SkippedNote,
   StaleKind,
-  Target,
+  Harness,
   UnitStatus,
   VaultReport,
   VaultRequest,

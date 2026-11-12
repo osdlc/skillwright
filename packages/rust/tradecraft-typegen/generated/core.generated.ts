@@ -16,6 +16,9 @@
  * each field rather than two that can disagree.
  */
 
+/** A harness a marketplace is built for. */
+export type Harness = "claude" | "codex" | "cursor" | "pi";
+
 /** A parsed root file. */
 export interface RootFile {
   /** The shared defaults. */
@@ -405,7 +408,7 @@ export type ExportUnit =
   | {
       unit: "plugin";
       /** The harness root the plugin sits in. */
-      root: string;
+      root: Harness;
       /** The plugin's name. */
       name: string;
       /** Member skills admitted to this root. */
@@ -425,7 +428,7 @@ export type ExportUnit =
   | {
       unit: "manifest";
       /** The harness root the manifest sits in. */
-      root: string;
+      root: Harness;
       /** Whether the manifest matches what is installed. */
       status: UnitStatus;
     }
@@ -440,7 +443,7 @@ export type ExportUnit =
   | {
       unit: "stale";
       /** The harness root the path sits in. */
-      root: string;
+      root: Harness;
       /** The stale path, relative to the destination. */
       path: string;
       /** What the stale path is. */
@@ -451,7 +454,7 @@ export type ExportUnit =
    * dropped.
    *
    * A pack has a place for skills, and for commands on a root whose
-   * [`crate::harness::PluginFormat::carries_commands`] is `true`.
+   * format carries them ([`crate::harness::PluginFormat::carries`]).
    * Everything else is named here rather than dropped; what a build must
    * not do is leave silently.
    *
@@ -462,7 +465,7 @@ export type ExportUnit =
   | {
       unit: "not-carried";
       /** The root that cannot carry the component, or `None` when no root can. */
-      root: string | null;
+      root: Harness | null;
       /** The component's path in the vault. */
       path: string;
       /** The component's kind. */
@@ -583,7 +586,7 @@ export interface Plugin {
    * The harnesses that name this plugin's skills without the plugin
    * prefix their default adds.
    */
-  bare_on?: Target[];
+  bare_on?: Harness[];
 }
 
 /** A skill, a command or an agent. */
@@ -637,9 +640,6 @@ export interface Asset {
   executable: boolean;
 }
 
-/** A harness name: one of `KNOWN_TARGETS`. */
-export type Target = "claude" | "codex" | "cursor" | "pi";
-
 /**
  * The request each export deserializes, by the name JavaScript calls it.
  */
@@ -653,7 +653,7 @@ export interface WasmRequests {
  * The report each export serializes back.
  */
 export interface WasmResponses {
-  knownTargets: string[];
+  knownTargets: Harness[];
   parseRootFile: RootFile;
   discoverComponents: DiscoveryReport;
   buildVault: VaultReport;

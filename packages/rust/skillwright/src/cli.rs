@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use clap::builder::PossibleValuesParser;
 use clap::error::ErrorKind;
 use clap::{Args, Parser, Subcommand};
-use tradecraft_core::{BumpLevel, KNOWN_TARGETS};
+use tradecraft_core::{BumpLevel, Harness};
 
 use crate::commands::bump::{BumpFlags, run_bump};
 use crate::commands::init::{InitFlags, run_init};
@@ -172,7 +172,7 @@ struct ExportArgs {
 #[derive(Args, Debug)]
 struct HarnessArg {
     /// A harness to build: claude, codex, cursor or pi. Repeat it for several. It replaces the root file's `build.harnesses` for this run.
-    #[arg(long = "harness", value_name = "name", value_parser = PossibleValuesParser::new(KNOWN_TARGETS))]
+    #[arg(long = "harness", value_name = "name", value_parser = PossibleValuesParser::new(Harness::ALL.map(Harness::as_str)))]
     names: Vec<String>,
 }
 

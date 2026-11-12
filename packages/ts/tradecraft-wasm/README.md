@@ -58,7 +58,7 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 | `loadMarketplace(vfs, request)` | Loads one marketplace of the vault and writes nothing: its plugins, and each component's description, harness blocks, calls and files. The rendered bodies do not cross. |
 | `buildVault(vfs, request)`    | Renders every marketplace, or the one `marketplace` names, into its `<vault_root>/dist/<m>/`, one tree per agent, and writes all of them or none. `mode: 'check'` reports drift and writes nothing. |
 | `parseRootFile(text)`         | Reads the text of `skillwright.md`: its shared defaults, its `build` settings and a warning per unknown key. |
-| `knownTargets()`              | The target names the core accepts: the `Target` type's four names.              |
+| `knownTargets()`              | The harness names the core accepts: the `Harness` type's four names.            |
 | `createNodeVfs(options?)`     | The `Vfs` over `node:fs`.                                                       |
 | `toCorePath`, `toHostPath`    | Convert a host path to the core's `/` form and back. They matter on Windows.    |
 
