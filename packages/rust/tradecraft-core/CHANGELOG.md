@@ -36,6 +36,7 @@ API:
 - `compile::Closure`, `CompiledNote::closures` and `model::Resolved::closures` are removed. Nothing read them.
 - `export::{published_skill_name, rendered_skill_call}` move to `harness`, and `export` no longer re-exports `SkillNaming` and `CliInvocation`. The root re-exports are unchanged.
 - The `vault` module is renamed `note`, and `skill::split_frontmatter` moves into it. `paths::{BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file}` move to `model::vault`, and `status::VersionBumpSuggestion` to `export`. The `skill` and `status` modules are removed. The root re-exports are unchanged.
+- The `semver` module and the root `BumpLevel`, `next_version` and `parse_semver` are removed. Only `skillwright bump` used them, and it holds them now.
 
 ### Changed
 

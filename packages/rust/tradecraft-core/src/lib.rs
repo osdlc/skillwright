@@ -25,7 +25,6 @@
 //! | [`hooks_file`] | A plugin's `hooks/hooks.json`, parsed and localized per harness |
 //! | [`error`] | The crate's error type |
 //! | [`refusal`] | Every refusal token |
-//! | [`semver`] | The semver-bump arithmetic |
 //!
 //! # Specs named in comments
 //!
@@ -71,7 +70,6 @@ pub mod note;
 pub mod paths;
 pub(crate) mod projection;
 pub mod refusal;
-pub mod semver;
 pub mod settings;
 pub mod vfs;
 
@@ -100,7 +98,6 @@ pub use model::vault::{
 };
 pub use note::{VaultNote, read_vault_note};
 pub use paths::resolve_path;
-pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
     BuildSettings, BumpSettings, PatchScheme, ROOT_FILE, RootFile, SettingsError, SharedDefaults,
     compose_root_file, parse_root_file,
