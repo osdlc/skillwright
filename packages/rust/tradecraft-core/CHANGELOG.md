@@ -31,11 +31,17 @@ API:
 - `ExportUnit`'s `root`, `model::Plugin::bare_on` and `model::Call::bare_on` hold `Harness`, and `owned_paths` returns `(Harness, &str)` pairs. `marketplace_manifest_path`, `plugin_manifest_path` and `packs_path` are removed; use `Harness::format`.
 - The `projection` module is no longer public.
 - `refusal::UNKNOWN_TARGET` is removed. No refusal used it.
+- `BuildScope` is added: the whole vault or one marketplace. `LoadRequest` and `VaultRequest` hold it as `scope`, in place of `marketplace`, and `load_vault` takes a `&BuildScope`. `VaultRequest`'s `harnesses`, `mode` and `compare_with` move to `options`, a `BuildOptions`. The JSON shape of both requests is unchanged.
+- `LoadedVault::vault_request` is removed; use `VaultRequest::for_marketplace`. `model::load_in` and `model::load::Index` are removed.
+- `DiscoveredComponent` holds `position: Position` in place of `name`, `kind`, `plugin` and `marketplace`, and loses `folder()`. `Position` serializes with its variant as `at`.
+- `Component`'s `kind`, `name` and `path` are methods that read its `discovered` note. `resolve_body` takes no `kind`.
+- `compile::IndexedSkill` is removed: `SkillIndex` and `CallSite` hold `SkillId`, which `SkillId::of` builds from a `DiscoveredComponent`.
 
 ### Changed
 
 - Messages say "vault root" in place of "corpus root".
 - A name that is not a harness is refused one way, in a request and in `build.harnesses`: `` `<name>` is not a harness. The harnesses are `claude`, `codex`, `cursor` and `pi` ``, with `unknown-harness` on a request. Of several unknown names, the first is named.
+- `DiscoveredComponent` carries `Position`; the TS types are regenerated.
 
 ## [0.50.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.0...tradecraft-core/v0.50.1) - 2026-11-12
 

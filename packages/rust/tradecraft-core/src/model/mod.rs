@@ -54,9 +54,10 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 use crate::harness::Harness;
+use crate::layout::Position;
 use crate::refusal;
 
-pub use load::{LoadRequest, load, load_in, resolve_body};
+pub use load::{LoadRequest, load, resolve_body};
 
 /// A vault, loaded as the one marketplace a build renders.
 #[derive(Debug, Clone)]
@@ -122,12 +123,6 @@ impl Plugin {
 /// a requested harness admits it — resolved.
 #[derive(Debug, Clone)]
 pub struct Component {
-    /// What it is.
-    pub kind: EntityKind,
-    /// Its source name, never prefixed.
-    pub name: String,
-    /// The note, vault-relative.
-    pub path: String,
     /// Its harness-only fields, by harness.
     pub extensions: Extensions,
     /// The note read in full, its body and files resolved. `None` when no
@@ -135,6 +130,23 @@ pub struct Component {
     pub resolved: Option<Resolved>,
     /// What the scan found.
     pub discovered: DiscoveredComponent,
+}
+
+impl Component {
+    /// What it is.
+    pub fn kind(&self) -> EntityKind {
+        self.discovered.position.kind()
+    }
+
+    /// Its source name, never prefixed.
+    pub fn name(&self) -> &str {
+        self.discovered.position.name()
+    }
+
+    /// The note, vault-relative.
+    pub fn path(&self) -> &str {
+        &self.discovered.vault_relative_path
+    }
 }
 
 /// A read note: its content, and its body and the files it reaches with
@@ -353,7 +365,8 @@ pub struct SkillId {
     pub plugin: String,
     /// Its source name.
     pub name: String,
-    /// A skill or a command.
+    /// A skill or a command. The call index also holds agents, and a call
+    /// to one is refused: no pack contains agents.
     pub kind: EntityKind,
     /// Its entry note.
     #[serde(skip)]
@@ -361,6 +374,21 @@ pub struct SkillId {
 }
 
 impl SkillId {
+    /// The component a call to `component` names, `None` for a container.
+    pub fn of(component: &DiscoveredComponent) -> Option<Self> {
+        match &component.position {
+            Position::Component {
+                plugin, kind, name, ..
+            } => Some(Self {
+                plugin: plugin.clone(),
+                name: name.clone(),
+                kind: *kind,
+                entry_path: component.entry_path.clone(),
+            }),
+            _ => None,
+        }
+    }
+
     /// `plugin:name`, the closure's spelling.
     pub fn call_id(&self) -> String {
         format!("{}:{}", self.plugin, self.name)
@@ -447,12 +475,7 @@ pub(crate) fn segments(text: &str, record: &Recorded) -> Body {
 
 fn call_of(site: &crate::compile::CallSite) -> Call {
     Call {
-        skill: SkillId {
-            plugin: site.skill.plugin.clone(),
-            name: site.skill.name.clone(),
-            kind: site.skill.kind,
-            entry_path: site.skill.entry_path.clone(),
-        },
+        skill: site.skill.clone(),
         bare_on: Vec::new(),
         destination: site.destination.clone(),
         caller: site.caller.clone(),
@@ -484,12 +507,12 @@ pub(crate) fn pack_kind(kind: EntityKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compile::{CallSite, IndexedSkill};
+    use crate::compile::CallSite;
 
     fn record() -> Recorded {
         Recorded {
             calls: vec![CallSite {
-                skill: IndexedSkill {
+                skill: SkillId {
                     entry_path: PathBuf::from("/v/a.md"),
                     plugin: "p".into(),
                     name: "a".into(),
