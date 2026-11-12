@@ -62,7 +62,7 @@ path-guard = "0.3.3"
 typed-git = "0.4.0"
 vfs-seam = { version = "0.2.0", default-features = false }
 vfs-walk = "0.2.0"
-yaml-splice = "0.3.3"
+yaml-splice = "0.3.4"
 
 # The member crate others depend on, also named by version so a published
 # manifest points at crates.io. release-plz publishes it before skillwright.
