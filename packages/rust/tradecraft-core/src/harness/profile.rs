@@ -48,8 +48,8 @@ pub enum Harness {
     Pi,
 }
 
-/// Every name `build.harnesses` and `--harness` accept, in report order.
-/// There are no aliases.
+/// [`Harness::ALL`] as a slice constant: the wasm `knownTargets` export
+/// serializes it, and typegen reads a constant's declared type.
 pub const KNOWN_TARGETS: &[Harness] = &Harness::ALL;
 
 /// One harness's row: its product name, the runtime it renders through and
@@ -685,6 +685,14 @@ impl Harness {
         }
     }
 
+    /// The harness named `name`, if any.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|harness| harness.as_str() == name)
+    }
+
     /// The harness named `name`.
     ///
     /// # Errors
@@ -693,20 +701,17 @@ impl Harness {
     /// rather than ignored: silently building less than was asked for is the
     /// failure this crate is built around.
     pub fn parse(name: &str) -> Result<Self, CoreError> {
-        Self::ALL
-            .into_iter()
-            .find(|harness| harness.as_str() == name)
-            .ok_or_else(|| {
-                let known: Vec<String> = Self::ALL.iter().map(|h| format!("`{h}`")).collect();
-                let (last, rest) = known.split_last().expect("four harnesses");
-                CoreError::refused(
-                    refusal::UNKNOWN_HARNESS,
-                    format!(
-                        "`{name}` is not a harness. The harnesses are {} and {last}",
-                        rest.join(", ")
-                    ),
-                )
-            })
+        Self::from_name(name).ok_or_else(|| {
+            let known: Vec<String> = Self::ALL.iter().map(|h| format!("`{h}`")).collect();
+            let (last, rest) = known.split_last().expect("four harnesses");
+            CoreError::refused(
+                refusal::UNKNOWN_HARNESS,
+                format!(
+                    "`{name}` is not a harness. The harnesses are {} and {last}",
+                    rest.join(", ")
+                ),
+            )
+        })
     }
 
     /// This harness's row.

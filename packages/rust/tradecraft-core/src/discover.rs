@@ -123,7 +123,7 @@ impl DiscoveredComponent {
 fn unknown_key_fate(kind: EntityKind, key: &str) -> &'static str {
     let in_a_block = key
         .split_once('.')
-        .is_some_and(|(block, _)| Harness::parse(block).is_ok());
+        .is_some_and(|(block, _)| Harness::from_name(block).is_some());
     match kind {
         EntityKind::Plugin | EntityKind::Marketplace => "ignored",
         _ if in_a_block => "ignored",
@@ -248,9 +248,8 @@ fn check_values(
 pub(crate) fn unknown_component_block_keys(blocks: &Map<String, Value>) -> Vec<String> {
     let mut unknown = Vec::new();
     for (declared, block) in blocks {
-        let Some(accepted) = Harness::parse(declared)
-            .ok()
-            .and_then(|harness| harness.block_keys(EntityKind::Skill))
+        let Some(accepted) =
+            Harness::from_name(declared).and_then(|harness| harness.block_keys(EntityKind::Skill))
         else {
             continue;
         };
@@ -274,9 +273,8 @@ pub(crate) fn unknown_container_block_keys(
 ) -> Vec<String> {
     let mut unknown = Vec::new();
     for (harness, block) in blocks {
-        let Some(accepted) = Harness::parse(harness)
-            .ok()
-            .and_then(|harness| harness.block_keys(kind))
+        let Some(accepted) =
+            Harness::from_name(harness).and_then(|harness| harness.block_keys(kind))
         else {
             continue;
         };

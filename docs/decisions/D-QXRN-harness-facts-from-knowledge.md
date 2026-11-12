@@ -14,14 +14,15 @@ compiled from the `harness-reference` claims corpus and embedded in
   plugin-root variable and the naming rule. The user skills folder was dropped
   as unread; the project `skills_dir` comes from agent-adapt's `RuntimePaths`,
   held to `skills/project-dirs` by a test.
-- **Policy stays in code:** the packs folder, the dialect, Cursor's and Pi's
-  prefixed naming, the override lists, runtime mappings, and the config overrides of
-  [D-WNTQ](D-WNTQ-harness-profile-values-from-config.md). The translator trait
-  is unchanged. The profile's shape changes in one place, a breaking change to
-  `tradecraft-core`: `HarnessProfile::plugin` is a `PluginPolicy` (the row
-  as written, with each fact a `Source`) instead of a `PluginFormat`.
-  `format()` returns the resolved `PluginFormat`; code that read
-  `profile.plugin` should call it.
+- **Policy stays in code:** the packs folder, Cursor's and Pi's prefixed
+  naming, the override lists, runtime mappings, and the config overrides of
+  [D-WNTQ](D-WNTQ-harness-profile-values-from-config.md). The profile's shape
+  changes in one place, a breaking change to `tradecraft-core`:
+  `HarnessProfile::plugin` is a `PluginPolicy` (the row as written, with each
+  fact a `Source`) instead of a `PluginFormat`. `Harness::format()` returns the
+  resolved `PluginFormat`; code that read `profile.plugin` should call it.
+  Amended by [D-FDLQ](D-FDLQ-harness-profile-and-translator.md): there is no
+  dialect and no translator trait; one translator matches on `Harness`.
 - **A fact stays a constant** with a comment saying why, when the file has no
   value in a usable shape, only a weak or disputed one, or a value that
   disagrees with the row. Each constant in `profile.rs` says which of these it

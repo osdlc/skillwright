@@ -245,7 +245,9 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
                 check_shape(shared, &value)?;
                 defaults.insert(serde_yaml::Value::String(key), value);
             }
-            harness if Harness::parse(harness).is_ok() => harness_block(key, &value, &mut root)?,
+            harness if Harness::from_name(harness).is_some() => {
+                harness_block(key, &value, &mut root)?
+            }
             _ => root.warnings.push(format!(
                 "`{key}` is not a key skillwright reads in {ROOT_FILE}; it is ignored"
             )),

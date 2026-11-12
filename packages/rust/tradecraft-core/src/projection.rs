@@ -18,7 +18,6 @@ use agent_adapt::RuntimeId;
 
 use crate::content::SkillProjection;
 use crate::error::CoreError;
-use crate::harness::Harness;
 use crate::refusal;
 use crate::skill::forward_slashed;
 
@@ -33,14 +32,14 @@ pub(crate) struct ProjectedFile {
     pub executable: bool,
 }
 
-/// Renders one snapshot as a skill for `harness`, through its runtime, with
-/// its harness block applied. Output is sorted by path.
+/// Renders one snapshot as a skill through the runtime `id`, with the
+/// override block named `block` applied. Output is sorted by path.
 pub(crate) fn project_skill(
     snapshot: &SkillProjection,
-    harness: Harness,
+    id: RuntimeId,
+    block: &str,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
-    let id = harness.profile().runtime;
-    let skill = to_adapt_skill(snapshot, harness);
+    let skill = to_adapt_skill(snapshot, block);
     let runtime = agent_adapt::runtimes::skill_renderer_for(id).ok_or_else(|| {
         CoreError::Projection(format!("{}: runtime renders no skills", id.as_str()))
     })?;
@@ -109,10 +108,10 @@ fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
 /// harness block merges over those.
 pub(crate) fn project_command(
     snapshot: &SkillProjection,
-    harness: Harness,
+    id: RuntimeId,
+    block: &str,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
-    let id = harness.profile().runtime;
-    let command = to_adapt_command(snapshot, harness)?;
+    let command = to_adapt_command(snapshot, id, block)?;
     let runtime = agent_adapt::runtimes::command_renderer_for(id).ok_or_else(|| {
         CoreError::refused(
             refusal::NO_RENDERER,
@@ -191,7 +190,8 @@ pub(crate) fn project_plugin_hooks(
 /// it.
 fn to_adapt_command(
     snapshot: &SkillProjection,
-    harness: Harness,
+    id: RuntimeId,
+    block: &str,
 ) -> Result<agent_adapt::Command, CoreError> {
     let content = &snapshot.content;
     let slug = agent_adapt::naming::slugify_skill_name(&content.name).map_err(|e| {
@@ -210,9 +210,9 @@ fn to_adapt_command(
     command.body = content.body.clone();
     command.overrides = unplaced_keys(content)
         .into_iter()
-        .filter(|(key, _)| !omitted_by(harness.profile().runtime, key))
+        .filter(|(key, _)| !omitted_by(id, key))
         .collect();
-    if let Some(own) = content.overrides.get(harness.as_str()) {
+    if let Some(own) = content.overrides.get(block) {
         command
             .overrides
             .extend(own.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -274,7 +274,7 @@ fn omitted_by(id: RuntimeId, key: &str) -> bool {
     })
 }
 
-fn to_adapt_skill(snapshot: &SkillProjection, harness: Harness) -> agent_adapt::Skill {
+fn to_adapt_skill(snapshot: &SkillProjection, block: &str) -> agent_adapt::Skill {
     let content = &snapshot.content;
     let mut skill = agent_adapt::Skill::new(
         content.name.clone(),
@@ -305,11 +305,7 @@ fn to_adapt_skill(snapshot: &SkillProjection, harness: Harness) -> agent_adapt::
         .collect();
     // An invariant, not an oversight: nothing an override says for one
     // harness is visible to the render of another.
-    skill.overrides = content
-        .overrides
-        .get(harness.as_str())
-        .cloned()
-        .unwrap_or_default();
+    skill.overrides = content.overrides.get(block).cloned().unwrap_or_default();
     // Through the override, not `Skill::annotations`: the renderer writes
     // annotations as JSON strings, and a nested value must stay YAML. A
     // harness block's `metadata` merges over the note's own, key by key.
@@ -354,6 +350,21 @@ pub(crate) fn skill_metadata(
 mod tests {
     use super::*;
     use crate::content::SkillContent;
+    use crate::harness::Harness;
+
+    fn project_skill(
+        snapshot: &SkillProjection,
+        harness: Harness,
+    ) -> Result<Vec<ProjectedFile>, CoreError> {
+        super::project_skill(snapshot, harness.profile().runtime, harness.as_str())
+    }
+
+    fn project_command(
+        snapshot: &SkillProjection,
+        harness: Harness,
+    ) -> Result<Vec<ProjectedFile>, CoreError> {
+        super::project_command(snapshot, harness.profile().runtime, harness.as_str())
+    }
 
     fn content(name: &str) -> SkillContent {
         SkillContent {
