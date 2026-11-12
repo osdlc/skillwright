@@ -192,7 +192,8 @@ and `assets/` folders. Relative paths resolve from the skill's folder
    report.
 9. A component exists only inside a plugin, and a plugin only inside a
    marketplace. A `skills/`, `plugins/` or other kind folder anywhere else is
-   an error (section 11).
+   an error (section 11), except below a `references/`, `scripts/`, `assets/`
+   or never-ship folder, where it is an ordinary folder (rule 17).
 10. One skill may be copied into two marketplaces. Each copy is its own
     component. There is no shared folder across plugins.
 11. `check` warns when a plugin's `version` has no entry in its `CHANGELOG.md`.
@@ -278,8 +279,9 @@ So a `README.md` in `marketplaces/` or in `skills/` is an error.
 
     `scripts/tool.js` ships as `<pack>/scripts/tool.js`. Section 4 rules 15 to
     26 write the skill's `${PLUGIN_ROOT}/scripts/tool.js` for each harness.
-17. Files inside `references/`, `scripts/` and `assets/` may be laid out in any
-    folders below them. `scripts/` keeps each file's exec bit.
+17. Files inside `references/`, `scripts/`, `assets/` and the never-ship
+    folders may be laid out in any folders below them, including folders with
+    the structure names of rule 6. `scripts/` keeps each file's exec bit.
 
 ## 4. Links, embeds and containment
 
@@ -1094,6 +1096,8 @@ It is refused when:
 4. A kind folder (`skills/`, `agents/`, `commands/`), a `hooks/` folder or a
    `plugins/` folder is directly in the root, or anywhere in `marketplaces/`
    other than its place in section 3, such as directly in a marketplace.
+   Below a `references/`, `scripts/`, `assets/` or never-ship folder it is
+   an ordinary folder, as any folder is there (section 3 rule 17).
 
    ```text
    <root>/
@@ -1102,7 +1106,10 @@ It is refused when:
        ├── skills/                  refused: directly in a marketplace
        └── plugins/tools/skills/    accepted
    ```
-5. A `marketplaces/` folder is anywhere inside `marketplaces/`.
+5. A `marketplaces/` folder is inside `marketplaces/`, other than below a
+   `references/`, `scripts/`, `assets/` or never-ship folder. There it is an
+   ordinary folder, so a plugin's `tests/fixtures/` may hold a whole test
+   vault. Nothing in it is read as part of the vault.
 6. A component's note is not `<name>/<name>.md`, such as `skills/x.md` or
    `skills/x/SKILL.md`.
 

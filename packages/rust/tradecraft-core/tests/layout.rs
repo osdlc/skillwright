@@ -322,6 +322,105 @@ fn docs_under_references_is_accepted() {
     );
 }
 
+/// Below a shared or never-ship folder any folders are allowed (section 3
+/// rule 17), structure names included: they are ordinary folders there.
+#[test]
+fn structure_named_folders_below_shared_and_never_ship_folders_are_ordinary() {
+    let mut inside = Vec::new();
+    for top in [
+        "references",
+        "scripts",
+        "assets",
+        "src",
+        "docs",
+        "tests",
+        "fixtures",
+        "skills/review/references",
+        "skills/review/src",
+        "commands/run/docs",
+    ] {
+        for name in [
+            "skills",
+            "agents",
+            "commands",
+            "hooks",
+            "plugins",
+            "marketplaces",
+        ] {
+            inside.push(format!("{top}/{name}/x.md"));
+        }
+    }
+    let mut owned: Vec<(&str, &str)> = vec![
+        ("skills/review/review.md", SKILL),
+        ("commands/run/run.md", SKILL),
+    ];
+    owned.extend(inside.iter().map(|path| (path.as_str(), "x\n")));
+    let vfs = vault_of(&plugin("acme", "tools", &owned));
+    let layout = read_layout(&vfs, Path::new("/v")).unwrap();
+    for path in &inside {
+        assert!(
+            layout.files.iter().any(|f| f.rel.ends_with(path.as_str())),
+            "{path}"
+        );
+    }
+    let (_, written) = build(&vfs);
+    let pack = "/v/dist/acme/.claude-plugin/packs/tools";
+    for shipped in [
+        "references/skills/x.md",
+        "scripts/hooks/x.md",
+        "assets/marketplaces/x.md",
+        "skills/review/references/plugins/x.md",
+    ] {
+        let path = format!("{pack}/{shipped}");
+        assert!(written.contains(&path), "{path}: {written:?}");
+    }
+    assert!(!written.iter().any(|path| path.contains("/src/")));
+}
+
+/// A test vault kept in a plugin's `tests/fixtures/` is not part of the
+/// vault: its notes do not build, and its root file and `marketplaces/` do
+/// not refuse the vault.
+#[test]
+fn a_vault_in_a_plugin_fixtures_folder_is_not_read() {
+    let fixture = "tests/fixtures/sample";
+    let owned = [
+        ("skills/review/review.md", SKILL.to_owned()),
+        (
+            &format!("{fixture}/skillwright.md")[..],
+            "---\nworkspace: x\n---\n".to_owned(),
+        ),
+        (
+            &format!("{fixture}/marketplaces/inner/inner.md")[..],
+            NOTE.to_owned(),
+        ),
+        (
+            &format!("{fixture}/marketplaces/inner/plugins/p/p.md")[..],
+            NOTE.to_owned(),
+        ),
+        (
+            &format!("{fixture}/marketplaces/inner/plugins/p/skills/s/s.md")[..],
+            "no frontmatter, no description\n".to_owned(),
+        ),
+    ]
+    .map(|(path, text)| (path.to_owned(), text));
+    let borrowed: Vec<(&str, &str)> = owned
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    let vfs = vault_of(&plugin("acme", "tools", &borrowed));
+    assert_eq!(listed(&vfs), ["acme/tools/Skill/review"]);
+    let (warnings, written) = build(&vfs);
+    assert!(
+        !warnings.iter().any(|w| w.contains("fixtures")),
+        "{warnings:?}"
+    );
+    assert!(
+        !written
+            .iter()
+            .any(|path| path.contains("inner") || path.contains("fixtures"))
+    );
+}
+
 #[test]
 fn names_follow_the_name_rule() {
     let ok = plugin(

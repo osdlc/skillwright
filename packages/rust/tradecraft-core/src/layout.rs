@@ -842,10 +842,11 @@ impl Walk<'_> {
         true
     }
 
-    /// Reports a structure folder met where none belongs, or descends into an
-    /// ordinary one. Used inside shared and never-ship folders, where any
-    /// layout of plain folders is allowed. A symlink in a never-ship folder
-    /// is recorded as a file and not followed: nothing ships it.
+    /// Records every file below `rel`, a shared or never-ship folder. Any
+    /// folders are allowed there (spec section 3 rule 17): a structure name
+    /// such as `skills/` or `marketplaces/` is an ordinary folder. A symlink
+    /// in a never-ship folder is recorded as a file and not followed:
+    /// nothing ships it.
     fn free(&mut self, rel: &str, what: &Free) -> Result<(), CoreError> {
         let follow = matches!(what, Free::Shared { .. });
         for entry in self.list_with(&self.root.join(rel), follow)? {
@@ -862,12 +863,6 @@ impl Walk<'_> {
                     },
                 };
                 self.push(child, place);
-            } else if entry.name == MARKETPLACES_DIR {
-                self.problems
-                    .add(Case::NestedMarketplaces, format!("{child}/"));
-            } else if entry.name == PLUGINS_DIR || kind_or_hooks(&entry.name) {
-                self.problems
-                    .add(Case::KindFolderOutOfPlace, format!("{child}/"));
             } else {
                 self.free(&child, what)?;
             }
