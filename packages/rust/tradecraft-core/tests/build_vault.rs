@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use tradecraft_core::vfs::{DirEntry, Metadata, VfsError};
 use tradecraft_core::{
-    BuildScope, CoreError, ExportMode, MemVfs, VaultRequest, Vfs, build_vault, load_vault,
-    model::LoadRequest,
+    BuildOptions, BuildScope, CoreError, ExportMode, MemVfs, VaultRequest, Vfs, build_vault,
+    load_vault, model::LoadRequest, plan, refusal,
 };
 
 const SKILL: &str = "---\ndescription: Use it.\n---\n\nBody.\n";
@@ -316,6 +316,71 @@ fn a_failed_swap_in_the_second_marketplace_rolls_back_the_first() {
     };
     build_vault(&failing, &VaultRequest::new("/v")).unwrap_err();
     assert_eq!(files_under(&vfs, Path::new("/v/dist")), before);
+}
+
+#[test]
+fn a_harness_no_build_can_render_refuses_every_marketplace() {
+    let vfs = vault("", &["acme", "shop"]);
+    let mut request = check();
+    request.options.harnesses = BTreeSet::from(["windsurf".to_owned()]);
+    let report = build_vault(&vfs, &request).unwrap();
+    assert!(report.marketplaces.is_empty(), "{report:?}");
+    let refused: Vec<(&str, Option<&str>)> = report
+        .refused
+        .iter()
+        .map(|r| (r.marketplace.as_str(), r.token.as_deref()))
+        .collect();
+    let token = Some(refusal::UNKNOWN_HARNESS.as_str());
+    assert_eq!(refused, [("acme", token), ("shop", token)]);
+}
+
+/// Plans a build of the vault at `/v`, runs `meanwhile`, then commits.
+fn build_with_a_wait(vfs: &MemVfs, meanwhile: impl FnOnce()) -> Result<(), CoreError> {
+    let loaded = load_vault(vfs, Path::new("/v"), &BuildScope::Vault).unwrap();
+    let planned = plan(vfs, &loaded, &BuildOptions::default()).unwrap();
+    meanwhile();
+    planned.commit(vfs)
+}
+
+#[test]
+fn output_changed_between_plan_and_commit_is_refused_and_kept() {
+    let added = "/v/dist/acme/.agents/packs/hand/notes.md";
+    // A drifted root, then one equal to the render: neither may lose the file.
+    for revise in [true, false] {
+        let vfs = vault("", &["acme"]);
+        build_vault(&vfs, &VaultRequest::new("/v")).unwrap();
+        if revise {
+            write(
+                &vfs,
+                "/v/marketplaces/acme/plugins/tools/skills/review/review.md",
+                "---\ndescription: Use it.\n---\n\nRevised.\n",
+            );
+        }
+        let before = files_under(&vfs, Path::new("/v/dist"));
+        let err = build_with_a_wait(&vfs, || write(&vfs, added, "Mine.\n")).unwrap_err();
+        assert_eq!(err.token(), Some(refusal::OUTPUT_CHANGED), "{err}");
+        assert!(err.to_string().contains("/v/dist/acme"), "{err}");
+        let mut after = files_under(&vfs, Path::new("/v/dist"));
+        assert_eq!(after.remove(Path::new(added)), Some(b"Mine.\n".to_vec()));
+        assert_eq!(after, before, "revise: {revise}");
+    }
+}
+
+#[test]
+fn an_unchanged_destination_commits_after_the_wait() {
+    let vfs = vault("", &["acme"]);
+    build_vault(&vfs, &VaultRequest::new("/v")).unwrap();
+    write(
+        &vfs,
+        "/v/marketplaces/acme/plugins/tools/skills/review/review.md",
+        "---\ndescription: Use it.\n---\n\nRevised.\n",
+    );
+    build_with_a_wait(&vfs, || {}).unwrap();
+    let skill = files_under(&vfs, Path::new("/v/dist/acme/.agents/packs"))
+        .into_iter()
+        .find(|(path, _)| path.ends_with("SKILL.md"))
+        .unwrap();
+    assert!(String::from_utf8(skill.1).unwrap().contains("Revised."));
 }
 
 /// Fails the next `remaining` renames onto `to`.
