@@ -30,7 +30,7 @@ API:
 - `LoadedVault::vault_request` is removed; use `VaultRequest::for_marketplace`. `model::load_in` and `model::load::Index` are removed.
 - `DiscoveredComponent` holds `position: Position` in place of `name`, `kind`, `plugin` and `marketplace`, and loses `folder()`. `Position` serializes with its variant as `at`.
 - `Component`'s `kind`, `name` and `path` are methods that read its `discovered` note. `resolve_body` takes no `kind`.
-- `compile::IndexedSkill` is removed: `SkillIndex` and `CallSite` hold `SkillId`, which `SkillId::of` builds from a `DiscoveredComponent`.
+- `compile::IndexedSkill` is removed: `SkillIndex` holds `SkillId`, which `SkillId::of` builds from a `DiscoveredComponent`.
 - `plan(vfs, &loaded, &options)` is added. It returns a `VaultPlan`, with `outcomes()`, `report()` and `commit(vfs)`; `build_vault` calls all three. A `VaultReport` converts from `outcomes()`. `BuildOptions` and `VaultPlan` are exported at the root.
 - `UnitStatus` changes (see Changed), and `UnitStatus::as_str` is removed. `ExportUnit::NotCarried`'s `kind` is an `EntityKind`.
 
