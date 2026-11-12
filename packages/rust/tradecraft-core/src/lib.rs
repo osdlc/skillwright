@@ -17,7 +17,6 @@
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | The [`Harness`] names, each harness's row of data, and the translator |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
-//! | [`paths`] | Lexical path helpers for a host |
 //! | [`field_edit`] | Read and set a note's `version`, keeping every other byte |
 //! | [`guard`] | Containment resolved through links |
 //! | [`vfs`] | The filesystem seam every I/O-touching function takes |
@@ -67,7 +66,6 @@ pub mod keys;
 pub mod layout;
 pub mod model;
 pub mod note;
-pub mod paths;
 pub(crate) mod projection;
 pub mod refusal;
 pub mod settings;
@@ -97,7 +95,6 @@ pub use model::vault::{
     BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file,
 };
 pub use note::{VaultNote, read_vault_note};
-pub use paths::resolve_path;
 pub use settings::{
     BuildSettings, BumpSettings, PatchScheme, ROOT_FILE, RootFile, SettingsError, SharedDefaults,
     compose_root_file, parse_root_file,
