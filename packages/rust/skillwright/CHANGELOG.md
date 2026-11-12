@@ -9,6 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Breaking
 
+- Exit 1 means only that `check` found drift. Every refusal exits 2: a vault error, `init` over an existing file, a version `bump` refuses, a failed write and a declined prompt. `init` and `bump` used to exit 1 for these.
 - skillwright v2 reads one fixed vault layout and builds it into `dist/<m>/`. `docs/spec/v2-changes.md` says what each change below means for an existing vault.
 - Four commands remain: `init`, `build`, `check` and `bump`. `publish`, `unpublish`, `adopt`, `list`, `status`, `author`, `new`, `rename`, `move`, `delete`, `convert`, `harness install`, `harness update`, `harness uninstall`, `link` and `unlink` are removed. A removed command is an unknown command: a usage error, exit 3.
 - The flags `--config`, `--namespace`, `--out`, `--skills-root` and `--watch` are removed, and `init` loses `--out` and `--name`. `--vault` names the root. `check` no longer takes `--dry-run` or `--yes`.

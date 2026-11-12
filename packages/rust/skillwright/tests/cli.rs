@@ -359,7 +359,7 @@ fn init_refuses_a_folder_with_a_root_file() {
     )
     .unwrap();
     let ran = run(&["init", "acme", "tools"], dir.path());
-    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert_eq!(ran.code, 2, "{}", ran.stderr);
     assert!(ran.stderr.contains("already exists"), "{}", ran.stderr);
     let text = fs::read_to_string(dir.path().join("skillwright.md")).unwrap();
     assert!(text.contains("MIT"));
@@ -403,7 +403,7 @@ fn init_does_not_write_through_a_dangling_link() {
     let target = dir.path().join("elsewhere.md");
     std::os::unix::fs::symlink(&target, dir.path().join("skillwright.md")).unwrap();
     let ran = run(&["init", "acme", "tools"], dir.path());
-    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert_eq!(ran.code, 2, "{}", ran.stderr);
     assert!(!target.exists());
 }
 

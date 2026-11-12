@@ -7,7 +7,7 @@
 use tradecraft_core::{DiscoveryWarning, ExportMode, ExportUnit, StaleKind};
 
 use crate::ctx::CommandContext;
-use crate::exit::blocked;
+use crate::exit::refused;
 
 /// `N word` for each word in `words`, counted: the `order` words first, as
 /// listed, then any other word in the order it first appears. A status the
@@ -46,7 +46,7 @@ pub fn print_json(ctx: &mut CommandContext<'_>, value: &impl serde::Serialize) -
             let _ = writeln!(ctx.out, "{document}");
             Ok(())
         }
-        Err(err) => Err(blocked(
+        Err(err) => Err(refused(
             ctx.err,
             &format!("the report would not serialize: {err}"),
         )),

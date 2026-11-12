@@ -19,7 +19,7 @@ use tradecraft_core::layout::{MARKETPLACES_DIR, PLUGINS_DIR};
 use tradecraft_core::{ROOT_FILE, compose_root_file, name_problem};
 
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
+use crate::exit::{EXIT_OK, EXIT_REFUSED, refused, usage_error};
 
 /// The resolved arguments of `skillwright init`.
 pub struct InitFlags {
@@ -64,7 +64,7 @@ pub fn run_init(flags: &InitFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     }
     if let Err(err) = std::fs::create_dir_all(&plugin_dir) {
-        return blocked(
+        return refused(
             ctx.err,
             &format!("{} was not created: {err}", plugin_dir.display()),
         );
@@ -85,7 +85,7 @@ pub fn run_init(flags: &InitFlags, ctx: &mut CommandContext<'_>) -> i32 {
             if err.kind() == ErrorKind::AlreadyExists {
                 return already_exists(path, ctx);
             }
-            return blocked(
+            return refused(
                 ctx.err,
                 &format!("{} was not written, so nothing was: {err}", path.display()),
             );

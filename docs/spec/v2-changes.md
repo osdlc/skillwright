@@ -23,6 +23,14 @@ and may return in a later milestone:
 A removed command is now an unknown command: a usage error, exit 3, with no
 hint that it was removed.
 
+## Exit codes
+
+Exit 1 now means only that `check` found drift. Every refusal exits 2: a
+vault error, `init` over an existing file, a version `bump` refuses, and a
+failed write (section 10 rule 8). In v1, `init`'s and `bump`'s refusals
+exited 1, as drift did. A script that read 1 as "drift" can now trust it; one
+that read 1 as "refused" must read 2.
+
 The `adopted` key, the provenance `adopt` wrote, goes with `adopt`. A v1
 `adopted:` block is now an unknown key: it warns. On a skill it ships under
 `metadata:`; on a plugin or marketplace note it is ignored.

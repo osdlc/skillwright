@@ -29,7 +29,7 @@ use tradecraft_core::{
 };
 
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
+use crate::exit::{EXIT_OK, EXIT_REFUSED, refused, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::{normalize_thrown_reason, print_json};
 use crate::resolve::{CommonFlags, ResolvedRun, resolve_at, resolve_run};
@@ -101,7 +101,7 @@ fn write_row(ctx: &mut CommandContext<'_>, json: bool, row: &Row) -> Result<(), 
 }
 
 fn bump_failed(err: &mut dyn std::io::Write, e: impl std::fmt::Display) -> i32 {
-    blocked(
+    refused(
         err,
         &format!("bump failed: {}", normalize_thrown_reason(&e.to_string())),
     )
@@ -201,7 +201,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let scan = match discover_in(&NativeVfs, &run.loaded.layout) {
         Ok(scan) => scan,
         Err(err) => {
-            return blocked(
+            return refused(
                 ctx.err,
                 &format!(
                     "the vault scan could not complete: {}",
@@ -477,7 +477,7 @@ fn run_changed(
         request.compare_with = Some(baseline.root(market));
         let mut roots: Vec<&str> = match owned_paths(&run.loaded.settings, &request) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
-            Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
+            Err(err) => return refused(ctx.err, normalize_thrown_reason(&err.to_string())),
         };
         roots.dedup();
         if let Baseline::Dir(dir) = &baseline
@@ -493,7 +493,7 @@ fn run_changed(
                     ))
                 })
                 .collect();
-            return blocked(
+            return refused(
                 ctx.err,
                 &format!(
                     "--changed-since `{since}`: {} holds no plugin manifest for any configured harness; a built marketplace holds one at {}",
@@ -507,7 +507,7 @@ fn run_changed(
         {
             Ok(report) => report,
             Err(err) => {
-                return blocked(
+                return refused(
                     ctx.err,
                     &format!(
                         "comparing against `{since}` failed: {}",
@@ -857,7 +857,7 @@ impl BuiltRef {
         ctx: &mut CommandContext<'_>,
     ) -> Result<BuiltRef, i32> {
         let fail = |ctx: &mut CommandContext<'_>, why: String| {
-            Err(blocked(
+            Err(refused(
                 ctx.err,
                 &format!("--changed-since `{since}`: {why}"),
             ))

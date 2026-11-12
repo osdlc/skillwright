@@ -29,7 +29,7 @@ use tradecraft_core::{
 };
 
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked};
+use crate::exit::{EXIT_DRIFT, EXIT_OK, refused};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{
     count_checked_units, normalize_thrown_reason, print_json, render_export_tally,
@@ -228,7 +228,7 @@ struct Refusal {
 /// Report a run-level failure: an export has no partial report, since its
 /// checks run before anything is staged and a failed swap rolls back.
 fn failed_run(verb: ExportVerb, err: &CoreError, ctx: &mut CommandContext<'_>) -> i32 {
-    blocked(
+    refused(
         ctx.err,
         &format!(
             "{} failed: {}",
@@ -348,7 +348,7 @@ fn export_one(
     // swapped or found everything already in place: both are the run
     // completing and every outcome being written or unchanged.
     if verb == ExportVerb::Check && report.changed {
-        EXIT_REFUSED
+        EXIT_DRIFT
     } else {
         EXIT_OK
     }

@@ -117,8 +117,8 @@ error messages go to stderr. `--json` prints the report as one JSON document.
 | Code | Means |
 |---|---|
 | 0 | The run completed and every outcome was written or unchanged |
-| 1 | The run completed and something was refused, or `check` found drift |
-| 2 | A run-level blocker, such as a vault not in the layout or a refused key in `skillwright.md`. Nothing was attempted |
+| 1 | `check` found drift, and nothing else went wrong |
+| 2 | Refused. Any vault error: the layout, a refused key, a link, an embed, a plugin-root path, a name collision, a `--vault` that is not a root, or a marketplace the vault does not hold. Also `init` over an existing file, a version `bump` refuses, a failed write, and a declined prompt. Nothing was written, except by a `bump --changed-since` row written before another was refused |
 | 3 | Usage error, including an unknown command, and `build` or `bump` off a terminal without `--yes` |
 | 4 | No vault: no folder at or above the working directory holds both `skillwright.md` and `marketplaces/`, and no `--vault` was given |
 

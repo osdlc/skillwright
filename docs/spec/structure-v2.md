@@ -22,7 +22,7 @@ changes for a vault built with today's tool is in
 | component | A skill, agent or command (section 3). |
 | container | A marketplace or a plugin. |
 | pack | The folder a harness installs for one plugin (section 9). |
-| an error | The build or check stops and exits non-zero. Nothing is written. |
+| an error | The build or check stops and exits 2. Nothing is written. |
 | an error for a harness | The same: the whole build fails, even though only that harness's output has the problem. The message names the harness. |
 | a warning | Printed. The build goes on and exits 0. |
 
@@ -1094,6 +1094,15 @@ does not say the command was removed.
    else all four. A list given for a run replaces the root file's, and may
    name a harness the root file leaves out. The root file's list is only the
    default. `bump --changed-since` builds and compares the same harnesses.
+8. The exit codes:
+
+   | Code | Means |
+   |---|---|
+   | 0 | The run did what it was asked. A warning does not change this. |
+   | 1 | `check` found drift, and nothing else. |
+   | 2 | Refused: any vault error, including a `--vault` that is not a root and a `--marketplace` the vault does not hold. Also `init` over an existing file, a version `bump` refuses, and a failed write. |
+   | 3 | A usage error. |
+   | 4 | No root at or above the working directory, and no `--vault`. |
 
 ## 11. A vault not in this layout
 

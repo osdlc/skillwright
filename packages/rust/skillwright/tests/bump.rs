@@ -238,7 +238,7 @@ fn a_non_semver_version_is_refused_and_the_note_is_untouched() {
         dir.path(),
     );
 
-    assert_eq!(result.code, 1, "{}", result.stderr);
+    assert_eq!(result.code, 2, "{}", result.stderr);
     assert_eq!(
         result.stdout,
         format!("{REL}  refused · non-semver: `version` reads `0.3`\n")
@@ -263,7 +263,7 @@ fn a_single_plugin_json_refusal_carries_its_reason() {
         ],
         dir.path(),
     );
-    assert_eq!(result.code, 1, "{}", result.stderr);
+    assert_eq!(result.code, 2, "{}", result.stderr);
     let row: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
     assert_eq!(row["status"], "refused", "{row}");
     assert_eq!(
@@ -665,7 +665,7 @@ fn a_failed_write_is_refused_on_its_row_and_the_others_are_still_reported() {
     fs::set_permissions(&gadget, fs::Permissions::from_mode(0o755)).unwrap();
     fs::set_permissions(&note, fs::Permissions::from_mode(0o644)).unwrap();
 
-    assert_eq!(result.code, 1, "{}", result.stderr);
+    assert_eq!(result.code, 2, "{}", result.stderr);
     let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
     let rows = report["plugins"].as_array().unwrap();
     let row = |name: &str| rows.iter().find(|r| r["plugin"] == name).unwrap();

@@ -15,7 +15,7 @@ use tradecraft_core::{
 };
 
 use crate::config::{print_warnings, resolve_against_cwd};
-use crate::exit::{blocked, no_config};
+use crate::exit::{no_config, refused};
 
 /// The globals every verb but `init` declares, as far as this module cares.
 #[derive(Debug, Clone, Default)]
@@ -59,10 +59,10 @@ pub fn resolve_run(
         Some(flag) => {
             let dir = resolve_against_cwd(flag, cwd);
             if !dir.is_dir() {
-                return Err(blocked(err, &format!("vault not found: {}", dir.display())));
+                return Err(refused(err, &format!("vault not found: {}", dir.display())));
             }
-            if let Err(refused) = check_vault_root(&NativeVfs, &dir) {
-                return Err(blocked(err, &refused.to_string()));
+            if let Err(problem) = check_vault_root(&NativeVfs, &dir) {
+                return Err(refused(err, &problem.to_string()));
             }
             dir
         }
@@ -81,7 +81,7 @@ pub fn resolve_at(
     err: &mut dyn Write,
 ) -> Result<ResolvedRun, i32> {
     let loaded = load_vault(&NativeVfs, vault, marketplace)
-        .map_err(|refused| blocked(err, &refused.to_string()))?;
+        .map_err(|problem| refused(err, &problem.to_string()))?;
     print_warnings(&loaded.settings, &loaded.root_file, err);
     Ok(ResolvedRun {
         loaded,
