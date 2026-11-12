@@ -6,7 +6,7 @@
 
 - The core behind this package is skillwright v2: one fixed vault layout, built into `<root>/dist/<m>/`. skillwright's changelog lists the vault and build rules that changed.
 - `publishSkill`, `adoptSkills`, `statusOf`, `publishableKinds`, `validateNamespace` and `canonicalTarget` are removed, as are `InvalidNamespaceError` and their request and report types (`PublishRequest`, `PublishReport`, `AdoptRequest`, `AdoptReport`, `StatusRequest`, `PublishUnitStatus`, `PublishedFile`, `PublishReason`, `ReasonToken` and the types they use). Use `buildVault`.
-- `Target` is closed to `'claude' | 'codex' | 'cursor' | 'pi'`, with no open `string` tail. `knownTargets()` returns `Target[]`, and `VaultRequest` and `LoadRequest` type `harnesses` as `Target[]`.
+- `Harness` is closed to `'claude' | 'codex' | 'cursor' | 'pi'`, with no open `string` tail. `knownTargets()` returns `Harness[]`, and `VaultRequest` and `LoadRequest` type `harnesses` as `Harness[]`.
 - `exportSkills` and `ExportRequest` are removed. `buildVault` with `marketplace` set builds that one marketplace, and its report is the one entry in `marketplaces`. A build writes `<vault_root>/dist/<m>/` through the given `Vfs`; there is no output-root field.
 - `loadMarketplace` takes the marketplace's folder name as `marketplace`, which is required on a vault of several: without it the call throws `Refused`, naming them.
 - `rootFileConfig` is removed, with the `MarketplaceConfig` and `PluginOverrides` types. A `VaultRequest` or `LoadRequest` carries no configuration: the core reads the root file's shared defaults and `build.harnesses` from `skillwright.md` through the `Vfs`. A request that names `config` or `defaults` throws. `harnesses` replaces the root file's list for that call; the root file's list is only the default. A marketplace's name, `owner` and every plugin field come only from the vault's notes.
@@ -16,12 +16,12 @@
 - `EntityKind` loses `'hook'`. `DiscoveredComponent` loses `kind_source`, `folder_kind` and `hook`, and `KindSource` and `DiscoveredHook` are removed.
 - `SkillId` gains `kind`: a call names a skill or a command. `SkillId.plugin` is `string`, not `string | null`.
 - A Markdown body or embedded file that holds a noncharacter U+FDD0 to U+FDD2 throws `Refused` (`noncharacter`): the build uses them as internal marks. Private-use text, such as icon-font glyphs, now ships unchanged.
-- `loadMarketplace` returns a narrow shape, not the core's model. `Marketplace` loses `folder`. A `Plugin`'s `references` are paths. A `Component` loses `content`, `resolved` and `extensions`, and has `description`, `blocks`, `calls` (the `SkillId` of each skill or command its body calls) and `resources` (paths) instead. `Segment`, `Resolved`, `Body`, `SkillContent` and the types they reach are no longer exported. `bare_on` is typed as `Target[]`; `Target` is now generated from the Rust source.
+- `loadMarketplace` returns a narrow shape, not the core's model. `Marketplace` loses `folder`. A `Plugin`'s `references` are paths. A `Component` loses `content`, `resolved` and `extensions`, and has `description`, `blocks`, `calls` (the `SkillId` of each skill or command its body calls) and `resources` (paths) instead. `Segment`, `Resolved`, `Body`, `SkillContent` and the types they reach are no longer exported. `bare_on` is typed as `Harness[]`; `Harness` is generated from the Rust source.
 - `targets` is removed: a `Component`, a `DiscoveredComponent` and `SharedDefaults` have no `targets` field, and a note or root file that sets it throws `Refused`. Pick harnesses with `build.harnesses` or a request's `harnesses`.
 - An unset identity field is absent instead of `null`: every component's `identity` in `discoverComponents`, so a skill's is `{}`. `parseRootFile` already left unset fields out. Test for `undefined`, not `null`. ([#75](https://github.com/osdlc/skillwright/issues/75))
 - `ContainerIdentity`'s fields are optional (`display_name?: string`, not `display_name: string | null`). The JSON stays flat: no `identity` key appears. ([#75](https://github.com/osdlc/skillwright/issues/75))
-
-- `Target` is renamed `Harness`. `ExportUnit`'s `root` is typed as `Harness`, not `string`, and `knownTargets()` is typed as `Harness[]` in `WasmResponses` too.
+- `ExportUnit`'s `root` is typed as `Harness`, not `string`, and `knownTargets()` is typed as `Harness[]` in `WasmResponses` too.
+- A `harnesses` name that is not a harness throws `Refused` (`unknown-harness`) with `` `<name>` is not a harness. The harnesses are ... ``. Of several unknown names, the first is named.
 
 ### Changed
 

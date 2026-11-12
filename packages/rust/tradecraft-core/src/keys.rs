@@ -246,7 +246,7 @@ pub(crate) fn refused_block_keys(
 ) -> Vec<String> {
     fields
         .iter()
-        .filter(|(harness, _)| Harness::parse(harness).is_ok())
+        .filter(|(harness, _)| Harness::from_name(harness).is_some())
         .flat_map(|(harness, block)| {
             let keys = block.as_object().into_iter().flat_map(|block| block.keys());
             keys.filter(|key| REFUSED_BLOCK_KEYS.contains(&key.as_str()))

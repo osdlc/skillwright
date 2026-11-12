@@ -252,7 +252,7 @@ pub fn fold_harness_blocks(
     for (harness, block) in &note.blocks {
         // `VaultFrontmatter::take_from` keeps only the harness blocks, each a
         // mapping.
-        debug_assert!(Harness::parse(harness).is_ok());
+        debug_assert!(Harness::from_name(harness).is_some());
         let block = block.as_object().cloned().unwrap_or_default();
         folded.insert(harness.clone(), block);
     }
@@ -261,7 +261,7 @@ pub fn fold_harness_blocks(
     // never refused. A key it reads takes the form every harness reads: a
     // flag such as `yes` becomes a real boolean, a list hint its text.
     for (canonical, block) in &mut folded {
-        let accepted = Harness::parse(canonical)
+        let accepted = Harness::from_name(canonical)
             .map(Harness::accepted_override_keys)
             .unwrap_or_default();
         // Not `Map::retain`: the serde_json floor predates it.
