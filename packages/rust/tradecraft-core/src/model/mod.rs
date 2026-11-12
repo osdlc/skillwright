@@ -394,7 +394,7 @@ pub struct HooksFile {
     pub hooks: Vec<agent_adapt::Hook>,
 }
 
-/// Splits a recording compile's output into segments.
+/// Splits a compile's output into segments.
 ///
 /// A mark that does not parse, or names a site the record does not hold, is
 /// left as text: the record is this module's own and a stray mark is a bug,
@@ -492,7 +492,6 @@ mod tests {
                     plugin: "p".into(),
                     name: "a".into(),
                     kind: EntityKind::Skill,
-                    shipped: true,
                 },
                 destination: "a".into(),
                 caller: "b.md".into(),
