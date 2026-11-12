@@ -132,7 +132,7 @@ fn root_help() -> String {
         "The three nouns:",
         "  vault        The folder holding `skillwright.md` and `marketplaces/`.",
         "  marketplace  A folder under `marketplaces/`. `build` writes each to `dist/<m>/`.",
-        "  target       A harness a note is built for, e.g. `claude`.",
+        "  harness      A tool each marketplace is built for: claude, codex, cursor or pi.",
         "",
     ]
     .join("\n")

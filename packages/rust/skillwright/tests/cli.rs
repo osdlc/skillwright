@@ -255,7 +255,7 @@ fn the_root_help_names_every_global_flag_and_the_three_nouns() {
     );
     // The two a read-only verb does not declare are marked as such.
     assert!(run.stdout.contains("Only on a verb that writes."));
-    for noun in ["vault", "marketplace", "target"] {
+    for noun in ["vault", "marketplace", "harness"] {
         assert!(run.stdout.contains(noun));
     }
 }
