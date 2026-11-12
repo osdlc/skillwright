@@ -401,6 +401,8 @@ struct Swap {
     base: PathBuf,
     owned: Vec<String>,
     files: BTreeMap<String, PreviewWrite>,
+    /// Every root's owned paths as the plan saw them, before it compared.
+    seen: Snapshot,
 }
 
 /// A build or check of every marketplace in a vault, or of the one named.
@@ -503,6 +505,18 @@ impl MarketplaceRefusal {
     }
 }
 
+/// [`VaultPlan::outcomes`], the reports and the refusals listed apart.
+impl From<Vec<Result<MarketplaceReport, MarketplaceRefusal>>> for VaultReport {
+    fn from(outcomes: Vec<Result<MarketplaceReport, MarketplaceRefusal>>) -> Self {
+        let (marketplaces, refused): (Vec<_>, Vec<_>) =
+            outcomes.into_iter().partition(Result::is_ok);
+        Self {
+            marketplaces: marketplaces.into_iter().flatten().collect(),
+            refused: refused.into_iter().filter_map(Result::err).collect(),
+        }
+    }
+}
+
 /// Every marketplace of a run planned, with nothing written: what [`plan`]
 /// returns. Read it with [`Self::report`], then write it with
 /// [`Self::commit`].
@@ -532,14 +546,9 @@ impl VaultPlan {
             .collect()
     }
 
-    /// [`Self::outcomes`], the reports and the refusals listed apart.
+    /// [`Self::outcomes`] as a [`VaultReport`].
     pub fn report(&self) -> VaultReport {
-        let (marketplaces, refused): (Vec<_>, Vec<_>) =
-            self.outcomes().into_iter().partition(Result::is_ok);
-        VaultReport {
-            marketplaces: marketplaces.into_iter().flatten().collect(),
-            refused: refused.into_iter().filter_map(Result::err).collect(),
-        }
+        self.outcomes().into()
     }
 
     /// Writes a build: stages every marketplace, then swaps them all in. A
@@ -549,7 +558,9 @@ impl VaultPlan {
     /// # Errors
     ///
     /// A build only: the first marketplace's refusal, with nothing written.
-    /// Then [`CoreError::SwapFailed`] and the I/O errors of the swap.
+    /// `refused: output-changed` when an owned path in a `dist/<m>/` changed
+    /// since [`plan`] read it, with nothing written. Then
+    /// [`CoreError::SwapFailed`] and the I/O errors of the swap.
     pub fn commit(self, vfs: &dyn Vfs) -> Result<(), CoreError> {
         if self.mode == ExportMode::Check {
             return Ok(());
@@ -653,14 +664,14 @@ fn plan_with(
     // Load once, for every harness this build renders: the marketplace
     // chosen and validated, every body resolved. Everything a build refuses
     // before it renders, it refuses here.
+    let out = match &options.compare_with {
+        Some(path) => normalize(path),
+        None => market.dist.clone(),
+    };
     let scope = BuildScope::Marketplace(market.name.clone());
     let defaults = &loaded.settings.defaults;
     let market = load_for(vfs, &loaded.layout, scan, &scope, roots, defaults)?;
     let warnings = market.warnings.clone();
-    let out = match &options.compare_with {
-        Some(path) => normalize(path),
-        None => crate::paths::dist_dir(&loaded.root, &market.folder),
-    };
 
     // One tree per harness, translated from the one model, at the final
     // destination paths. Both modes read this and nothing else; `build`
@@ -682,6 +693,9 @@ fn plan_with(
             kind: c.kind(),
         })
         .collect();
+    // Taken before the comparison, so `commit` sees a change made after it.
+    let all_owned = roots.iter().flat_map(|spec| spec.owned_paths()).collect();
+    let seen = Snapshot::take(vfs, &out, all_owned)?;
     let mut drifted = Vec::with_capacity(roots.len());
     for (&spec, files) in roots.iter().zip(&rendered) {
         let (root_units, equal) = compare_root(vfs, &out, spec, &market, files)?;
@@ -692,6 +706,7 @@ fn plan_with(
         base: out,
         owned: Vec::new(),
         files: BTreeMap::new(),
+        seen,
     };
     for ((spec, files), drifted) in roots.iter().zip(rendered).zip(drifted) {
         if drifted {
@@ -773,7 +788,7 @@ struct RootDiff {
 }
 
 /// What the destination root actually holds.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 struct DestState {
     /// Root-relative file paths → is-symlink. A symlink never matches: the
     /// render emits bytes, and a link that reads the same resolves elsewhere.
@@ -781,6 +796,35 @@ struct DestState {
     /// Directories holding nothing — invisible to a file diff, removed by the
     /// swap, so the report has to carry them.
     empty_dirs: Vec<String>,
+}
+
+/// What `base` holds under `paths`: [`DestState`], and each file's size,
+/// modification time and execute bit.
+#[derive(PartialEq, Eq)]
+struct Snapshot {
+    paths: Vec<&'static str>,
+    state: DestState,
+    stamps: Vec<Option<(u64, Option<i64>, bool)>>,
+}
+
+impl Snapshot {
+    fn take(vfs: &dyn Vfs, base: &Path, paths: Vec<&'static str>) -> Result<Self, CoreError> {
+        let state = scan_destination(vfs, base, &paths)?;
+        let stamps = state
+            .files
+            .keys()
+            .map(|relative| {
+                let path = base.join(relative);
+                let meta = vfs.metadata(&path).ok()?;
+                Some((meta.len, meta.modified_ns, vfs.is_executable(&path)))
+            })
+            .collect();
+        Ok(Self {
+            paths,
+            state,
+            stamps,
+        })
+    }
 }
 
 /// Reads `base`, but only the `owned` paths, never the whole directory: what
@@ -1213,7 +1257,24 @@ fn diff_root(
 /// Stages every swap, then swaps them all into place. A swap that owns
 /// nothing is skipped. A failed swap rolls back every path already swapped,
 /// in every swap's folder.
+///
+/// # Errors
+///
+/// `refused: output-changed` — an owned path changed since the plan, with
+/// nothing written. Then the I/O errors and [`CoreError::SwapFailed`].
 fn commit(vfs: &dyn Vfs, swaps: &[Swap]) -> Result<(), CoreError> {
+    for swap in swaps {
+        if Snapshot::take(vfs, &swap.base, swap.seen.paths.clone())? != swap.seen {
+            return Err(CoreError::refused(
+                refusal::OUTPUT_CHANGED,
+                format!(
+                    "{} changed after this build compared it with the vault. Nothing was \
+                     written; run the build again",
+                    swap.base.display()
+                ),
+            ));
+        }
+    }
     let swaps: Vec<&Swap> = swaps.iter().filter(|swap| !swap.owned.is_empty()).collect();
     let stages: Vec<PathBuf> = swaps.iter().map(|swap| swap.base.join(STAGE_DIR)).collect();
     for (swap, stage) in swaps.iter().zip(&stages) {
