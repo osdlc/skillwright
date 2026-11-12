@@ -105,7 +105,7 @@ pub struct PluginPolicy {
     /// pack never render to one path.
     pub packs: &'static str,
     /// How a rendered skill's body names a file in its plugin's root.
-    pub cli_invocation: CliInvocation,
+    pub root_path_style: RootPathStyle,
     /// The plugin-root variable; `None` when the pack carries no hooks file.
     pub plugin_root: Option<PluginRootPolicy>,
     /// How a published skill is named; `skills/plugin-namespace`.
@@ -423,7 +423,7 @@ pub enum SkillNaming {
 
 /// How a rendered skill body names a file in its plugin's root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CliInvocation {
+pub enum RootPathStyle {
     /// As `${CLAUDE_PLUGIN_ROOT}/<path>`. Claude Code expands the token in
     /// skill, command and agent text
     /// (<https://code.claude.com/docs/en/plugins-reference>, retrieved
@@ -445,7 +445,7 @@ const CLAUDE: HarnessProfile = HarnessProfile {
         plugin_manifest: Source::Knowledge,
         marketplace_manifest: Source::Knowledge,
         packs: ".claude-plugin/packs",
-        cli_invocation: CliInvocation::PluginRootToken,
+        root_path_style: RootPathStyle::PluginRootToken,
         plugin_root: Some(PluginRootPolicy {
             name: Source::Knowledge,
             url: "https://code.claude.com/docs/en/plugins-reference",
@@ -473,7 +473,7 @@ const CODEX: HarnessProfile = HarnessProfile {
         plugin_manifest: Source::Constant(".codex-plugin/plugin.json"),
         marketplace_manifest: Source::Knowledge,
         packs: ".agents/packs",
-        cli_invocation: CliInvocation::SkillRelativePath,
+        root_path_style: RootPathStyle::SkillRelativePath,
         plugin_root: Some(PluginRootPolicy {
             name: Source::Knowledge,
             url: "https://learn.chatgpt.com/docs/hooks",
@@ -502,7 +502,7 @@ const CURSOR: HarnessProfile = HarnessProfile {
         plugin_manifest: Source::Knowledge,
         marketplace_manifest: Source::Knowledge,
         packs: ".cursor-plugin/packs",
-        cli_invocation: CliInvocation::SkillRelativePath,
+        root_path_style: RootPathStyle::SkillRelativePath,
         // Cursor documents `CURSOR_PLUGIN_ROOT` only in `mcp.json`, not for
         // hook commands, so the pack ships no hooks until a probe confirms it
         // (spec section 4 rule 23; issue #152).
@@ -529,7 +529,7 @@ const PI: HarnessProfile = HarnessProfile {
         plugin_manifest: Source::Knowledge,
         marketplace_manifest: Source::Knowledge,
         packs: ".pi/packs",
-        cli_invocation: CliInvocation::SkillRelativePath,
+        root_path_style: RootPathStyle::SkillRelativePath,
         plugin_root: None,
         // Policy: Pi has no plugin namespace (knowledge says bare), and the
         // row prefixes the plugin so two plugins' skills cannot collide.

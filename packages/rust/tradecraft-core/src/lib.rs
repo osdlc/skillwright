@@ -85,7 +85,7 @@ pub use export::{
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
-pub use harness::{Harness, KNOWN_TARGETS, SkillNaming, published_skill_name, rendered_skill_call};
+pub use harness::{Harness, KNOWN_TARGETS, SkillNaming, rendered_skill_call, shipped_skill_name};
 pub use keys::{KEYS, KeySpec, Owner, Shape};
 pub use layout::{
     KIND_DIRS, Layout, LayoutFile, MARKETPLACES_DIR, Place, Position, RESERVED_NAMES, SharedDir,

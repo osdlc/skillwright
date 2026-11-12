@@ -83,7 +83,7 @@ fn scan_destination(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestSt
         }
         let path = base.join(owned);
         // A symlink AT an owned path is one unmatched path, never descended
-        // into — the same rule `walk_destination` applies further down.
+        // into — the same rule `walk_output` applies further down.
         if vfs.is_symlink(&path) {
             state.files.insert(owned.to_owned(), true);
         } else if !vfs.exists(&path) {
@@ -92,7 +92,7 @@ fn scan_destination(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestSt
             // A file: a manifest, or something where the render wants a folder.
             state.files.insert(owned.to_owned(), false);
         } else {
-            walk_destination(vfs, base, &path, &mut state)?;
+            walk_output(vfs, base, &path, &mut state)?;
         }
     }
     Ok(state)
@@ -130,7 +130,7 @@ fn blocked_above(vfs: &dyn Vfs, base: &Path, owned: &str) -> Option<(String, boo
     })
 }
 
-fn walk_destination(
+fn walk_output(
     vfs: &dyn Vfs,
     base: &Path,
     dir: &Path,
@@ -151,7 +151,7 @@ fn walk_destination(
             // never descended into, so it records as one unmatched entry.
             state.files.insert(forward_slashed(relative), true);
         } else if entry.is_dir {
-            walk_destination(vfs, base, &path, state)?;
+            walk_output(vfs, base, &path, state)?;
         } else {
             state.files.insert(forward_slashed(relative), false);
         }

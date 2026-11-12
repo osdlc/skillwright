@@ -326,7 +326,7 @@ pub struct Call {
     /// default, as its plugin's [`Plugin::bare_on`].
     pub bare_on: Vec<Harness>,
     /// The call's target as written, without `/[[` and `]]`, for a refusal.
-    pub destination: String,
+    pub written: String,
     /// The note the call is in, for a refusal.
     pub caller: String,
 }
@@ -349,7 +349,7 @@ impl Call {
                 "{}: `/[[{}]]` calls {} `{}`, which the {target} pack does not contain \
                  (section 4 rule 8)",
                 self.caller,
-                self.destination,
+                self.written,
                 self.skill.kind.as_str(),
                 self.skill.call_id()
             ),
@@ -476,7 +476,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
     Call {
         skill: site.skill.clone(),
         bare_on: Vec::new(),
-        destination: site.destination.clone(),
+        written: site.written.clone(),
         caller: site.caller.clone(),
     }
 }
@@ -517,7 +517,7 @@ mod tests {
                     name: "a".into(),
                     kind: EntityKind::Skill,
                 },
-                destination: "a".into(),
+                written: "a".into(),
                 caller: "b.md".into(),
             }],
             links: vec![ResolvedRef {

@@ -34,7 +34,8 @@ API:
 - `plan(vfs, &loaded, &options)` is added. It returns a `VaultPlan`, with `outcomes()`, `report()` and `commit(vfs)`; `build_vault` calls all three. A `VaultReport` converts from `outcomes()`. `BuildOptions` and `VaultPlan` are exported at the root.
 - `UnitStatus` changes (see Changed), and `UnitStatus::as_str` is removed. `ExportUnit::NotCarried`'s `kind` is an `EntityKind`.
 - `compile::Closure`, `CompiledNote::closures` and `model::Resolved::closures` are removed. Nothing read them.
-- `export::{published_skill_name, rendered_skill_call}` move to `harness`, and `export` no longer re-exports `SkillNaming` and `CliInvocation`. The root re-exports are unchanged.
+- `export::{published_skill_name, rendered_skill_call}` move to `harness`, and `export` no longer re-exports `SkillNaming` and `CliInvocation`.
+- Renamed: `published_skill_name` to `shipped_skill_name` (at the root too), `harness::CliInvocation` to `RootPathStyle`, `PluginPolicy::cli_invocation` to `root_path_style`, `settings::REFUSED_ROOT_KEYS` to `V1_ROOT_KEYS`, and the `destination` field of `compile::CallSite` and `model::Call` to `written`.
 - The `vault` module is renamed `note`, and `skill::split_frontmatter` moves into it. `paths::{BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file}` move to `model::vault`, and `status::VersionBumpSuggestion` to `export`. The `skill` and `status` modules are removed. The root re-exports are unchanged.
 - The `semver` module and the root `BumpLevel`, `next_version` and `parse_semver` are removed. Only `skillwright bump` used them, and it holds them now.
 - The `paths` module and the root `resolve_path` are removed. They were the CLI's path helpers, and the CLI holds what it uses.
@@ -48,7 +49,7 @@ API:
 - `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
 - A name that is not a harness is refused one way, in a request and in `build.harnesses`: `` `<name>` is not a harness. The harnesses are `claude`, `codex`, `cursor` and `pi` ``, with `unknown-harness` on a request. Of several unknown names, the first is named.
 - `UnitStatus` is `Same` or `Differs` in place of `Ok`, `Drift`, `Written` and `Unchanged`. A report's `mode` gives the verb: a check reads `same` as ok and `differs` as drift, a build reads them as unchanged and written.
-- A symlink in the layout walk whose marketplace folder, or a folder above it, the host cannot resolve is refused with `unsafe-path`, not reported as `Io`.
+- When the host cannot resolve the marketplace folder, or a folder the walk is inside, while checking a symlink, `read_layout` refuses with `unsafe-path` in place of an `Io` error.
 - `VaultPlan::commit` re-reads each `dist/<m>/` and refuses with the new `output-changed` token, writing nothing, when an owned path changed since `plan` read it. A build that rendered again after its prompt had the same protection.
 
 ## [0.50.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.1...tradecraft-core/v0.50.0) - 2026-11-12

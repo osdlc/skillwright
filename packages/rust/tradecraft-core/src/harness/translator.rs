@@ -27,7 +27,7 @@ use super::manifest::{
     render_plugin_manifest,
 };
 use super::profile::PLUGIN_HOOKS_PATH;
-use super::profile::{CliInvocation, Harness, HarnessProfile, PluginFormat, SkillNaming};
+use super::profile::{Harness, HarnessProfile, PluginFormat, RootPathStyle, SkillNaming};
 use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
@@ -93,7 +93,7 @@ impl Translator {
     /// spec does not admit.
     fn published_name(self, plugin: &Plugin, skill: &str) -> Result<String, CoreError> {
         let naming = naming(self.0, &plugin.bare_on);
-        crate::harness::published_skill_name(naming, &plugin.name, skill)
+        crate::harness::shipped_skill_name(naming, &plugin.name, skill)
     }
 
     /// A call, as this harness invokes the skill it names.
@@ -218,11 +218,11 @@ impl Translator {
                 self.profile().label,
             ));
         }
-        match self.format().policy.cli_invocation {
-            CliInvocation::PluginRootToken => {
+        match self.format().policy.root_path_style {
+            RootPathStyle::PluginRootToken => {
                 Ok(format!("{}/{}", crate::hooks_file::CLAUDE_ROOT, root.path))
             }
-            CliInvocation::SkillRelativePath => Ok(relative_path(
+            RootPathStyle::SkillRelativePath => Ok(relative_path(
                 &self.installed(plugin, &root.from)?,
                 &self.installed(plugin, &root.path)?,
             )),

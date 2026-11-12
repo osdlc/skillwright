@@ -179,7 +179,7 @@ pub struct CallSite {
     /// The skill the call names.
     pub skill: SkillId,
     /// The call's target as the author wrote it, fragment and all.
-    pub destination: String,
+    pub written: String,
     /// The note the call is in, as a refusal names it.
     pub caller: String,
 }

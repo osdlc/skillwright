@@ -12,9 +12,9 @@ pub mod naming;
 pub mod profile;
 pub mod translator;
 
-pub use naming::{published_skill_name, rendered_skill_call};
+pub use naming::{rendered_skill_call, shipped_skill_name};
 pub use profile::{
-    CliInvocation, Harness, HarnessProfile, KNOWN_TARGETS, PLUGIN_HOOKS_PATH, PluginFormat,
+    Harness, HarnessProfile, KNOWN_TARGETS, PLUGIN_HOOKS_PATH, PluginFormat, RootPathStyle,
     SkillNaming,
 };
 pub(crate) use translator::Translator;

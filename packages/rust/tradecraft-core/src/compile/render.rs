@@ -614,7 +614,7 @@ impl<'a> Renderer<'a> {
         }
         self.record.calls.push(CallSite {
             skill: skill.clone(),
-            destination: token.destination.to_owned(),
+            written: token.destination.to_owned(),
             caller: self.relative_or_verbatim(source_path),
         });
         Ok(mark('c', self.record.calls.len() - 1))
