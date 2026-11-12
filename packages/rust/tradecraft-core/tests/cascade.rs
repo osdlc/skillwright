@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use serde_json::Value;
-use tradecraft_core::{DiscoveryWarning, ExportMode, MemVfs, Vfs, load_vault};
+use tradecraft_core::{DiscoveryWarning, ExportMode, Harness, MemVfs, Vfs, load_vault};
 
 /// `build_vault` over the one marketplace a request covers: its report.
 fn export(
@@ -365,16 +365,11 @@ fn a_marketplace_s_identity_and_manifest_keys_do_not_pass_down() {
         warnings.iter().all(|w| w.reason != "unknown-key"),
         "{warnings:?}"
     );
-    let manifest = |harness| {
-        json(
-            &vfs,
-            tradecraft_core::marketplace_manifest_path(harness).unwrap(),
-        )
-    };
-    let claude = manifest("claude");
+    let manifest = |harness: Harness| json(&vfs, harness.format().marketplace_manifest.unwrap());
+    let claude = manifest(Harness::Claude);
     assert_eq!(str_at(&claude, "/metadata/from"), "market", "{claude}");
     assert_eq!(str_at(&claude, "/version"), "9.9.9", "{claude}");
-    let codex = manifest("codex");
+    let codex = manifest(Harness::Codex);
     assert_eq!(str_at(&codex, "/interface/displayName"), "Acme", "{codex}");
 
     let plugin = json(&vfs, plugin_manifest("claude"));

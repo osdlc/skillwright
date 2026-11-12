@@ -1,10 +1,9 @@
 //! What each harness is, and how the marketplace model is written for it.
 //!
-//! [`profile`] holds one row of data per harness (D-FDLQ). Everything a
-//! harness does differently that a value can say is a field there; the rest
-//! is code in that harness's [`translator`], whose default methods do the
-//! shared work from the row. [`manifest`] holds the manifest shapes the
-//! translators choose between.
+//! [`profile`] names each [`Harness`] and holds one row of data per harness
+//! (D-FDLQ). Everything a harness does differently that a value can say is a
+//! field there; the rest is a `match` on the harness in the [`translator`]
+//! and in [`manifest`], which holds each harness's manifest shapes.
 
 pub(crate) mod field_types;
 pub mod knowledge;
@@ -13,7 +12,7 @@ pub mod profile;
 pub mod translator;
 
 pub use profile::{
-    CliInvocation, HarnessProfile, KNOWN_TARGETS, PLUGIN_HOOKS_PATH, PROFILES, PluginDialect,
-    PluginFormat, SkillNaming, profile_named, with_plugin_format,
+    CliInvocation, Harness, HarnessProfile, KNOWN_TARGETS, PLUGIN_HOOKS_PATH, PluginFormat,
+    SkillNaming,
 };
-pub(crate) use translator::{HarnessTranslator, translator_for};
+pub(crate) use translator::Translator;

@@ -689,7 +689,7 @@ fn tokens_of<T: quote::ToTokens>(item: &T) -> String {
 
 /// A constant's declared type, read as a response shape: `(name, is a list)`.
 ///
-/// `KNOWN_TARGETS: &[&str]` is how `knownTargets` hands back a list with no
+/// `KNOWN_TARGETS: &[Harness]` is how `knownTargets` hands back a list with no
 /// core function to call — its body serializes the constant directly. A
 /// slice is a list of its element; anything else is read as itself, peeling
 /// references first so `&str` resolves the same as `str`.
