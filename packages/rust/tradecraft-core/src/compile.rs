@@ -11,7 +11,7 @@
 //!    reach ships on its own. A `/[[call]]` is checked against the skills
 //!    and commands it may name ([`CallContext`]). Each call, link, inlined
 //!    file and plugin-root path is written as a mark and recorded
-//!    ([`Recorded`]), for each harness to write its own way.
+//!    for each harness to write its own way (see [`crate::model`]).
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a harness has no resolver to
 //!    give it meaning. A `[[` after an odd run of `\` is escaped: it is neither a
@@ -25,8 +25,8 @@
 //! [`crate::vault::read_vault_note`] still reads the body verbatim — the
 //! vault's bytes are canonical and a read must not rewrite them. Compilation
 //! is a separate pass between the read and the projection:
-//! [`compile_note`] takes the body the read produced and returns it compiled,
-//! with the resources that ship beside it.
+//! [`crate::model::resolve_body`] takes the body the read produced and
+//! returns it compiled, with the resources that ship beside it.
 //!
 //! # Where a link resolves
 //!
@@ -86,7 +86,7 @@ use crate::vfs::{Vfs, normalize};
 /// the layout's root and be a file of the layout.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct CompileSource<'a> {
+pub(crate) struct CompileSource<'a> {
     /// The vault's layout.
     pub layout: &'a Layout,
     /// The note whose body is being compiled. Its own output is `SKILL.md`.
@@ -183,7 +183,7 @@ pub struct CallContext<'a> {
 /// written as a mark, for a translator to spell later (see [`crate::model`]).
 /// The `n`th mark of each kind in the output names the `n`th entry here.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Recorded {
+pub(crate) struct Recorded {
     /// Every call, resolved to the skill it names.
     pub calls: Vec<CallSite>,
     /// Every surviving link, resolved to where its file lands.
@@ -199,7 +199,7 @@ pub struct Recorded {
 /// One call, resolved: the skill it names, and what a refusal about it
 /// quotes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallSite {
+pub(crate) struct CallSite {
     /// The skill the call names.
     pub skill: IndexedSkill,
     /// The call's target as the author wrote it, fragment and all.
@@ -236,7 +236,7 @@ impl CallContext<'_> {
 /// What a compile produces: the entry body flattened, every resource the
 /// body (or the bundle root) reaches, and what their marks stand for.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompiledNote {
+pub(crate) struct CompiledNote {
     /// The entry note's body with embeds expanded, and each call, link,
     /// inlined file and plugin-root path a mark.
     pub body: String,
@@ -312,7 +312,7 @@ pub struct Closure {
 ///
 /// Every token above except `cycle`, `unsafe-path` and `path-collision` is
 /// this pass's own.
-pub fn compile_note(
+pub(crate) fn compile_note(
     vfs: &dyn Vfs,
     source: &CompileSource<'_>,
     body: &str,
