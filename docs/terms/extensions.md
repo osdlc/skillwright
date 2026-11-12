@@ -2,7 +2,7 @@
 
 Status: current.
 
-Fields of a model node that only one harness reads, held as one validated map per harness. Sourced from a note's harness blocks, such as `claude:` ([D-ISOU](../decisions/D-ISOU-harness-extensions.md)).
+Fields of a model node that only one harness reads, held as one validated map per harness. Sourced from a note's harness blocks, such as `claude:` ([D-HJCZ](../decisions/D-HJCZ-harness-blocks.md)).
 
 ## In code
 

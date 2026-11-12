@@ -159,7 +159,7 @@ generates, and emitted only for that harness. The accepted keys are
 - A key the block does not accept warns and is left out.
 - A key the block accepts must hold the kind of value that harness documents.
   A wrong kind is refused, naming the block, the key and the kind. Every block
-  is checked, whichever harnesses `build.harnesses` selects.
+  is checked, whichever harnesses the run builds.
 - A key set to nothing is dropped. It does not clear a value the note
   inherits.
 - `metadata` in a block merges with the note's `metadata`.

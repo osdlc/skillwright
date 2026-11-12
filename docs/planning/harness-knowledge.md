@@ -61,7 +61,6 @@ flowchart LR
   K --> AC[agent-call adapters]
   K --> DH[detect-harness]
   K --> TC[tradecraft-core harness profiles]
-  K --> AD[skillwright adopt / install]
 ```
 
 ### Record types
