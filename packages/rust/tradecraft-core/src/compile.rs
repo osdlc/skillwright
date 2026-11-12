@@ -2005,9 +2005,9 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
     let mut leftovers: Vec<Leftover> = Vec::new();
     for abandoned in &scan.abandoned {
         let opens = abandoned.byte_start + usize::from(abandoned.embed);
-        if escaped_at(bytes, abandoned.byte_start) {
+        if let Some(start) = escape_start(bytes, abandoned.byte_start) {
             if calls {
-                tokens.push(escape_token(abandoned.byte_start - 1, opens + 2));
+                tokens.push(escape_token(start, opens + 2));
             }
             continue;
         }
@@ -2046,9 +2046,9 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
             BodyLinkKind::Markdown => continue,
         };
         let at = link.byte_start;
-        if escaped_at(bytes, at) {
+        if let Some(start) = escape_start(bytes, at) {
             if calls {
-                tokens.push(escape_token(at - 1, at + opener));
+                tokens.push(escape_token(start, at + opener));
             }
             continue;
         }
@@ -2353,6 +2353,15 @@ fn code_regions(markdown: &str) -> Vec<(usize, usize)> {
         offset += 1;
     }
     regions
+}
+
+/// Where the escaping `\` is when the `[[` at `offset` is escaped: right
+/// before it, or before a `!` that sits right before it (`\![[x]]`).
+fn escape_start(bytes: &[u8], offset: usize) -> Option<usize> {
+    if escaped_at(bytes, offset) {
+        return Some(offset - 1);
+    }
+    (offset >= 1 && bytes[offset - 1] == b'!' && escaped_at(bytes, offset - 1)).then(|| offset - 2)
 }
 
 /// Whether the byte at `offset` follows an odd run of `\`: `\[[x]]` and

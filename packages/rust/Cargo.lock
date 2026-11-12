@@ -464,9 +464,9 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "markdown-contract"
-version = "0.4.1"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba7af0223d6d3472e9b83ab6274ab4ef5b05f599fa1e9eb9270e09206b2bdb9e"
+checksum = "efc95551d71023279377b957601b46a5cfc85df9834af09eb7e509324cacc853"
 dependencies = [
  "comrak",
  "globset",
@@ -480,9 +480,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-link"
-version = "0.8.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70578cf8c4bb6c593943a8330bbdac1c2b29cf9fa25b36ccca2edb2429c29365"
+checksum = "f5ebbc054cd48547b2243cf1fe6aa6fb184f4fc317200ab70ed3e86b9a7ded23"
 dependencies = [
  "slug-collate",
  "yaml-splice",
@@ -1175,9 +1175,9 @@ dependencies = [
 
 [[package]]
 name = "yaml-splice"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4640e81de4d3290ca247eabadabb0281fd1171c378c382e6251d98d2694bc901"
+checksum = "fe78e5fde34045e879c1a35e0b110c1bfe439d5d577a122844e1d6f28879da93"
 dependencies = [
  "saphyr-parser",
  "serde_json",

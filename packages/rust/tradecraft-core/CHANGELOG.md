@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Depend on markdown-link 0.9, so an install builds one copy of it.
+
 ## [0.50.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.1...tradecraft-core/v0.50.0) - 2026-11-12
 
 0.49.1 shipped these changes by mistake under a patch version and was yanked.
