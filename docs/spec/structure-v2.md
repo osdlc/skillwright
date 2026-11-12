@@ -1100,7 +1100,7 @@ does not say the command was removed.
    |---|---|
    | 0 | The run did what it was asked. A warning does not change this. |
    | 1 | `check` found drift, and nothing else. |
-   | 2 | Refused: any vault error, including a `--vault` that is not a root and a `--marketplace` the vault does not hold. Also `init` over an existing file, a version `bump` refuses, and a failed write. |
+   | 2 | Refused: any vault error, including a `--vault` that is not a root and a `--marketplace` the vault does not hold. Also `init` over an existing file, a version `bump` refuses, a failed write and a declined prompt. |
    | 3 | A usage error. |
    | 4 | No root at or above the working directory, and no `--vault`. |
 

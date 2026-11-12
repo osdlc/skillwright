@@ -26,9 +26,9 @@ hint that it was removed.
 ## Exit codes
 
 Exit 1 now means only that `check` found drift. Every refusal exits 2: a
-vault error, `init` over an existing file, a version `bump` refuses, and a
-failed write (section 10 rule 8). In v1, `init`'s and `bump`'s refusals
-exited 1, as drift did. A script that read 1 as "drift" can now trust it; one
+vault error, `init` over an existing file, a version `bump` refuses, a
+failed write and a declined prompt (section 10 rule 8). In v1, a refusal
+during a run exited 1, as drift did. A script that read 1 as "drift" can now trust it; one
 that read 1 as "refused" must read 2.
 
 The `adopted` key, the provenance `adopt` wrote, goes with `adopt`. A v1
@@ -46,8 +46,8 @@ These flags go too:
 | `--watch` | `build --watch` is out of v2. |
 | `init --out`, `init --name` | `init` takes `<m> <p>` (section 10 rule 1). |
 
-`--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes` stay
-(section 10 rule 5). `build` and `bump` still ask before writing, so `--yes`
+`--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes` stay,
+and `--harness` is new (section 10 rule 5). `build` and `bump` still ask before writing, so `--yes`
 is still needed off a terminal.
 
 ## Features removed or changed
@@ -150,7 +150,7 @@ is still needed off a terminal.
 | Decision | Amendment |
 |---|---|
 | [D-WNTQ](../decisions/D-WNTQ-harness-profile-values-from-config.md) | `pi: {naming}` stays settable, `cursor: {naming}` is added, and `packs` is not settable. |
-| [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) | `build.namespace` and prefixed keys are gone. An unknown key still warns, with two exceptions: the removed keys `workspace` (root file) and `packs` (harness block) are refused. A key the table lists is refused where it does not belong: a key that is not inherited in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |
+| [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) | `build.namespace` and prefixed keys are gone. An unknown key still warns, with three exceptions: the removed keys `workspace` (root file), `targets` (any level) and `packs` (harness block) are refused. A key the table lists is refused where it does not belong: a key that is not inherited in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |
 | [D-GPYR](../decisions/D-GPYR-convention-first.md) | Its patterns layer is gone. |
 
 ## What each decision changes
