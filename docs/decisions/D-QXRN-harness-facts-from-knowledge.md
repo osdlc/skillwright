@@ -10,8 +10,10 @@ A harness profile's *fact* values are looked up in the compiled
 compiled from the `harness-reference` claims corpus and embedded in
 `tradecraft-core` (`data/harness-knowledge.json`).
 
-- **Facts move:** the user skills folder, the pack manifest path, the
-  marketplace manifest path, the plugin-root variable and the naming rule.
+- **Facts move:** the pack manifest path, the marketplace manifest path, the
+  plugin-root variable and the naming rule. The user skills folder was dropped
+  as unread; the project `skills_dir` comes from agent-adapt's `RuntimePaths`,
+  held to `skills/project-dirs` by a test.
 - **Policy stays in code:** the packs folder, the dialect, Cursor's and Pi's
   prefixed naming, the override lists, runtime mappings, and the config overrides of
   [D-WNTQ](D-WNTQ-harness-profile-values-from-config.md). The translator trait

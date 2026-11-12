@@ -9,6 +9,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Depend on markdown-link 0.9, so an install builds one copy of it.
 
+### Breaking
+
+API:
+
+- `prompt::ask` is removed.
+
 ### Changed
 
 - `build --json` and `check --json` over several marketplaces list each refusal with `token` and `detail` in place of `error`.

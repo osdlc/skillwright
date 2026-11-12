@@ -635,7 +635,6 @@ struct PackTarget {
 /// claimed so far.
 struct Renderer<'a> {
     vfs: &'a dyn Vfs,
-    vault_root: PathBuf,
     entry_path: PathBuf,
     skill_name: &'a str,
     layout: &'a Layout,
@@ -669,9 +668,8 @@ impl<'a> Renderer<'a> {
         // Normalised up front so `==` against layout paths (built the same
         // way) means location equality, not spelling equality.
         let layout = source.layout;
-        let vault_root = layout.root.clone();
         let entry_path = normalize(source.entry_path);
-        if !(entry_path.starts_with(&vault_root) && within(vfs, &vault_root, &entry_path)?) {
+        if !(entry_path.starts_with(&layout.root) && within(vfs, &layout.root, &entry_path)?) {
             return Err(CoreError::PathEscapesRoot(entry_path));
         }
         let Some(entry) = layout.file(&entry_path) else {
@@ -702,7 +700,6 @@ impl<'a> Renderer<'a> {
         let (market, plugin) = (entry.marketplace.clone(), entry.plugin.clone());
         Ok(Renderer {
             vfs,
-            vault_root,
             entry_path,
             skill_name: source.skill_name,
             layout,
@@ -771,7 +768,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn vault_relative(&self, path: &Path) -> Result<String, CoreError> {
-        path.strip_prefix(&self.vault_root)
+        path.strip_prefix(&self.layout.root)
             .map(forward_slashed)
             .map_err(|_| CoreError::PathEscapesRoot(path.to_path_buf()))
     }
@@ -1335,7 +1332,7 @@ impl<'a> Renderer<'a> {
     ) -> Result<PathBuf, CoreError> {
         let folder = from_file.parent().unwrap_or(from_file);
         let joined = normalize(&folder.join(relative));
-        let market = self.vault_root.join(MARKETPLACES_DIR).join(&self.market);
+        let market = self.layout.root.join(MARKETPLACES_DIR).join(&self.market);
         if !joined.starts_with(&market) {
             return Err(Unreachable::outside(&self.market)
                 .refuse(&self.relative_or_verbatim(from_file), written));
@@ -1486,7 +1483,8 @@ impl<'a> Renderer<'a> {
             Place::Shared {
                 skill: Some(skill), ..
             } => Some(
-                self.vault_root
+                self.layout
+                    .root
                     .join(MARKETPLACES_DIR)
                     .join(&found.marketplace)
                     .join(PLUGINS_DIR)

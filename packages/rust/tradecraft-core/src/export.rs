@@ -42,7 +42,7 @@
 //! # One render, two verbs
 //!
 //! `check` is not a second reading of `build`'s rules. Both modes translate
-//! the whole marketplace once, into a [`crate::harness::FileTree`] per
+//! the whole marketplace once, into a `FileTree` per
 //! harness, and diff those bytes against the destination. `check` returns
 //! that diff, having written nothing under any outcome. `build` acts on it:
 //! an up-to-date destination is reported unchanged and nothing is written or
