@@ -16,9 +16,7 @@ use super::{
     Asset, Body, Component, Extensions, HooksFile, Marketplace, Plugin, Resolved, Resource,
     ResourceContent, Segment, pack_kind, segments,
 };
-use crate::compile::{
-    CallContext, CompileSource, IndexedSkill, Recorded, SkillIndex, compile_note,
-};
+use crate::compile::{CallContext, CompileSource, IndexedSkill, SkillIndex, compile_note};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, discover_in,
     refuse_undescribed,
@@ -308,8 +306,11 @@ pub(crate) fn load_for(
             .map(|c| &c.discovered),
     );
     let hand_written = hand_written_forms(&plugins, roots, config)?;
-    let record = RefCell::new(Recorded::default());
-    let calls = recording_context(&index.skills, hand_written, &record);
+    let calls = CallContext {
+        skills: &index.skills,
+        hand_written,
+        warnings: RefCell::new(Vec::new()),
+    };
     for plugin in plugins.values_mut() {
         let plugin_name = plugin.name.clone();
         for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
@@ -359,9 +360,8 @@ pub(crate) fn load_for(
 ///
 /// # Errors
 ///
-/// Everything [`crate::compile::compile_note`] refuses except
-/// `skill-call-not-shipped`, which depends on the harness and is asked when
-/// the call is written.
+/// Everything [`crate::compile::compile_note`] refuses. Whether a harness
+/// ships what a call names is asked when the call is written.
 pub fn resolve_body(
     vfs: &dyn Vfs,
     layout: &Layout,
@@ -370,9 +370,6 @@ pub fn resolve_body(
     kind: EntityKind,
     calls: &CallContext<'_>,
 ) -> Result<Resolved, CoreError> {
-    let record = calls
-        .record
-        .expect("a load compiles through a recording context");
     let VaultNote {
         mut content,
         frontmatter,
@@ -381,28 +378,20 @@ pub fn resolve_body(
     if matches!(kind, EntityKind::Skill | EntityKind::Command) {
         content.apply_arguments(&frontmatter.arguments);
     }
-    // Each body starts the record afresh, so its marks count from zero.
-    *record.borrow_mut() = Recorded::default();
     let compiled = compile_note(
         vfs,
-        &CompileSource {
-            vault_root: &layout.root,
-            entry_path: &component.entry_path,
-            skill_name: &component.name,
-            calls: Some(calls),
-            layout: Some(layout),
-        },
+        &CompileSource::new(layout, &component.entry_path, &component.name, calls),
         &content.body,
     )?;
-    let record = record.borrow();
-    let body = segments(&compiled.body, &record);
+    let record = &compiled.recorded;
+    let body = segments(&compiled.body, record);
     let resources = compiled
         .resources
         .into_iter()
         .map(|(path, bytes, executable)| {
             let content = match String::from_utf8(bytes) {
                 Ok(text) if path.to_lowercase().ends_with(".md") => ResourceContent::Body {
-                    body: segments(&text, &record),
+                    body: segments(&text, record),
                 },
                 Ok(text) => ResourceContent::Bytes {
                     bytes: text.into_bytes(),
@@ -448,7 +437,6 @@ fn skill_index<'a>(skills: impl Iterator<Item = &'a DiscoveredComponent>) -> Ind
                 plugin,
                 name: c.name.clone(),
                 kind: c.kind,
-                shipped: true,
             })
             .collect::<Vec<_>>(),
     );
@@ -494,28 +482,6 @@ fn hand_written_forms(
         }
     }
     Ok(forms)
-}
-
-fn recording_context<'a>(
-    skills: &'a SkillIndex,
-    hand_written: BTreeMap<String, String>,
-    record: &'a RefCell<Recorded>,
-) -> CallContext<'a> {
-    CallContext {
-        skills,
-        render: &no_render,
-        // Read only by the not-shipped refusal, which a recording compile
-        // never raises.
-        target: "",
-        hand_written,
-        warnings: RefCell::new(Vec::new()),
-        record: Some(record),
-    }
-}
-
-/// The renderer a recording compile never calls.
-fn no_render(_: &IndexedSkill) -> Result<String, CoreError> {
-    Ok(String::new())
 }
 
 /// A resolved component's body and each resource's.
@@ -829,9 +795,6 @@ fn shared_references(
     plugin: &str,
     calls: &CallContext<'_>,
 ) -> Result<Vec<Resource>, CoreError> {
-    let record = calls
-        .record
-        .expect("a load compiles through a recording context");
     let mut out = Vec::new();
     for file in layout.files_of(market) {
         let (Place::Shared { path, .. }, Some(owner)) = (&file.place, file.plugin.as_deref())
@@ -844,20 +807,13 @@ fn shared_references(
         let raw = crate::skill::read_utf8(vfs, &file.path)?;
         // Its frontmatter ships as written; only the body is compiled.
         let split = frontmatter_lossless::split(&raw);
-        *record.borrow_mut() = Recorded::default();
-        let source = CompileSource {
-            vault_root: &layout.root,
-            entry_path: &file.path,
-            skill_name: path,
-            calls: Some(calls),
-            layout: Some(layout),
-        };
+        let source = CompileSource::new(layout, &file.path, path, calls);
         let compiled = compile_note(vfs, &source, split.body)?;
         let text = frontmatter_lossless::compose(split.yaml, &compiled.body, split.shape);
         out.push(Resource {
             path: path.clone(),
             content: ResourceContent::Body {
-                body: segments(&text, &record.borrow()),
+                body: segments(&text, &compiled.recorded),
             },
             executable: vfs.is_executable(&file.path),
         });
