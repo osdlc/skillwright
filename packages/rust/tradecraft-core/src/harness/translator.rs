@@ -81,7 +81,7 @@ impl Translator {
 
     /// Does this pack carry this member? Its kind has a place in the pack.
     pub(crate) fn admits(self, component: &Component) -> bool {
-        self.format().carries(component.kind)
+        self.format().carries(component.kind())
     }
 
     /// The name a skill of `plugin` publishes under: its directory, its
@@ -130,7 +130,7 @@ impl Translator {
             };
             let carried = members
                 .iter()
-                .find(|member| member.name == component.name)
+                .find(|member| member.name() == component.name)
                 .is_some_and(|member| self.admits(member));
             if !carried {
                 return Err(CoreError::refused(
@@ -177,7 +177,7 @@ impl Translator {
         let mut out: BTreeSet<String> = plugin.assets.iter().map(|a| a.dest.clone()).collect();
         out.extend(plugin.references.iter().map(|r| r.path.clone()));
         for skill in plugin.skills.iter().filter(|c| self.admits(c)) {
-            let base = format!("skills/{}", skill.name);
+            let base = format!("skills/{}", skill.name());
             out.insert(format!("{base}/SKILL.md"));
             if let Some(resolved) = &skill.resolved {
                 out.extend(
@@ -189,7 +189,7 @@ impl Translator {
             }
         }
         for command in plugin.commands.iter().filter(|c| self.admits(c)) {
-            out.insert(format!("commands/{}.md", command.name));
+            out.insert(format!("commands/{}.md", command.name()));
         }
         if self.format().policy.carries_hooks && plugin.hooks_file.is_some() {
             out.insert(PLUGIN_HOOKS_PATH.to_owned());
@@ -377,7 +377,7 @@ impl Translator {
                 asset.executable,
             );
         }
-        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = skills.iter().map(|s| s.name()).collect();
         let manifest = render_plugin_manifest(self.0, &plugin.name, &names, config);
         tree.insert(
             &format!("{base}/{}", self.format().plugin_manifest),
@@ -401,17 +401,17 @@ impl Translator {
     ) -> Result<(), CoreError> {
         let profile = self.profile();
         let format = self.format();
-        let published = self.published_name(plugin, &skill.name)?;
+        let published = self.published_name(plugin, skill.name())?;
         let mut projection = projection_of(skill, |body| self.render_body(plugin, body))?;
         projection.content.name = published.clone();
-        mark_generated(&mut projection, &skill.path);
+        mark_generated(&mut projection, skill.path());
         let files = project_skill(&projection, self.0.profile().runtime, self.0.as_str())?;
         let strip = format!("{}/{published}/", format.skills_dir);
         for file in files {
             let relative = file.relative_path.strip_prefix(&strip).ok_or_else(|| {
                 CoreError::Projection(format!(
                     "{}: `{}` did not land under `{strip}` — the {} projection moved its layout",
-                    skill.name,
+                    skill.name(),
                     file.relative_path,
                     profile.runtime.as_str()
                 ))
@@ -440,7 +440,7 @@ impl Translator {
     ) -> Result<(), CoreError> {
         let profile = self.profile();
         let mut projection = projection_of(command, |body| self.render_body(plugin, body))?;
-        mark_generated(&mut projection, &command.path);
+        mark_generated(&mut projection, command.path());
         // A command projects to exactly one file, so the file's own name is
         // all that travels onto `commands/`.
         let files = project_command(&projection, self.0.profile().runtime, self.0.as_str())?;
@@ -448,7 +448,7 @@ impl Translator {
             let filename = Path::new(&file.relative_path).file_name().ok_or_else(|| {
                 CoreError::Projection(format!(
                     "{}: `{}` names no file — the {} projection moved its layout",
-                    command.name,
+                    command.name(),
                     file.relative_path,
                     profile.runtime.as_str()
                 ))
@@ -480,7 +480,7 @@ impl Translator {
         let mut published: BTreeMap<String, (&Plugin, &Component)> = BTreeMap::new();
         for group in market.plugins.values() {
             for skill in group.skills.iter().filter(|c| self.admits(c)) {
-                let name = self.published_name(group, &skill.name)?;
+                let name = self.published_name(group, skill.name())?;
                 let Some((first_group, first)) = published.get(&name).copied() else {
                     published.insert(name, (group, skill));
                     continue;
@@ -491,9 +491,9 @@ impl Translator {
                     format!(
                         "`{}` (plugin `{}`) and `{}` (plugin `{}`) both publish as {} skill \
                          `{name}`: {why}",
-                        first.path,
+                        first.path(),
                         first_group.name,
-                        skill.path,
+                        skill.path(),
                         group.name,
                         self.profile().label
                     ),

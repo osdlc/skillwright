@@ -21,6 +21,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::refusal;
@@ -194,8 +196,10 @@ pub fn check_vault_root(vfs: &dyn Vfs, dir: &Path) -> Result<(), CoreError> {
     )))
 }
 
-/// What a path under the root is, by its position.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What a path under the root is, by its position. On the wire, `at` names
+/// the variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "at", rename_all = "kebab-case")]
 pub enum Position {
     /// `marketplaces/<m>/<m>.md`.
     Marketplace {

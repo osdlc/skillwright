@@ -26,7 +26,7 @@
 //! out this way has no file and no manifest mention there, and the report
 //! names it as [`ExportUnit::NotCarried`] for that harness.
 //!
-//! Which harnesses a build renders is [`VaultRequest::harnesses`] when it
+//! Which harnesses a build renders is [`BuildOptions::harnesses`] when it
 //! names any, else the root file's `build.harnesses`, else all of them. A
 //! name no harness answers to is refused rather than ignored — publishing
 //! other than was asked for, quietly, is the failure this crate is built
@@ -60,7 +60,7 @@
 //! directory guaranteed to share a filesystem with the thing being replaced
 //! is its own parent. A failure mid-swap rolls back every path already
 //! swapped, restores the failing path's own backup, and surfaces as
-//! [`CoreError::SwapFailed`] saying so. [`build_vault`] stages every
+//! [`CoreError::SwapFailed`] saying so. [`VaultPlan::commit`] stages every
 //! marketplace before it swaps any, and a failure rolls back every
 //! marketplace already swapped.
 //!
@@ -85,12 +85,12 @@
 //! defaults are read from the vault's `skillwright.md` through the [`Vfs`],
 //! like every note; a request cannot carry them.
 //!
-//! # One render, then the write
+//! # Plan once, then commit
 //!
-//! [`build_vault`] is the one entry point. It loads, renders and compares
-//! every marketplace, and writes nothing until all of them are planned, so a
-//! refusal in one leaves all of them unwritten. Then a build swaps in what
-//! drifted.
+//! [`plan`] renders and compares every marketplace of a loaded vault, and
+//! writes nothing. [`VaultPlan::report`] says what it found, and
+//! [`VaultPlan::commit`] swaps in what drifted, or writes nothing when any
+//! marketplace was refused. [`build_vault`] does all three in one call.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -100,52 +100,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::discover::{DiscoveryReport, DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
-use crate::frontmatter::ContainerIdentity;
+use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::harness::manifest::{is_os_file, overrides_for};
 use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, SkillNaming};
 use crate::harness::{Harness, Translator};
-use crate::layout::Layout;
 use crate::model::load::{built_harnesses, load_for};
 use crate::model::{Component, Marketplace};
-use crate::paths::{VaultMarketplace, load_vault, read_root_file};
+use crate::paths::{BuildScope, LoadedVault, VaultMarketplace, load_vault};
 use crate::refusal;
 use crate::settings::RootFile;
 use crate::skill::forward_slashed;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
 use crate::vfs::{PreviewWrite, Vfs, normalize};
-
-/// One marketplace export: this vault, built into its `dist/<m>/` or checked
-/// against it. [`VaultRequest`] is the public form.
-#[derive(Debug, Clone)]
-pub(crate) struct ExportRequest {
-    /// Absolute path to the vault root. Discovery, compilation, the output
-    /// folder and the provenance markers all resolve against it.
-    pub vault_root: PathBuf,
-    /// Which marketplace this build renders, by folder. `None` names the
-    /// vault's only one; a vault holding more than one is refused.
-    pub marketplace: Option<String>,
-    /// [`VaultRequest::harnesses`].
-    pub harnesses: BTreeSet<String>,
-    /// Build, or check.
-    pub mode: ExportMode,
-    /// [`VaultRequest::compare_with`].
-    pub compare_with: Option<PathBuf>,
-}
-
-impl ExportRequest {
-    /// A build of the vault at `vault_root`. Every other field starts empty,
-    /// and the mode is a build; set them after.
-    pub(crate) fn new(vault_root: impl Into<PathBuf>) -> Self {
-        Self {
-            vault_root: vault_root.into(),
-            marketplace: None,
-            harnesses: BTreeSet::new(),
-            mode: ExportMode::default(),
-            compare_with: None,
-        }
-    }
-}
 
 /// Whether an export writes the marketplace, or only reports its drift.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,12 +166,12 @@ pub(crate) struct PluginOverrides {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ExportReport {
-    /// The mode the report describes, so `ok`/`drift` and
-    /// `written`/`unchanged` read against the right verb.
+    /// The mode the report describes, which gives each [`UnitStatus`] its
+    /// verb.
     pub mode: ExportMode,
     /// How many skills discovery found.
     pub checked: usize,
-    /// Check: anything drifted or stale. Build: anything was swapped.
+    /// Anything differs or is stale: drift for a check, a swap for a build.
     pub changed: bool,
     /// One unit per plugin per root, one per marketplace manifest, plus whatever the
     /// destination holds that the vault no longer produces, plus the members a
@@ -278,7 +245,7 @@ pub enum ExportUnit {
         /// The component's path in the vault.
         path: String,
         /// The component's kind.
-        kind: String,
+        kind: EntityKind,
     },
 }
 
@@ -303,32 +270,16 @@ pub enum StaleKind {
     EmptyDir,
 }
 
-/// One unit's outcome. `check` speaks `ok`/`drift`; `build` speaks
-/// `written`/`unchanged` — the same comparison, two verbs.
+/// Whether a unit matches what is installed. [`ExportReport::mode`] gives
+/// the verb: a check says `ok` or `drift`, a build `unchanged` or `written`.
+/// Closed: a unit either matches or does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[non_exhaustive]
 pub enum UnitStatus {
-    /// The unit matches what is installed (`check`).
-    Ok,
-    /// The unit differs from what is installed (`check`).
-    Drift,
-    /// The unit was written (`build`).
-    Written,
-    /// The unit was already up to date (`build`).
-    Unchanged,
-}
-
-impl UnitStatus {
-    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Ok => "ok",
-            Self::Drift => "drift",
-            Self::Written => "written",
-            Self::Unchanged => "unchanged",
-        }
-    }
+    /// The unit matches what is installed.
+    Same,
+    /// The unit differs from what is installed; a build replaces it.
+    Differs,
 }
 
 /// The name a skill publishes under: its directory, its frontmatter `name`,
@@ -401,7 +352,7 @@ pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 
 /// The harnesses a build renders under the vault's root file `root`, each
 /// with every path it owns in the marketplace directory. `harnesses` is
-/// [`VaultRequest::harnesses`].
+/// [`BuildOptions::harnesses`].
 ///
 /// So a caller can say what a build is about to replace, before it builds,
 /// without owning a second copy of the roots table or of the harness
@@ -414,15 +365,10 @@ pub fn owned_paths(
     root: &RootFile,
     harnesses: &BTreeSet<String>,
 ) -> Result<Vec<(Harness, &'static str)>, CoreError> {
-    Ok(paths_of(&built_harnesses(root, harnesses)?))
-}
-
-/// Each of `roots` with every path it owns.
-fn paths_of(roots: &[Harness]) -> Vec<(Harness, &'static str)> {
-    roots
-        .iter()
-        .flat_map(|&root| root.owned_paths().into_iter().map(move |path| (root, path)))
-        .collect()
+    Ok(built_harnesses(root, harnesses)?
+        .into_iter()
+        .flat_map(|root| root.owned_paths().into_iter().map(move |path| (root, path)))
+        .collect())
 }
 
 /// `<packs>/<name>/<tail>` for a harness's pack directory: the plugin and
@@ -444,30 +390,19 @@ fn split_pack<'p>(packs: &str, relative: &'p str) -> Option<(&'p str, &'p str)> 
 
 /// One marketplace rendered and compared with its output folder, with
 /// nothing written yet.
-pub(crate) struct ExportPlan {
-    out: PathBuf,
+struct ExportPlan {
     report: ExportReport,
-    swapping: Vec<(Harness, BTreeMap<String, PreviewWrite>)>,
+    swap: Swap,
 }
 
-/// A check's report under the write verbs: what matched is unchanged, what
-/// differed was (just) written.
-fn built(mut report: ExportReport) -> ExportReport {
-    for unit in &mut report.units {
-        match unit {
-            ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => {
-                *status = match status {
-                    UnitStatus::Ok | UnitStatus::Unchanged => UnitStatus::Unchanged,
-                    UnitStatus::Drift | UnitStatus::Written => UnitStatus::Written,
-                };
-            }
-            // Neither has a status: one is what a swap removes, the other is
-            // what no layout could take.
-            ExportUnit::Stale { .. } | ExportUnit::NotCarried { .. } => {}
-        }
-    }
-    report.mode = ExportMode::Build;
-    report
+/// What a build replaces in one output folder: each of `owned`, a path
+/// relative to `base`, gives way to what `files` holds under it.
+struct Swap {
+    base: PathBuf,
+    owned: Vec<String>,
+    files: BTreeMap<String, PreviewWrite>,
+    /// Every root's owned paths as the plan saw them, before it compared.
+    seen: Snapshot,
 }
 
 /// A build or check of every marketplace in a vault, or of the one named.
@@ -477,9 +412,37 @@ fn built(mut report: ExportReport) -> ExportReport {
 pub struct VaultRequest {
     /// Absolute path to the vault root.
     pub vault_root: PathBuf,
-    /// Which marketplace to build, by folder. `None` builds every one.
-    #[serde(default)]
-    pub marketplace: Option<String>,
+    /// Which marketplace to build, by folder. Absent builds every one.
+    #[serde(default, rename = "marketplace")]
+    pub scope: BuildScope,
+    /// How to build it.
+    #[serde(flatten)]
+    pub options: BuildOptions,
+}
+
+impl VaultRequest {
+    /// A build of every marketplace of the vault at `vault_root`. Set the
+    /// other fields after.
+    pub fn new(vault_root: impl Into<PathBuf>) -> Self {
+        Self {
+            vault_root: vault_root.into(),
+            scope: BuildScope::Vault,
+            options: BuildOptions::default(),
+        }
+    }
+
+    /// A build of the marketplace `name` of the vault at `vault_root`.
+    pub fn for_marketplace(vault_root: impl Into<PathBuf>, name: &str) -> Self {
+        let mut request = Self::new(vault_root);
+        request.scope = BuildScope::Marketplace(name.to_owned());
+        request
+    }
+}
+
+/// How a build or check runs, whatever part of the vault it covers.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct BuildOptions {
     /// Which harnesses to build, by name. It replaces the root file's
     /// `build.harnesses` for this run; empty means that list, and with no
     /// list, every harness.
@@ -501,28 +464,14 @@ pub struct VaultRequest {
     pub compare_with: Option<PathBuf>,
 }
 
-impl VaultRequest {
-    /// A build of every marketplace of the vault at `vault_root`. Set the
-    /// other fields after.
-    pub fn new(vault_root: impl Into<PathBuf>) -> Self {
-        Self {
-            vault_root: vault_root.into(),
-            marketplace: None,
-            harnesses: BTreeSet::new(),
-            mode: ExportMode::default(),
-            compare_with: None,
-        }
-    }
-}
-
 /// What [`build_vault`] did, or would do, per marketplace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct VaultReport {
     /// One report per marketplace, in folder order.
     pub marketplaces: Vec<MarketplaceReport>,
-    /// A check's refused marketplaces, in folder order. A build that meets a
-    /// refusal fails whole, so its report holds none.
+    /// The refused marketplaces, in folder order. A build that meets one
+    /// writes nothing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refused: Vec<MarketplaceRefusal>,
 }
@@ -537,7 +486,7 @@ pub struct MarketplaceReport {
     pub report: ExportReport,
 }
 
-/// A marketplace a check could not plan, in a [`VaultReport`].
+/// A marketplace that could not be planned, in a [`VaultReport`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct MarketplaceRefusal {
@@ -556,186 +505,179 @@ impl MarketplaceRefusal {
     }
 }
 
-/// Every marketplace of a [`VaultRequest`] planned, with nothing written.
-pub(crate) struct VaultPlan {
-    /// The request's mode.
+/// [`VaultPlan::outcomes`], the reports and the refusals listed apart.
+impl From<Vec<Result<MarketplaceReport, MarketplaceRefusal>>> for VaultReport {
+    fn from(outcomes: Vec<Result<MarketplaceReport, MarketplaceRefusal>>) -> Self {
+        let (marketplaces, refused): (Vec<_>, Vec<_>) =
+            outcomes.into_iter().partition(Result::is_ok);
+        Self {
+            marketplaces: marketplaces.into_iter().flatten().collect(),
+            refused: refused.into_iter().filter_map(Result::err).collect(),
+        }
+    }
+}
+
+/// Every marketplace of a run planned, with nothing written: what [`plan`]
+/// returns. Read it with [`Self::report`], then write it with
+/// [`Self::commit`].
+pub struct VaultPlan {
     mode: ExportMode,
-    /// Each marketplace with its plan, or what refused it, in folder order.
-    marketplaces: Vec<(VaultMarketplace, Result<ExportPlan, CoreError>)>,
+    /// Each marketplace by name with its plan, or what refused it, in folder
+    /// order.
+    marketplaces: Vec<(String, Result<ExportPlan, CoreError>)>,
 }
 
 impl VaultPlan {
-    /// A check returns every marketplace's report or refusal and writes
-    /// nothing. A build stages every marketplace, then swaps them all in; a
-    /// failed swap rolls back every marketplace already swapped.
+    /// Each marketplace's report, or what refused it, in folder order.
+    pub fn outcomes(&self) -> Vec<Result<MarketplaceReport, MarketplaceRefusal>> {
+        self.marketplaces
+            .iter()
+            .map(|(marketplace, plan)| match plan {
+                Ok(plan) => Ok(MarketplaceReport {
+                    marketplace: marketplace.clone(),
+                    report: plan.report.clone(),
+                }),
+                Err(err) => Err(MarketplaceRefusal {
+                    marketplace: marketplace.clone(),
+                    token: err.token().map(|token| token.to_string()),
+                    detail: err.detail(),
+                }),
+            })
+            .collect()
+    }
+
+    /// [`Self::outcomes`] as a [`VaultReport`].
+    pub fn report(&self) -> VaultReport {
+        self.outcomes().into()
+    }
+
+    /// Writes a build: stages every marketplace, then swaps them all in. A
+    /// failed swap rolls back every marketplace already swapped. A check
+    /// writes nothing.
     ///
     /// # Errors
     ///
     /// A build only: the first marketplace's refusal, with nothing written.
-    /// Then [`CoreError::SwapFailed`] and the I/O errors of the swap.
-    fn write(self, vfs: &dyn Vfs) -> Result<VaultReport, CoreError> {
-        let mut planned = Vec::with_capacity(self.marketplaces.len());
-        let mut refused = Vec::new();
-        for (market, plan) in self.marketplaces {
-            match plan {
-                Ok(plan) => planned.push((market.name, plan)),
-                Err(err) if self.mode == ExportMode::Check => refused.push(MarketplaceRefusal {
-                    marketplace: market.name,
-                    token: err.token().map(|token| token.to_string()),
-                    detail: err.detail(),
-                }),
-                Err(err) => return Err(err),
-            }
+    /// `refused: output-changed` when an owned path in a `dist/<m>/` changed
+    /// since [`plan`] read it, with nothing written. Then
+    /// [`CoreError::SwapFailed`] and the I/O errors of the swap.
+    pub fn commit(self, vfs: &dyn Vfs) -> Result<(), CoreError> {
+        if self.mode == ExportMode::Check {
+            return Ok(());
         }
-        if self.mode == ExportMode::Build {
-            let plans: Vec<&ExportPlan> = planned.iter().map(|(_, plan)| plan).collect();
-            commit(vfs, &plans)?;
+        let mut swaps = Vec::with_capacity(self.marketplaces.len());
+        for (_, plan) in self.marketplaces {
+            swaps.push(plan?.swap);
         }
-        let mode = self.mode;
-        Ok(VaultReport {
-            marketplaces: planned
-                .into_iter()
-                .map(|(marketplace, plan)| MarketplaceReport {
-                    marketplace,
-                    report: match mode {
-                        ExportMode::Build => built(plan.report),
-                        ExportMode::Check => plan.report,
-                    },
-                })
-                .collect(),
-            refused,
-        })
+        commit(vfs, &swaps)
     }
 }
 
-/// Plans every marketplace of the vault, or the one the request names, and
-/// writes nothing. A marketplace that refuses does not stop the others'
-/// plans: a check reports every one.
+/// Plans every marketplace `loaded` covers for `options`, and writes
+/// nothing. The harnesses are resolved and the vault scanned once for all of
+/// them. A marketplace that refuses does not stop the others' plans.
 ///
 /// # Errors
 ///
-/// What [`load_vault`] refuses: the layout, the root file, an unknown
-/// marketplace. `refused: compare-with` for a build that names
-/// `compare_with`, or a request covering several marketplaces that does.
-/// Each marketplace's own refusal is in its entry.
-fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreError> {
-    if request.mode == ExportMode::Build && request.compare_with.is_some() {
+/// `refused: compare-with` for a build that names `compare_with`, or a
+/// vault of several marketplaces that does. Each marketplace's own refusal
+/// is in its entry; a refused harness name or scan is in every entry.
+pub fn plan(
+    vfs: &dyn Vfs,
+    loaded: &LoadedVault,
+    options: &BuildOptions,
+) -> Result<VaultPlan, CoreError> {
+    if options.mode == ExportMode::Build && options.compare_with.is_some() {
         return Err(CoreError::refused(
             refusal::COMPARE_WITH,
             "a build always writes `dist/<m>/`; `compare_with` is for a check. Nothing was \
              written",
         ));
     }
-    let loaded = load_vault(vfs, &request.vault_root, request.marketplace.as_deref())?;
-    if request.compare_with.is_some() && loaded.marketplaces.len() > 1 {
+    if options.compare_with.is_some() && loaded.marketplaces.len() > 1 {
         return Err(CoreError::refused(
             refusal::COMPARE_WITH,
             "`compare_with` names one built marketplace, and this vault holds several; name \
              one with `marketplace`",
         ));
     }
-    // Pass 1 once for every marketplace. A scan that refuses refuses each
-    // marketplace the same way, so `plan_in` repeats it for each.
-    let scan = crate::discover::discover_in(vfs, &loaded.layout).ok();
+    let shared = built_harnesses(&loaded.settings, &options.harnesses).and_then(|roots| {
+        let scan = crate::discover::discover_in(vfs, &loaded.layout)?;
+        Ok((roots, scan))
+    });
     let marketplaces = loaded
         .marketplaces
         .iter()
         .map(|market| {
-            let mut export = ExportRequest::new(loaded.root.clone());
-            export.marketplace = Some(market.name.clone());
-            export.mode = request.mode;
-            export.harnesses.clone_from(&request.harnesses);
-            export.compare_with.clone_from(&request.compare_with);
-            let plan = match &scan {
-                Some(scan) => plan_with(vfs, &loaded.layout, &loaded.settings, scan, &export),
-                None => plan_in(vfs, &loaded.layout, &export),
+            let plan = match &shared {
+                Ok((roots, scan)) => plan_with(vfs, loaded, scan, roots, market, options),
+                Err(err) => Err(err.duplicate()),
             };
-            (market.clone(), plan)
+            (market.name.clone(), plan)
         })
         .collect();
     Ok(VaultPlan {
-        mode: request.mode,
+        mode: options.mode,
         marketplaces,
     })
 }
 
 /// Builds or checks every marketplace of the vault, or the one the request
-/// names. Every marketplace is planned before any is written. A build writes
-/// every marketplace or none, and a failed swap rolls back every marketplace
-/// already swapped. A check writes nothing, and reports each marketplace
-/// that refused in [`VaultReport::refused`].
+/// names, in one call: [`load_vault`], [`plan`], [`VaultPlan::report`] and
+/// [`VaultPlan::commit`]. A check writes nothing, and reports each
+/// marketplace that refused in [`VaultReport::refused`].
 ///
 /// # Errors
 ///
 /// * What [`load_vault`] refuses: the layout, the root file, an unknown
 ///   marketplace.
-/// * `refused: compare-with`: a build that names
-///   [`VaultRequest::compare_with`], or a request for several marketplaces
-///   that does.
+/// * What [`plan`] refuses: `refused: compare-with`.
 /// * A build only: the first marketplace's refusal, among them
 ///   `refused: empty-marketplace` (no plugin), `unknown-harness` (a harness
 ///   name no harness answers to), `foreign-tree` (output this vault did not
 ///   build) and `path-collision`. Nothing is written.
 /// * A build only: [`CoreError::SwapFailed`] and the I/O errors of the swap.
 pub fn build_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultReport, CoreError> {
-    plan_vault(vfs, request)?.write(vfs)
+    let loaded = load_vault(vfs, &request.vault_root, &request.scope)?;
+    let plan = plan(vfs, &loaded, &request.options)?;
+    let report = plan.report();
+    plan.commit(vfs)?;
+    Ok(report)
 }
 
-/// Loads, renders and compares one marketplace, and writes nothing.
+/// Loads, renders and compares one marketplace with the harnesses `roots`
+/// and the pass 1 `scan` of `loaded`, and writes nothing.
 ///
 /// # Errors
 ///
-/// * Everything [`crate::model::load::load_in`] refuses, among them
-///   `refused: empty-marketplace` (no plugin), `ambiguous-marketplace` (the
-///   vault holds several and none was named), `unknown-marketplace` and
-///   `path-collision`.
-/// * `refused: unknown-harness` — a harness name no harness answers to.
+/// * Everything [`crate::model::load::load_for`] refuses, among them
+///   `refused: empty-marketplace` (no plugin) and `path-collision`.
 /// * `refused: foreign-tree` — output this vault did not build.
-pub(crate) fn plan_in(
-    vfs: &dyn Vfs,
-    layout: &Layout,
-    request: &ExportRequest,
-) -> Result<ExportPlan, CoreError> {
-    let root = read_root_file(vfs, &layout.root)?;
-    // Which harnesses this build renders, before the notes are read.
-    built_harnesses(&root, &request.harnesses)?;
-    let scan = crate::discover::discover_in(vfs, layout)?;
-    plan_with(vfs, layout, &root, &scan, request)
-}
-
-/// [`plan_in`] with the root file read and pass 1 done: `scan` is
-/// [`crate::discover::discover_in`] over `layout`.
 fn plan_with(
     vfs: &dyn Vfs,
-    layout: &Layout,
-    root: &RootFile,
+    loaded: &LoadedVault,
     scan: &DiscoveryReport,
-    request: &ExportRequest,
+    roots: &[Harness],
+    market: &VaultMarketplace,
+    options: &BuildOptions,
 ) -> Result<ExportPlan, CoreError> {
-    let roots = built_harnesses(root, &request.harnesses)?;
-
     // Load once, for every harness this build renders: the marketplace
     // chosen and validated, every body resolved. Everything a build refuses
     // before it renders, it refuses here.
-    let market = load_for(
-        vfs,
-        layout,
-        scan,
-        request.marketplace.as_deref(),
-        &roots,
-        &root.defaults,
-    )?;
-    let warnings = market.warnings.clone();
-    let out = match &request.compare_with {
+    let out = match &options.compare_with {
         Some(path) => normalize(path),
-        None => crate::paths::dist_dir(&normalize(&request.vault_root), &market.folder),
+        None => market.dist.clone(),
     };
+    let scope = BuildScope::Marketplace(market.name.clone());
+    let defaults = &loaded.settings.defaults;
+    let market = load_for(vfs, &loaded.layout, scan, &scope, roots, defaults)?;
+    let warnings = market.warnings.clone();
 
     // One tree per harness, translated from the one model, at the final
     // destination paths. Both modes read this and nothing else; `build`
     // even writes from it.
-    let mut rendered: Vec<BTreeMap<String, PreviewWrite>> = Vec::with_capacity(roots.len());
-    for &spec in &roots {
+    let mut rendered = Vec::with_capacity(roots.len());
+    for &spec in roots {
         rendered.push(Translator(spec).translate(&market)?.files);
     }
 
@@ -747,37 +689,41 @@ fn plan_with(
         .iter()
         .map(|c| ExportUnit::NotCarried {
             root: None,
-            path: c.path.clone(),
-            kind: c.kind.as_str().to_owned(),
+            path: c.path().to_owned(),
+            kind: c.kind(),
         })
         .collect();
-    let mut to_swap: Vec<usize> = Vec::new();
-    for (index, &spec) in roots.iter().enumerate() {
-        let (root_units, equal) = compare_root(vfs, &out, spec, &market, &rendered[index])?;
+    // Taken before the comparison, so `commit` sees a change made after it.
+    let all_owned = roots.iter().flat_map(|spec| spec.owned_paths()).collect();
+    let seen = Snapshot::take(vfs, &out, all_owned)?;
+    let mut drifted = Vec::with_capacity(roots.len());
+    for (&spec, files) in roots.iter().zip(&rendered) {
+        let (root_units, equal) = compare_root(vfs, &out, spec, &market, files)?;
         units.extend(root_units);
-        if !equal {
-            to_swap.push(index);
-        }
+        drifted.push(!equal);
     }
-    let changed = !to_swap.is_empty();
-    let mut swapping = Vec::with_capacity(to_swap.len());
-    let mut rendered: Vec<Option<BTreeMap<String, PreviewWrite>>> =
-        rendered.into_iter().map(Some).collect();
-    for index in to_swap {
-        if let Some(files) = rendered[index].take() {
-            swapping.push((roots[index], files));
+    let mut swap = Swap {
+        base: out,
+        owned: Vec::new(),
+        files: BTreeMap::new(),
+        seen,
+    };
+    for ((spec, files), drifted) in roots.iter().zip(rendered).zip(drifted) {
+        if drifted {
+            swap.owned
+                .extend(spec.owned_paths().into_iter().map(str::to_owned));
+            swap.files.extend(files);
         }
     }
     Ok(ExportPlan {
-        out,
         report: ExportReport {
-            mode: ExportMode::Check,
+            mode: options.mode,
             checked: market.checked,
-            changed,
+            changed: !swap.owned.is_empty(),
             units,
             warnings,
         },
-        swapping,
+        swap,
     })
 }
 
@@ -818,13 +764,13 @@ fn compare_root(
         .plugins
         .values()
         .flat_map(|plugin| &plugin.commands)
-        .filter(|c| !spec.format().carries(c.kind))
+        .filter(|c| !spec.format().carries(c.kind()))
         .collect();
-    uncarried.sort_by(|a, b| a.path.cmp(&b.path));
+    uncarried.sort_by(|a, b| a.path().cmp(b.path()));
     units.extend(uncarried.into_iter().map(|c| ExportUnit::NotCarried {
         root: Some(spec),
-        path: c.path.clone(),
-        kind: c.kind.as_str().to_owned(),
+        path: c.path().to_owned(),
+        kind: c.kind(),
     }));
     Ok((units, diff.equal))
 }
@@ -842,7 +788,7 @@ struct RootDiff {
 }
 
 /// What the destination root actually holds.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 struct DestState {
     /// Root-relative file paths → is-symlink. A symlink never matches: the
     /// render emits bytes, and a link that reads the same resolves elsewhere.
@@ -850,17 +796,43 @@ struct DestState {
     /// Directories holding nothing — invisible to a file diff, removed by the
     /// swap, so the report has to carry them.
     empty_dirs: Vec<String>,
-    /// Immediate directories under the packs folder, for the stale-plugin
-    /// sweep.
-    plugin_dirs: Vec<String>,
 }
 
-/// Reads `base`, but only the paths this harness owns, never the whole
-/// directory: what the swap would replace is exactly what the report may call
-/// stale, and `dist/<m>/` may hold files of its own beside the packs.
-fn scan_destination(vfs: &dyn Vfs, base: &Path, spec: Harness) -> Result<DestState, CoreError> {
+/// What `base` holds under `paths`: [`DestState`], and each file's size,
+/// modification time and execute bit.
+#[derive(PartialEq, Eq)]
+struct Snapshot {
+    paths: Vec<&'static str>,
+    state: DestState,
+    stamps: Vec<Option<(u64, Option<i64>, bool)>>,
+}
+
+impl Snapshot {
+    fn take(vfs: &dyn Vfs, base: &Path, paths: Vec<&'static str>) -> Result<Self, CoreError> {
+        let state = scan_destination(vfs, base, &paths)?;
+        let stamps = state
+            .files
+            .keys()
+            .map(|relative| {
+                let path = base.join(relative);
+                let meta = vfs.metadata(&path).ok()?;
+                Some((meta.len, meta.modified_ns, vfs.is_executable(&path)))
+            })
+            .collect();
+        Ok(Self {
+            paths,
+            state,
+            stamps,
+        })
+    }
+}
+
+/// Reads `base`, but only the `owned` paths, never the whole directory: what
+/// the swap would replace is exactly what the report may call stale, and
+/// `dist/<m>/` may hold files of its own beside the packs.
+fn scan_destination(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestState, CoreError> {
     let mut state = DestState::default();
-    for owned in spec.owned_paths() {
+    for &owned in owned {
         // A link or a file above an owned path is recorded and goes no
         // further: a swap through it would land somewhere else, or fail.
         if let Some((blocker, is_link)) = blocked_above(vfs, base, owned) {
@@ -881,17 +853,22 @@ fn scan_destination(vfs: &dyn Vfs, base: &Path, spec: Harness) -> Result<DestSta
             walk_destination(vfs, base, &path, &mut state)?;
         }
     }
-    let packs = base.join(spec.format().policy.packs);
-    if vfs.exists(&packs) {
-        let mut entries = vfs.read_dir(&packs)?;
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        state.plugin_dirs = entries
-            .into_iter()
-            .filter(|entry| entry.is_dir && !vfs.is_symlink(&packs.join(&entry.name)))
-            .map(|entry| entry.name)
-            .collect();
-    }
     Ok(state)
+}
+
+/// The folders directly in `dir`, by name, links left out. None when `dir`
+/// is missing.
+fn folders_in(vfs: &dyn Vfs, dir: &Path) -> Result<Vec<String>, CoreError> {
+    if !vfs.exists(dir) {
+        return Ok(Vec::new());
+    }
+    let mut entries = vfs.read_dir(dir)?;
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(entries
+        .into_iter()
+        .filter(|entry| entry.is_dir && !vfs.is_symlink(&dir.join(&entry.name)))
+        .map(|entry| entry.name)
+        .collect())
 }
 
 /// The first folder on the way to `owned` that is a link or not a folder, with
@@ -954,8 +931,8 @@ struct DestTree<'v> {
 }
 
 impl<'v> DestTree<'v> {
-    fn scan(vfs: &'v dyn Vfs, base: PathBuf, spec: Harness) -> Result<Self, CoreError> {
-        let state = scan_destination(vfs, &base, spec)?;
+    fn scan(vfs: &'v dyn Vfs, base: PathBuf, owned: &[&str]) -> Result<Self, CoreError> {
+        let state = scan_destination(vfs, &base, owned)?;
         Ok(Self { vfs, base, state })
     }
 
@@ -1088,6 +1065,7 @@ fn admitted_plugins(translator: Translator, market: &Marketplace) -> BTreeMap<&s
 fn describe_root(
     dest: &DestTree<'_>,
     spec: Harness,
+    plugin_dirs: &[String],
     admitted: &BTreeMap<&str, usize>,
     rendered: &BTreeMap<String, PreviewWrite>,
     sets: &FileSets,
@@ -1098,9 +1076,7 @@ fn describe_root(
     // unit, and its files are never reported on their own: the swap removes
     // the directory whole, and a line per file inside it would say the same
     // thing many times.
-    let stale_plugins: BTreeSet<&str> = dest
-        .state
-        .plugin_dirs
+    let stale_plugins: BTreeSet<&str> = plugin_dirs
         .iter()
         .map(String::as_str)
         .filter(|name| !admitted.contains_key(name))
@@ -1118,9 +1094,9 @@ fn describe_root(
             name: (*plugin).to_owned(),
             skills: *skills,
             status: if ok {
-                UnitStatus::Ok
+                UnitStatus::Same
             } else {
-                UnitStatus::Drift
+                UnitStatus::Differs
             },
             version_bump_suggestion: plugin_version_bump(
                 dest, spec, plugin, rendered, slice, config,
@@ -1132,9 +1108,9 @@ fn describe_root(
         units.push(ExportUnit::Manifest {
             root: spec,
             status: if sets.same.contains(manifest) {
-                UnitStatus::Ok
+                UnitStatus::Same
             } else {
-                UnitStatus::Drift
+                UnitStatus::Differs
             },
         });
     }
@@ -1170,7 +1146,7 @@ fn slices_of<'a>(
 ) -> (BTreeMap<&'a str, PluginSlice<'a>>, Vec<(String, StaleKind)>) {
     // Bucket what carries a story by the plugin that owns it. Membership is
     // decided against the two NAME sets, never by path shape alone: a
-    // symlinked plugin directory is absent from `plugin_dirs` and present
+    // symlinked plugin directory is absent from the plugin folders and present
     // among the files, so it is neither carried nor stale, and falls to the
     // loose pile like any other stray.
     let mut slices: BTreeMap<&str, PluginSlice> = BTreeMap::new();
@@ -1268,27 +1244,41 @@ fn diff_root(
     rendered: &BTreeMap<String, PreviewWrite>,
     config: &MarketplaceConfig,
 ) -> Result<RootDiff, CoreError> {
-    let dest = DestTree::scan(vfs, out.to_path_buf(), spec)?;
+    let dest = DestTree::scan(vfs, out.to_path_buf(), &spec.owned_paths())?;
+    let plugin_dirs = folders_in(vfs, &out.join(spec.format().policy.packs))?;
     let sets = dest.compare(rendered);
     Ok(RootDiff {
         equal: root_is_equal(&sets, &dest),
-        units: describe_root(&dest, spec, admitted, rendered, &sets, config),
+        units: describe_root(&dest, spec, &plugin_dirs, admitted, rendered, &sets, config),
         foreign: !dest.built_here(rendered),
     })
 }
 
-/// Stages every plan's drifted trees, then swaps them all into place. A plan
-/// with nothing drifted is skipped. A failed swap rolls back every path
-/// already swapped, in every plan's folder.
-fn commit(vfs: &dyn Vfs, plans: &[&ExportPlan]) -> Result<(), CoreError> {
-    let plans: Vec<&ExportPlan> = plans
-        .iter()
-        .copied()
-        .filter(|plan| !plan.swapping.is_empty())
-        .collect();
-    let stages: Vec<PathBuf> = plans.iter().map(|plan| plan.out.join(STAGE_DIR)).collect();
-    for (plan, stage) in plans.iter().zip(&stages) {
-        if let Err(error) = stage_plan(vfs, plan, stage) {
+/// Stages every swap, then swaps them all into place. A swap that owns
+/// nothing is skipped. A failed swap rolls back every path already swapped,
+/// in every swap's folder.
+///
+/// # Errors
+///
+/// `refused: output-changed` — an owned path changed since the plan, with
+/// nothing written. Then the I/O errors and [`CoreError::SwapFailed`].
+fn commit(vfs: &dyn Vfs, swaps: &[Swap]) -> Result<(), CoreError> {
+    for swap in swaps {
+        if Snapshot::take(vfs, &swap.base, swap.seen.paths.clone())? != swap.seen {
+            return Err(CoreError::refused(
+                refusal::OUTPUT_CHANGED,
+                format!(
+                    "{} changed after this build compared it with the vault. Nothing was \
+                     written; run the build again",
+                    swap.base.display()
+                ),
+            ));
+        }
+    }
+    let swaps: Vec<&Swap> = swaps.iter().filter(|swap| !swap.owned.is_empty()).collect();
+    let stages: Vec<PathBuf> = swaps.iter().map(|swap| swap.base.join(STAGE_DIR)).collect();
+    for (swap, stage) in swaps.iter().zip(&stages) {
+        if let Err(error) = stage_swap(vfs, swap, stage) {
             for stage in &stages {
                 let _ = vfs.remove(stage);
             }
@@ -1296,15 +1286,12 @@ fn commit(vfs: &dyn Vfs, plans: &[&ExportPlan]) -> Result<(), CoreError> {
         }
     }
 
-    // Every completed swap, by plan: its destination and its backup.
+    // Every completed swap, by index into `swaps`: its destination and its
+    // backup.
     let mut swapped: Vec<(usize, PathBuf, PathBuf)> = Vec::new();
-    for (index, (plan, stage)) in plans.iter().zip(&stages).enumerate() {
-        let entries = plan
-            .swapping
-            .iter()
-            .flat_map(|(spec, _)| spec.owned_paths());
-        for entry in entries {
-            let dest = plan.out.join(entry);
+    for (index, (swap, stage)) in swaps.iter().zip(&stages).enumerate() {
+        for entry in &swap.owned {
+            let dest = swap.base.join(entry);
             let staged = stage.join("new").join(entry);
             let saved = stage.join("backup").join(entry);
             let staged = vfs.exists(&staged).then_some(staged);
@@ -1328,46 +1315,18 @@ fn commit(vfs: &dyn Vfs, plans: &[&ExportPlan]) -> Result<(), CoreError> {
                 if let Err(failed) = roll_back(vfs, &swapped) {
                     unrestored.push(failed);
                 }
-                let mut message = format!(
+                let message = format!(
                     "swapping `{entry}` into {}: {error}; everything already swapped was rolled \
                      back and the destination is as it was",
-                    plan.out.display()
+                    swap.base.display()
                 );
-                if unrestored.is_empty() {
-                    for stage in &stages {
-                        let _ = vfs.remove(stage);
-                    }
-                } else {
-                    // The one state this function cannot leave clean: name what
-                    // was not restored and keep its backup instead of deleting it.
-                    let names: Vec<String> =
-                        unrestored.iter().map(|p| p.display().to_string()).collect();
-                    let backups: Vec<String> = stages
-                        .iter()
-                        .map(|stage| stage.join("backup"))
-                        .filter(|backup| {
-                            unrestored.iter().any(|p| {
-                                backup
-                                    .parent()
-                                    .and_then(Path::parent)
-                                    .is_some_and(|out| p.starts_with(out))
-                            })
-                        })
-                        .map(|backup| backup.display().to_string())
-                        .collect();
-                    message.push_str(&format!(
-                        " — except {}, whose rollback failed; the backup survives under {}",
-                        names.join(", "),
-                        backups.join(", ")
-                    ));
-                }
-                return Err(CoreError::SwapFailed(message));
+                return Err(swap_failed(vfs, message, &unrestored, &stages));
             }
             swapped.push((index, dest, saved));
         }
     }
     for (index, dest, _) in &swapped {
-        remove_emptied_folders(vfs, &plans[*index].out, dest)?;
+        remove_emptied_folders(vfs, &swaps[*index].base, dest)?;
     }
     for stage in &stages {
         vfs.remove(stage)?;
@@ -1375,25 +1334,60 @@ fn commit(vfs: &dyn Vfs, plans: &[&ExportPlan]) -> Result<(), CoreError> {
     Ok(())
 }
 
-/// Writes `plan`'s drifted trees under `<stage>/new/`.
-fn stage_plan(vfs: &dyn Vfs, plan: &ExportPlan, stage: &Path) -> Result<(), CoreError> {
+/// The error for a failed swap, after the rollback. With every path restored
+/// the stages go. Otherwise `message` also names what was not restored, and
+/// its backup is kept.
+fn swap_failed(
+    vfs: &dyn Vfs,
+    mut message: String,
+    unrestored: &[PathBuf],
+    stages: &[PathBuf],
+) -> CoreError {
+    if unrestored.is_empty() {
+        for stage in stages {
+            let _ = vfs.remove(stage);
+        }
+        return CoreError::SwapFailed(message);
+    }
+    let names: Vec<String> = unrestored.iter().map(|p| p.display().to_string()).collect();
+    let backups: Vec<String> = stages
+        .iter()
+        .map(|stage| stage.join("backup"))
+        .filter(|backup| {
+            unrestored.iter().any(|p| {
+                backup
+                    .parent()
+                    .and_then(Path::parent)
+                    .is_some_and(|out| p.starts_with(out))
+            })
+        })
+        .map(|backup| backup.display().to_string())
+        .collect();
+    message.push_str(&format!(
+        " — except {}, whose rollback failed; the backup survives under {}",
+        names.join(", "),
+        backups.join(", ")
+    ));
+    CoreError::SwapFailed(message)
+}
+
+/// Writes `swap`'s files under `<stage>/new/`.
+fn stage_swap(vfs: &dyn Vfs, swap: &Swap, stage: &Path) -> Result<(), CoreError> {
     // A stage left by a crashed run is dead weight; a fresh build owns the
     // path.
     if vfs.exists(stage) {
         vfs.remove(stage)?;
     }
     vfs.create_dir_all(&stage.join("backup"))?;
-    vfs.create_dir_all(&plan.out)?;
-    for (_, rendered) in &plan.swapping {
-        for (relative, write) in rendered {
-            let path = stage.join("new").join(Path::new(relative));
-            if let Some(parent) = path.parent() {
-                vfs.create_dir_all(parent)?;
-            }
-            vfs.write_file(&path, &write.bytes)?;
-            if write.executable {
-                vfs.set_executable(&path, true)?;
-            }
+    vfs.create_dir_all(&swap.base)?;
+    for (relative, write) in &swap.files {
+        let path = stage.join("new").join(Path::new(relative));
+        if let Some(parent) = path.parent() {
+            vfs.create_dir_all(parent)?;
+        }
+        vfs.write_file(&path, &write.bytes)?;
+        if write.executable {
+            vfs.set_executable(&path, true)?;
         }
     }
     Ok(())
@@ -1460,14 +1454,16 @@ mod tests {
     use std::cell::Cell;
 
     /// One marketplace's build or check, as `build_vault` runs it.
-    fn export_skills(vfs: &dyn Vfs, request: &ExportRequest) -> Result<ExportReport, CoreError> {
-        let layout = crate::layout::read_layout(vfs, &normalize(&request.vault_root))?;
-        let plan = plan_in(vfs, &layout, request)?;
-        if request.mode == ExportMode::Check {
-            return Ok(plan.report);
+    fn export_skills(vfs: &dyn Vfs, request: &VaultRequest) -> Result<ExportReport, CoreError> {
+        let loaded = load_vault(vfs, &request.vault_root, &request.scope)?;
+        let planned = plan(vfs, &loaded, &request.options)?
+            .marketplaces
+            .remove(0)
+            .1?;
+        if request.options.mode == ExportMode::Build {
+            commit(vfs, std::slice::from_ref(&planned.swap))?;
         }
-        commit(vfs, &[&plan])?;
-        Ok(built(plan.report))
+        Ok(planned.report)
     }
 
     use serde_json::json;
@@ -1541,9 +1537,15 @@ mod tests {
         vfs
     }
 
-    fn request(mode: ExportMode) -> ExportRequest {
-        let mut value = ExportRequest::new("/vault");
-        value.mode = mode;
+    fn request(mode: ExportMode) -> VaultRequest {
+        let mut value = VaultRequest::new("/vault");
+        value.options.mode = mode;
+        value
+    }
+
+    fn request_for(marketplace: &str, mode: ExportMode) -> VaultRequest {
+        let mut value = request(mode);
+        value.scope = BuildScope::Marketplace(marketplace.to_owned());
         value
     }
 
@@ -1611,12 +1613,12 @@ mod tests {
                 ExportUnit::Plugin {
                     root,
                     name,
-                    status: UnitStatus::Drift | UnitStatus::Written,
+                    status: UnitStatus::Differs,
                     ..
                 } => Some((root.to_string(), name.clone())),
                 ExportUnit::Manifest {
                     root,
-                    status: UnitStatus::Drift | UnitStatus::Written,
+                    status: UnitStatus::Differs,
                 } => Some((root.to_string(), "marketplace.json".to_owned())),
                 _ => None,
             })
@@ -1850,14 +1852,7 @@ mod tests {
         assert!(vfs.exists(Path::new(
             "/vault/dist/house/.claude-plugin/marketplace.json"
         )));
-        let again = export_skills(
-            &vfs,
-            &ExportRequest {
-                mode: ExportMode::Check,
-                ..request.clone()
-            },
-        )
-        .unwrap();
+        let again = export_skills(&vfs, &check_of(&request)).unwrap();
         assert!(!again.changed, "{:?}", again.units);
         assert_eq!(again.checked, 3);
     }
@@ -1906,10 +1901,10 @@ mod tests {
 
             vfs.remove(Path::new(ASSETS)).unwrap();
             write(&vfs, &format!("{ASSETS}/{second}"), "second\n");
-            request.mode = ExportMode::Check;
+            request.options.mode = ExportMode::Check;
             let report = export_skills(&vfs, &request).unwrap();
             assert!(report.changed, "{report:?}");
-            request.mode = ExportMode::Build;
+            request.options.mode = ExportMode::Build;
             assert!(export_skills(&vfs, &request).unwrap().changed);
 
             let path = Path::new("/vault/dist/house/.claude-plugin/packs/tools").join(landed);
@@ -2190,7 +2185,7 @@ mod tests {
             ExportUnit::Manifest { root, .. } if *root == Harness::Pi
         )));
         // A rebuild finds the tree its own, and unchanged.
-        request.mode = ExportMode::Check;
+        request.options.mode = ExportMode::Check;
         assert!(!export_skills(&vfs, &request).unwrap().changed);
     }
 
@@ -2207,7 +2202,7 @@ mod tests {
 
         // Built for Claude Code alone, which keeps the bare name, it builds.
         let mut claude = request(ExportMode::Build);
-        claude.harnesses = BTreeSet::from(["claude".to_owned()]);
+        claude.options.harnesses = BTreeSet::from(["claude".to_owned()]);
         export_skills(&vfs, &claude).unwrap();
     }
 
@@ -2267,7 +2262,7 @@ mod tests {
 
         // Unchanged: `check` agrees with what was just built.
         let mut check_request = request.clone();
-        check_request.mode = ExportMode::Check;
+        check_request.options.mode = ExportMode::Check;
         assert!(!export_skills(&vfs, &check_request).unwrap().changed);
 
         // The source moves, out from under the build; `check` catches it the
@@ -2502,7 +2497,7 @@ mod tests {
             "---\n---\n",
         );
         let mut request = request(ExportMode::Build);
-        request.marketplace = Some("house".to_owned());
+        request.scope = BuildScope::Marketplace("house".to_owned());
         let report = export_skills(&vfs, &request).unwrap();
         assert!(
             report
@@ -2776,10 +2771,10 @@ mod tests {
             report.units.iter().all(|unit| matches!(
                 unit,
                 ExportUnit::Plugin {
-                    status: UnitStatus::Unchanged,
+                    status: UnitStatus::Same,
                     ..
                 } | ExportUnit::Manifest {
-                    status: UnitStatus::Unchanged,
+                    status: UnitStatus::Same,
                     ..
                 }
             )),
@@ -2828,7 +2823,7 @@ mod tests {
         let report = check(&vfs);
         assert_eq!(
             plugin_status(&report, "claude", "git-tools"),
-            UnitStatus::Drift
+            UnitStatus::Differs
         );
         assert_eq!(
             plugin_version_bump(&report, "claude", "git-tools"),
@@ -2860,7 +2855,7 @@ mod tests {
         let report = check(&vfs);
         assert_eq!(
             plugin_status(&report, "claude", "git-tools"),
-            UnitStatus::Drift
+            UnitStatus::Differs
         );
         assert_eq!(plugin_version_bump(&report, "claude", "git-tools"), None);
     }
@@ -2875,7 +2870,7 @@ mod tests {
         let report = check(&vfs);
         assert_eq!(
             plugin_status(&report, "claude", "git-tools"),
-            UnitStatus::Ok
+            UnitStatus::Same
         );
         assert_eq!(plugin_version_bump(&report, "claude", "git-tools"), None);
     }
@@ -2896,7 +2891,7 @@ mod tests {
         let report = check(&vfs);
         assert_eq!(
             plugin_status(&report, "claude", "git-tools"),
-            UnitStatus::Drift
+            UnitStatus::Differs
         );
         assert_eq!(plugin_version_bump(&report, "claude", "git-tools"), None);
     }
@@ -2945,18 +2940,24 @@ mod tests {
         let report = check(&vfs);
 
         assert!(report.changed);
-        assert_eq!(plugin_status(&report, "claude", "tools"), UnitStatus::Drift);
+        assert_eq!(
+            plugin_status(&report, "claude", "tools"),
+            UnitStatus::Differs
+        );
         assert_eq!(
             plugin_status(&report, "claude", "git-tools"),
-            UnitStatus::Ok
+            UnitStatus::Same
         );
-        assert_eq!(plugin_status(&report, "codex", "tools"), UnitStatus::Ok);
-        assert_eq!(plugin_status(&report, "codex", "git-tools"), UnitStatus::Ok);
+        assert_eq!(plugin_status(&report, "codex", "tools"), UnitStatus::Same);
+        assert_eq!(
+            plugin_status(&report, "codex", "git-tools"),
+            UnitStatus::Same
+        );
         assert!(
             report.units.iter().all(|u| !matches!(
                 u,
                 ExportUnit::Manifest {
-                    status: UnitStatus::Drift,
+                    status: UnitStatus::Differs,
                     ..
                 }
             )),
@@ -3001,7 +3002,7 @@ mod tests {
              double-report: {report:?}"
         );
         // The vault's own plugins are still OK; staleness is the only drift.
-        assert_eq!(plugin_status(&report, "claude", "tools"), UnitStatus::Ok);
+        assert_eq!(plugin_status(&report, "claude", "tools"), UnitStatus::Same);
 
         let report = build(&vfs);
         assert!(report.changed);
@@ -3088,8 +3089,11 @@ mod tests {
         vfs.set_executable(published, false).unwrap();
         let report = check(&vfs);
         assert!(report.changed, "{report:?}");
-        assert_eq!(plugin_status(&report, "claude", "tools"), UnitStatus::Drift);
-        assert_eq!(plugin_status(&report, "codex", "tools"), UnitStatus::Ok);
+        assert_eq!(
+            plugin_status(&report, "claude", "tools"),
+            UnitStatus::Differs
+        );
+        assert_eq!(plugin_status(&report, "codex", "tools"), UnitStatus::Same);
 
         build(&vfs);
         assert!(vfs.is_executable(published), "the bit was repaired");
@@ -3218,7 +3222,7 @@ mod tests {
     }
 
     /// A vault at a repository root, with a `.git` and a file of its own.
-    fn repo_vault(vfs: &MemVfs) -> ExportRequest {
+    fn repo_vault(vfs: &MemVfs) -> VaultRequest {
         write(
             vfs,
             "/repo/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
@@ -3299,7 +3303,7 @@ mod tests {
         export_skills(&vfs, &request).unwrap();
 
         let mut checking = request.clone();
-        checking.mode = ExportMode::Check;
+        checking.options.mode = ExportMode::Check;
         let report = export_skills(&vfs, &checking).unwrap();
         assert!(!report.changed, "{:?}", report.units);
         // The repository around it is not drift, and never reported.
@@ -3356,7 +3360,7 @@ mod tests {
     fn a_harness_can_be_selected_and_the_others_are_not_rendered() {
         let vfs = MemVfs::new();
         let mut request = repo_vault(&vfs);
-        request.harnesses.insert("claude".to_owned());
+        request.options.harnesses.insert("claude".to_owned());
 
         export_skills(&vfs, &request).unwrap();
         assert!(vfs.exists(Path::new(
@@ -3371,7 +3375,7 @@ mod tests {
         // crate exists to prevent.
         let vfs = MemVfs::new();
         let mut request = repo_vault(&vfs);
-        request.harnesses.insert("windsurf".to_owned());
+        request.options.harnesses.insert("windsurf".to_owned());
 
         let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
@@ -3410,11 +3414,10 @@ mod tests {
     }
 
     /// `request` as a check.
-    fn check_of(request: &ExportRequest) -> ExportRequest {
-        ExportRequest {
-            mode: ExportMode::Check,
-            ..request.clone()
-        }
+    fn check_of(request: &VaultRequest) -> VaultRequest {
+        let mut check = request.clone();
+        check.options.mode = ExportMode::Check;
+        check
     }
 
     #[test]
@@ -3520,7 +3523,7 @@ mod tests {
             "/repo/marketplaces/house/plugins/gear/commands/run/run.md",
             "---\ndescription: Run.\n---\n\nBody.\n",
         );
-        request.harnesses = BTreeSet::from(["pi".to_owned()]);
+        request.options.harnesses = BTreeSet::from(["pi".to_owned()]);
 
         export_skills(&vfs, &request).unwrap();
         assert!(!vfs.exists(Path::new("/repo/dist/house/.pi/packs")));
@@ -3576,7 +3579,7 @@ mod tests {
 
     /// Build `/repo`, then rewrite the generated-file marker in every built
     /// file to the one an earlier release of the tool wrote.
-    fn built_tree_with_an_earlier_marker(vfs: &MemVfs, request: &ExportRequest) {
+    fn built_tree_with_an_earlier_marker(vfs: &MemVfs, request: &VaultRequest) {
         export_skills(vfs, request).unwrap();
         for (relative, bytes, _) in files_under(vfs, Path::new("/repo/dist/house")) {
             let text = String::from_utf8_lossy(&bytes)
@@ -3912,41 +3915,22 @@ mod tests {
         assert!(manifest.contains(r#""name": "house""#), "{manifest}");
     }
 
-    /// But a vault that DOES hold marketplaces still refuses a name that is not
-    /// one of them: there, the selection can be wrong, and a typo must not
-    /// quietly build something else.
-    #[test]
-    fn naming_a_marketplace_a_populated_vault_lacks_is_still_refused() {
-        let vfs = two_marketplaces();
-        let request = ExportRequest {
-            marketplace: Some("gamma".to_owned()),
-            ..request(ExportMode::Build)
-        };
-        let err = export_skills(&vfs, &request).unwrap_err().to_string();
-        assert!(err.contains("unknown-marketplace"), "{err}");
-        assert!(err.contains("`acme`") && err.contains("`beta`"), "{err}");
-    }
-
+    /// A load of one marketplace from a vault of several must name it.
     #[test]
     fn two_marketplaces_are_refused_rather_than_flattened_onto_one_tree() {
         let vfs = two_marketplaces();
-        let err = export_skills(&vfs, &request(ExportMode::Build))
+        let err = crate::model::load(&vfs, &crate::model::LoadRequest::new("/vault"))
             .unwrap_err()
             .to_string();
         assert!(err.contains("ambiguous-marketplace"), "{err}");
         assert!(err.contains("`acme`"), "{err}");
         assert!(err.contains("`beta`"), "{err}");
-        // Nothing was rendered on the way to the refusal.
-        assert!(paths_under(&vfs, Path::new("/vault/dist/house")).is_empty());
     }
 
     #[test]
     fn naming_a_marketplace_builds_that_one_and_leaves_the_other_out() {
         let vfs = two_marketplaces();
-        let request = ExportRequest {
-            marketplace: Some("acme".to_owned()),
-            ..request(ExportMode::Build)
-        };
+        let request = request_for("acme", ExportMode::Build);
         let report = export_skills(&vfs, &request).unwrap();
         assert_eq!(report.checked, 1);
         assert!(
@@ -3958,16 +3942,19 @@ mod tests {
         );
     }
 
+    /// A typo must not quietly load or build something else.
     #[test]
     fn an_unknown_marketplace_is_refused_naming_the_ones_there_are() {
         let vfs = two_marketplaces();
-        let request = ExportRequest {
-            marketplace: Some("gamma".to_owned()),
-            ..request(ExportMode::Build)
-        };
-        let err = export_skills(&vfs, &request).unwrap_err().to_string();
+        let mut load = crate::model::LoadRequest::new("/vault");
+        load.scope = BuildScope::Marketplace("gamma".to_owned());
+        let err = crate::model::load(&vfs, &load).unwrap_err().to_string();
         assert!(err.contains("unknown-marketplace"), "{err}");
         assert!(err.contains("it holds `acme` and `beta`"), "{err}");
+        let request = request_for("gamma", ExportMode::Build);
+        let err = export_skills(&vfs, &request).unwrap_err().to_string();
+        assert!(err.contains("unknown-marketplace"), "{err}");
+        assert!(err.contains("it holds `acme`, `beta`"), "{err}");
     }
 
     /// A marketplace whose one plugin holds only an agent builds the plugin's
@@ -3987,10 +3974,7 @@ mod tests {
             &note("reviewer"),
         );
 
-        let request = ExportRequest {
-            marketplace: Some("beta".to_owned()),
-            ..request(ExportMode::Build)
-        };
+        let request = request_for("beta", ExportMode::Build);
         let report = export_skills(&vfs, &request).unwrap();
         assert!(vfs.exists(Path::new(
             "/vault/dist/beta/.claude-plugin/packs/core/.claude-plugin/plugin.json"
@@ -4017,10 +4001,7 @@ mod tests {
             &note("ship"),
         );
 
-        let request = ExportRequest {
-            marketplace: Some("beta".to_owned()),
-            ..request(ExportMode::Build)
-        };
+        let request = request_for("beta", ExportMode::Build);
         let report = export_skills(&vfs, &request).unwrap();
         assert_eq!(report.mode, ExportMode::Build);
         assert!(
@@ -4064,10 +4045,7 @@ mod tests {
         vfs.write_file(&references.join("team-logo.png"), b"PNG")
             .unwrap();
 
-        let request = ExportRequest {
-            marketplace: Some("beta".to_owned()),
-            ..request(ExportMode::Build)
-        };
+        let request = request_for("beta", ExportMode::Build);
         export_skills(&vfs, &request).unwrap();
         let ship = text_at(
             &vfs,
@@ -4091,10 +4069,7 @@ mod tests {
             &note("ship"),
         );
 
-        let build = ExportRequest {
-            marketplace: Some("beta".to_owned()),
-            ..request(ExportMode::Build)
-        };
+        let build = request_for("beta", ExportMode::Build);
         let report = export_skills(&vfs, &build).unwrap();
         assert!(
             report.units.iter().any(|unit| matches!(
@@ -4105,14 +4080,7 @@ mod tests {
             report.units
         );
 
-        let checked = export_skills(
-            &vfs,
-            &ExportRequest {
-                marketplace: Some("beta".to_owned()),
-                ..request(ExportMode::Check)
-            },
-        )
-        .unwrap();
+        let checked = export_skills(&vfs, &request_for("beta", ExportMode::Check)).unwrap();
         assert!(!checked.changed, "{:?}", checked.units);
         assert!(
             !checked
@@ -4141,10 +4109,7 @@ mod tests {
         );
 
         for mode in [ExportMode::Check, ExportMode::Build] {
-            let request = ExportRequest {
-                marketplace: Some("beta".to_owned()),
-                ..request(mode)
-            };
+            let request = request_for("beta", mode);
             let message = export_skills(&vfs, &request).unwrap_err().to_string();
             assert!(message.contains("refused: layout"), "{message}");
             assert!(message.contains("hooks/lint-on-write.md"), "{message}");
@@ -4169,10 +4134,7 @@ mod tests {
             &note("ship"),
         );
 
-        let request = ExportRequest {
-            marketplace: Some("beta".to_owned()),
-            ..request(ExportMode::Build)
-        };
+        let request = request_for("beta", ExportMode::Build);
         export_skills(&vfs, &request).unwrap();
 
         assert!(vfs.exists(Path::new(
@@ -4310,12 +4272,12 @@ mod tests {
                     root: Harness::Claude,
                     name: "tools".to_owned(),
                     skills: 2,
-                    status: UnitStatus::Drift,
+                    status: UnitStatus::Differs,
                     version_bump_suggestion: None,
                 },
                 ExportUnit::Manifest {
                     root: Harness::Codex,
-                    status: UnitStatus::Ok,
+                    status: UnitStatus::Same,
                 },
                 ExportUnit::Stale {
                     root: Harness::Claude,
@@ -4327,11 +4289,11 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&report).unwrap(),
-            r#"{"mode":"check","checked":3,"changed":true,"units":[{"unit":"plugin","root":"claude","name":"tools","skills":2,"status":"drift","version_bump_suggestion":null},{"unit":"manifest","root":"codex","status":"ok"},{"unit":"stale","root":"claude","path":"plugins/old","kind":"plugin"}],"warnings":[]}"#
+            r#"{"mode":"check","checked":3,"changed":true,"units":[{"unit":"plugin","root":"claude","name":"tools","skills":2,"status":"differs","version_bump_suggestion":null},{"unit":"manifest","root":"codex","status":"same"},{"unit":"stale","root":"claude","path":"plugins/old","kind":"plugin"}],"warnings":[]}"#
         );
         // And a request with no mode means build, the write.
         let request: VaultRequest = serde_json::from_str(r#"{"vault_root":"/v"}"#).unwrap();
-        assert_eq!(request.mode, ExportMode::Build);
+        assert_eq!(request.options.mode, ExportMode::Build);
     }
 
     /// A build that quietly omitted an agent would be the failure this crate
@@ -4368,7 +4330,7 @@ mod tests {
             path,
             "marketplaces/house/plugins/core/agents/triage/triage.md"
         );
-        assert_eq!(kind, "agent");
+        assert_eq!(*kind, EntityKind::Agent);
         // And the skill still built.
         assert!(
             report
@@ -4447,7 +4409,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let vault = dir.path().join("vault");
         copy_tree(&fixture, &vault);
-        let request = ExportRequest::new(vault);
+        let request = VaultRequest::new(vault);
 
         let report = export_skills(&NativeVfs, &request).unwrap();
         assert_eq!(report.checked, 1);
@@ -4475,10 +4437,7 @@ mod tests {
                 .exists()
         );
 
-        let check = ExportRequest {
-            mode: ExportMode::Check,
-            ..request
-        };
+        let check = check_of(&request);
         let report = export_skills(&NativeVfs, &check).unwrap();
         assert!(!report.changed, "{report:?}");
     }

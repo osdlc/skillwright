@@ -79,6 +79,7 @@ export type {
   MarketplaceRefusal,
   MarketplaceReport,
   Plugin,
+  Position,
   Component,
   RootFile,
   SharedDefaults,

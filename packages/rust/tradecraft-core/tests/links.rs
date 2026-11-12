@@ -5,7 +5,9 @@
 
 use std::path::Path;
 
-use tradecraft_core::{CoreError, DiscoveryWarning, ExportMode, MemVfs, Vfs, load_vault};
+use tradecraft_core::{
+    BuildScope, CoreError, DiscoveryWarning, MemVfs, VaultRequest, Vfs, load_vault,
+};
 
 /// `build_vault` over the one marketplace a request covers: its report.
 fn export(
@@ -62,10 +64,10 @@ fn build(vfs: &dyn Vfs) -> Result<Vec<DiscoveryWarning>, CoreError> {
 
 /// Builds `harnesses`, or what the root file names when empty.
 fn build_for(vfs: &dyn Vfs, harnesses: &[&str]) -> Result<Vec<DiscoveryWarning>, CoreError> {
-    let loaded = load_vault(vfs, Path::new("/v"), None)?;
-    let mut request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let loaded = load_vault(vfs, Path::new("/v"), &BuildScope::Vault)?;
+    let mut request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
     if !harnesses.is_empty() {
-        request.harnesses = harnesses.iter().map(|h| (*h).to_owned()).collect();
+        request.options.harnesses = harnesses.iter().map(|h| (*h).to_owned()).collect();
     }
     export(vfs, &request).map(|report| report.warnings)
 }
@@ -143,8 +145,8 @@ fn put_disk(tmp: &tempfile::TempDir, rel: &str, text: &str) {
 fn disk_refusal(tmp: &tempfile::TempDir) -> String {
     let vfs = tradecraft_core::NativeVfs;
     let root = tmp.path().join("v");
-    let result = load_vault(&vfs, &root, None).and_then(|loaded| {
-        let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let result = load_vault(&vfs, &root, &BuildScope::Vault).and_then(|loaded| {
+        let request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
         export(&vfs, &request).map(|_| ())
     });
     match result {
@@ -311,8 +313,8 @@ fn a_symlink_in_a_never_ship_folder_is_not_followed() {
 
     let vfs = tradecraft_core::NativeVfs;
     let root = tmp.path().join("v");
-    let loaded = load_vault(&vfs, &root, None).unwrap();
-    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let loaded = load_vault(&vfs, &root, &BuildScope::Vault).unwrap();
+    let request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
     export(&vfs, &request).unwrap();
     let pack = root.join(CLAUDE);
     assert!(pack.join("skills/author/SKILL.md").is_file());

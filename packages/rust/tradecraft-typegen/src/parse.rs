@@ -57,6 +57,11 @@ pub struct SerdeAttrs {
     pub skip: bool,
     /// `#[serde(tag = "...")]` — an internally tagged enum.
     pub tag: Option<String>,
+    /// `#[serde(from = "...")]` — the type the wire carries in its place
+    /// when serde reads it.
+    pub from: Option<String>,
+    /// `#[serde(into = "...")]` — the same, when serde writes it.
+    pub into: Option<String>,
 }
 
 /// One named field of a struct or a struct variant.
@@ -435,6 +440,8 @@ fn serde_attrs(attrs: &[syn::Attribute]) -> SerdeAttrs {
                 "rename_all" => out.rename_all = meta_str(&meta),
                 "rename_all_fields" => out.rename_all_fields = meta_str(&meta),
                 "tag" => out.tag = meta_str(&meta),
+                "from" => out.from = meta_str(&meta),
+                "into" => out.into = meta_str(&meta),
                 _ => {}
             }
             // Consume any `= "..."` this key carried, so parsing continues.
@@ -773,5 +780,28 @@ mod tests {
         ]);
         let err = emit_response(types, "Wire").expect_err("the clash must be refused");
         assert!(err.contains("two public types are named `Dup`"), "{err}");
+    }
+
+    /// A `from` type is spelled as its wire type only when `into` names the
+    /// same type.
+    #[test]
+    fn a_from_type_needs_a_matching_into() {
+        let report = "pub struct Report { pub scope: Scope }";
+        for (attrs, refused) in [
+            (
+                r#"#[serde(from = "Option<String>", into = "Option<String>")]"#,
+                false,
+            ),
+            (r#"#[serde(from = "Option<String>")]"#, true),
+            (
+                r#"#[serde(from = "Option<String>", into = "String")]"#,
+                true,
+            ),
+        ] {
+            let scope = format!("{attrs} pub enum Scope {{ Vault }}");
+            let types = collect(&[("a.rs", report), ("b.rs", &scope)]);
+            let emitted = emit_response(types, "Report");
+            assert_eq!(emitted.is_err(), refused, "{attrs}: {emitted:?}");
+        }
     }
 }

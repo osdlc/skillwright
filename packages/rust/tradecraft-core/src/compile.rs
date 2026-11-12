@@ -76,7 +76,7 @@ use crate::hooks_file::{CANONICAL_ROOT, RootKind, plugin_root_refs};
 use crate::layout::{
     Layout, LayoutFile, MARKETPLACES_DIR, PLUGINS_DIR, Place, SharedDir, Unreachable, reach,
 };
-use crate::model::{LinkForm, LinkedComponent, PluginRootPath, ResolvedRef};
+use crate::model::{LinkForm, LinkedComponent, PluginRootPath, ResolvedRef, SkillId};
 use crate::refusal;
 use crate::skill::{forward_slashed, read_utf8};
 use crate::vfs::{Vfs, normalize};
@@ -115,37 +115,15 @@ impl<'a> CompileSource<'a> {
     }
 }
 
-/// One component a call can name: its entry note, its kind and the plugin
-/// that ships it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexedSkill {
-    /// Absolute path of the component's entry note.
-    pub entry_path: PathBuf,
-    /// The plugin that ships it.
-    pub plugin: String,
-    /// The source `name`, never prefixed.
-    pub name: String,
-    /// A skill, a command or an agent. A call to an agent is refused: no
-    /// pack contains agents.
-    pub kind: EntityKind,
-}
-
-impl IndexedSkill {
-    /// The closure's spelling of this component: `plugin:name`.
-    fn call_id(&self) -> String {
-        format!("{}:{}", self.plugin, self.name)
-    }
-}
-
 /// Every component a compile's calls may name, keyed by entry path.
 #[derive(Debug, Clone, Default)]
 pub struct SkillIndex {
-    by_path: BTreeMap<PathBuf, IndexedSkill>,
+    by_path: BTreeMap<PathBuf, SkillId>,
 }
 
 impl SkillIndex {
     /// Builds an index from the given components.
-    pub fn new(skills: impl IntoIterator<Item = IndexedSkill>) -> Self {
+    pub fn new(skills: impl IntoIterator<Item = SkillId>) -> Self {
         SkillIndex {
             by_path: skills
                 .into_iter()
@@ -158,7 +136,7 @@ impl SkillIndex {
     }
 
     /// Every component named `name`, in path order.
-    fn by_name(&self, name: &str) -> Vec<&IndexedSkill> {
+    fn by_name(&self, name: &str) -> Vec<&SkillId> {
         self.by_path
             .values()
             .filter(|skill| skill.name == name)
@@ -202,7 +180,7 @@ pub(crate) struct Recorded {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CallSite {
     /// The skill the call names.
-    pub skill: IndexedSkill,
+    pub skill: SkillId,
     /// The call's target as the author wrote it, fragment and all.
     pub destination: String,
     /// The note the call is in, as a refusal names it.
@@ -647,7 +625,7 @@ struct Renderer<'a> {
     /// runs; the walk is the only place that knows it.
     contributing: BTreeMap<String, BTreeSet<String>>,
     call_context: &'a CallContext<'a>,
-    /// Per emitted file, the [`IndexedSkill::call_id`]s it calls.
+    /// Per emitted file, the [`SkillId::call_id`]s it calls.
     calls: BTreeMap<String, BTreeSet<String>>,
     /// Hand-written calls found in any text this compile builds, each as
     /// the refusal names it, refused together once every file is built.
@@ -3466,8 +3444,8 @@ mod tests {
 
     // --- Calls ---------------------------------------------------------------
 
-    fn indexed(path: &str, name: &str) -> IndexedSkill {
-        IndexedSkill {
+    fn indexed(path: &str, name: &str) -> SkillId {
+        SkillId {
             entry_path: PathBuf::from(path),
             plugin: "tools".to_owned(),
             name: name.to_owned(),

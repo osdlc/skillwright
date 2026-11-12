@@ -101,6 +101,20 @@ impl CoreError {
         reason(self.token().map(Token::as_str), &self.detail())
     }
 
+    /// The same error again, for a failure shared by several marketplaces.
+    /// An I/O error keeps its kind and its words.
+    pub(crate) fn duplicate(&self) -> Self {
+        match self {
+            Self::PathEscapesRoot(path) => Self::PathEscapesRoot(path.clone()),
+            Self::Io { path, source } => {
+                Self::io(path, std::io::Error::new(source.kind(), source.to_string()))
+            }
+            Self::Refused { token, message } => Self::refused(*token, message.clone()),
+            Self::Projection(message) => Self::Projection(message.clone()),
+            Self::SwapFailed(message) => Self::SwapFailed(message.clone()),
+        }
+    }
+
     /// Attach a path to an [`std::io::Error`]. Threading the path through
     /// every `?` is the whole reason this helper exists.
     pub fn io(path: impl AsRef<Path>, source: std::io::Error) -> Self {
@@ -202,5 +216,19 @@ mod tests {
         assert_eq!(err.token(), None);
         assert_eq!(err.detail(), err.to_string());
         assert_eq!(err.reason(), err.to_string());
+    }
+
+    #[test]
+    fn a_duplicated_io_error_keeps_its_kind_and_words() {
+        let err = CoreError::io(
+            "/tmp/SKILL.md",
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+        );
+        let copy = err.duplicate();
+        assert_eq!(copy.to_string(), err.to_string());
+        let CoreError::Io { source, .. } = copy else {
+            panic!("{copy:?}");
+        };
+        assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
     }
 }

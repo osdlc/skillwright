@@ -1,7 +1,7 @@
 //! The report's format gate. A format change in `src/report.rs` that is not also made here must fail.
 
 use skillwright::report::{render_export_tally, render_unit_line};
-use tradecraft_core::{ExportMode, ExportUnit, Harness, StaleKind, UnitStatus};
+use tradecraft_core::{EntityKind, ExportMode, ExportUnit, Harness, StaleKind, UnitStatus};
 
 fn plugin(status: UnitStatus) -> ExportUnit {
     ExportUnit::Plugin {
@@ -40,7 +40,7 @@ fn not_carried() -> ExportUnit {
     ExportUnit::NotCarried {
         root: None,
         path: "marketplaces/house/plugins/tools/agents/triage.md".to_string(),
-        kind: "agent".to_string(),
+        kind: EntityKind::Agent,
     }
 }
 
@@ -62,7 +62,7 @@ mod render_unit_line_tests {
         let unit = ExportUnit::NotCarried {
             root: Some(Harness::Codex),
             path: "marketplaces/house/plugins/tools/commands/ship.md".to_string(),
-            kind: "command".to_string(),
+            kind: EntityKind::Command,
         };
         assert_eq!(
             render_unit_line(&unit, ExportMode::Build),
@@ -91,11 +91,11 @@ mod render_unit_line_tests {
     #[test]
     fn the_three_original_variants_are_unchanged() {
         assert_eq!(
-            render_unit_line(&plugin(UnitStatus::Written), ExportMode::Build),
+            render_unit_line(&plugin(UnitStatus::Differs), ExportMode::Build),
             "claude/tools  written · 2 skills"
         );
         assert_eq!(
-            render_unit_line(&manifest(UnitStatus::Ok), ExportMode::Check),
+            render_unit_line(&manifest(UnitStatus::Same), ExportMode::Check),
             "claude  ok · marketplace manifest"
         );
         assert_eq!(
@@ -134,13 +134,13 @@ mod render_export_tally_tests {
         // carry. Keying on `unit.status` files a not-carried member under
         // `undefined`.
         let units = vec![
-            plugin(UnitStatus::Written),
-            plugin(UnitStatus::Unchanged),
-            manifest(UnitStatus::Written),
+            plugin(UnitStatus::Differs),
+            plugin(UnitStatus::Same),
+            manifest(UnitStatus::Differs),
             stale(),
             not_carried(),
         ];
-        let line = render_export_tally(&units);
+        let line = render_export_tally(&units, ExportMode::Build);
         let total: u32 = line
             .split(|c: char| !c.is_ascii_digit())
             .filter(|s| !s.is_empty())
@@ -153,18 +153,40 @@ mod render_export_tally_tests {
     #[test]
     fn not_carried_is_counted_beside_stale_not_among_the_statuses() {
         assert_eq!(
-            render_export_tally(&[plugin(UnitStatus::Written), not_carried(), not_carried()]),
+            render_export_tally(
+                &[plugin(UnitStatus::Differs), not_carried(), not_carried()],
+                ExportMode::Build
+            ),
             "1 written, 2 not carried"
         );
     }
 
     #[test]
     fn a_report_holding_only_not_carried_members_still_reports_them() {
-        assert_eq!(render_export_tally(&[not_carried()]), "1 not carried");
+        assert_eq!(
+            render_export_tally(&[not_carried()], ExportMode::Build),
+            "1 not carried"
+        );
     }
 
     #[test]
     fn an_empty_report_says_so() {
-        assert_eq!(render_export_tally(&[]), "nothing to report");
+        assert_eq!(
+            render_export_tally(&[], ExportMode::Check),
+            "nothing to report"
+        );
+    }
+
+    #[test]
+    fn the_mode_picks_the_status_words() {
+        let units = [plugin(UnitStatus::Differs), manifest(UnitStatus::Same)];
+        assert_eq!(
+            render_export_tally(&units, ExportMode::Check),
+            "1 drift, 1 ok"
+        );
+        assert_eq!(
+            render_export_tally(&units, ExportMode::Build),
+            "1 written, 1 unchanged"
+        );
     }
 }

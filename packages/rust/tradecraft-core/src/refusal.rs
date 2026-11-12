@@ -89,6 +89,8 @@ pub const NO_RENDERER: Token = Token("no-renderer");
 pub const NONCHARACTER: Token = Token("noncharacter");
 /// A `version` that is not semver, so there is nothing to bump.
 pub const NON_SEMVER: Token = Token("non-semver");
+/// An owned path in `dist/<m>/` changed between a build's plan and its write.
+pub const OUTPUT_CHANGED: Token = Token("output-changed");
 /// Two notes or files resolve onto one path.
 pub const PATH_COLLISION: Token = Token("path-collision");
 /// A plugin-root path that names no file.

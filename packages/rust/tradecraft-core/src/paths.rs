@@ -5,8 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::CoreError;
-use crate::export::{ExportMode, VaultRequest};
 use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
 use crate::refusal;
 use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
@@ -74,6 +75,41 @@ pub fn resolve_path(path: &str, base: &Path, home: &Path) -> PathBuf {
     }
 }
 
+/// Which part of the vault a run covers. On the wire it is the optional
+/// `marketplace` key: absent is [`BuildScope::Vault`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Option<String>", into = "Option<String>")]
+pub enum BuildScope {
+    /// Every marketplace. A load of one marketplace takes the vault's only
+    /// one.
+    #[default]
+    Vault,
+    /// The marketplace of this folder.
+    Marketplace(String),
+}
+
+impl BuildScope {
+    /// The marketplace this scope names, `None` for the whole vault.
+    pub fn marketplace(&self) -> Option<&str> {
+        match self {
+            Self::Vault => None,
+            Self::Marketplace(name) => Some(name),
+        }
+    }
+}
+
+impl From<Option<String>> for BuildScope {
+    fn from(marketplace: Option<String>) -> Self {
+        marketplace.map_or(Self::Vault, Self::Marketplace)
+    }
+}
+
+impl From<BuildScope> for Option<String> {
+    fn from(scope: BuildScope) -> Self {
+        scope.marketplace().map(str::to_owned)
+    }
+}
+
 /// One marketplace of a loaded vault.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -110,16 +146,6 @@ impl LoadedVault {
     pub fn marketplace(&self, name: &str) -> Option<&VaultMarketplace> {
         self.marketplaces.iter().find(|m| m.name == name)
     }
-
-    /// The build or check of `marketplace`, against its `dist/<m>/` folder,
-    /// for [`crate::build_vault`]. The core reads the root file's defaults
-    /// and harnesses itself.
-    pub fn vault_request(&self, marketplace: &VaultMarketplace, mode: ExportMode) -> VaultRequest {
-        let mut request = VaultRequest::new(self.root.clone());
-        request.marketplace = Some(marketplace.name.clone());
-        request.mode = mode;
-        request
-    }
 }
 
 /// Where a build writes the marketplace `name` of the vault at `root`:
@@ -129,8 +155,7 @@ pub fn dist_dir(root: &Path, name: &str) -> PathBuf {
 }
 
 /// Load the vault at `root`: check its layout, read its root file, and list
-/// every marketplace, or only `marketplace` when one is named. A build reads
-/// each marketplace's note.
+/// the marketplaces `scope` covers. A build reads each marketplace's note.
 /// Find `root` first with [`crate::layout::find_vault_root`], or check a
 /// given one with [`crate::layout::check_vault_root`].
 ///
@@ -139,12 +164,13 @@ pub fn dist_dir(root: &Path, name: &str) -> PathBuf {
 /// * `refused: layout` — `root` is not a vault root, or the vault breaks the
 ///   layout (spec section 11).
 /// * `refused: malformed-root-file` — the root file cannot be read or parsed.
-/// * `refused: unknown-marketplace` — `marketplace` names no marketplace.
+/// * `refused: unknown-marketplace` — `scope` names no marketplace.
 pub fn load_vault(
     vfs: &dyn Vfs,
     root: &Path,
-    marketplace: Option<&str>,
+    scope: &BuildScope,
 ) -> Result<LoadedVault, CoreError> {
+    let marketplace = scope.marketplace();
     let root = &crate::vfs::normalize(root);
     let layout = read_layout(vfs, root)?;
     let root_file = root.join(ROOT_FILE);
@@ -240,7 +266,7 @@ mod tests {
     #[test]
     fn a_vault_lists_each_marketplace_with_its_note_and_output() {
         let vfs = vault();
-        let loaded = load_vault(&vfs, Path::new("/v"), None).unwrap();
+        let loaded = load_vault(&vfs, Path::new("/v"), &BuildScope::Vault).unwrap();
         let names: Vec<&str> = loaded
             .marketplaces
             .iter()
@@ -250,15 +276,12 @@ mod tests {
         let house = loaded.marketplace("house").unwrap();
         assert_eq!(house.note, Path::new("/v/marketplaces/house/house.md"));
         assert_eq!(house.dist, Path::new("/v/dist/house"));
-        let request = loaded.vault_request(house, ExportMode::Build);
-        assert_eq!(request.marketplace.as_deref(), Some("house"));
-        assert_eq!(request.vault_root, Path::new("/v"));
     }
 
     #[test]
     fn a_root_with_dot_dot_loads_normalized() {
         let vfs = vault();
-        let loaded = load_vault(&vfs, Path::new("/v/marketplaces/.."), None).unwrap();
+        let loaded = load_vault(&vfs, Path::new("/v/marketplaces/.."), &BuildScope::Vault).unwrap();
         assert_eq!(loaded.root, Path::new("/v"));
         assert_eq!(
             loaded.marketplace("shop").unwrap().dist,
@@ -269,10 +292,20 @@ mod tests {
     #[test]
     fn one_marketplace_can_be_picked_and_an_unknown_one_is_refused() {
         let vfs = vault();
-        let loaded = load_vault(&vfs, Path::new("/v"), Some("shop")).unwrap();
+        let loaded = load_vault(
+            &vfs,
+            Path::new("/v"),
+            &BuildScope::Marketplace("shop".into()),
+        )
+        .unwrap();
         assert_eq!(loaded.marketplaces.len(), 1);
         assert_eq!(loaded.marketplaces[0].name, "shop");
-        let err = load_vault(&vfs, Path::new("/v"), Some("mall")).unwrap_err();
+        let err = load_vault(
+            &vfs,
+            Path::new("/v"),
+            &BuildScope::Marketplace("mall".into()),
+        )
+        .unwrap_err();
         let said = err.to_string();
         assert!(said.contains("unknown-marketplace"), "{said}");
         assert!(said.contains("`house`, `shop`"), "{said}");

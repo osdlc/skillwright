@@ -81,7 +81,7 @@ pub mod vault;
 pub mod vfs;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
-pub use compile::{CallContext, IndexedSkill, SkillIndex};
+pub use compile::{CallContext, SkillIndex};
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, UNKNOWN_KEY_REASON,
@@ -89,9 +89,9 @@ pub use discover::{
 };
 pub use error::*;
 pub use export::{
-    ExportMode, ExportReport, ExportUnit, MarketplaceRefusal, MarketplaceReport, SkillNaming,
-    StaleKind, UnitStatus, VaultReport, VaultRequest, build_vault, owned_paths,
-    published_skill_name, rendered_skill_call,
+    BuildOptions, ExportMode, ExportReport, ExportUnit, MarketplaceRefusal, MarketplaceReport,
+    SkillNaming, StaleKind, UnitStatus, VaultPlan, VaultReport, VaultRequest, build_vault,
+    owned_paths, plan, published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
@@ -102,7 +102,7 @@ pub use layout::{
     check_vault_root, find_vault_root, is_vault_root, name_problem, read_layout,
 };
 pub use paths::{
-    LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file, resolve_path,
+    BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file, resolve_path,
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{

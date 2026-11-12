@@ -8,8 +8,8 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::refusal;
 use tradecraft_core::{
-    BuildSettings, CoreError, DiscoveryWarning, ExportMode, ExportUnit, MemVfs, RootFile,
-    SharedDefaults, UnitStatus, VaultRequest, Vfs, discover_components,
+    BuildScope, BuildSettings, CoreError, DiscoveryWarning, ExportMode, ExportUnit, MemVfs,
+    RootFile, SharedDefaults, UnitStatus, VaultRequest, Vfs, discover_components,
 };
 
 /// `build_vault` over the one marketplace a request covers: its report.
@@ -44,8 +44,8 @@ fn vault() -> MemVfs {
 fn an_export_request_takes_its_vault_root() {
     let vfs = vault();
     let mut request = VaultRequest::new("/vault");
-    assert_eq!(request.mode, ExportMode::Build);
-    request.harnesses.insert("claude".to_owned());
+    assert_eq!(request.options.mode, ExportMode::Build);
+    request.options.harnesses.insert("claude".to_owned());
     let report = export(&vfs, &request).unwrap();
     assert!(report.changed);
     assert!(vfs.exists(Path::new(
@@ -56,7 +56,7 @@ fn an_export_request_takes_its_vault_root() {
 #[test]
 fn a_load_request_takes_its_inputs() {
     let mut load = LoadRequest::new("/vault");
-    load.marketplace = Some("house".to_owned());
+    load.scope = BuildScope::Marketplace("house".to_owned());
     assert!(load.harnesses.is_empty());
 }
 
@@ -77,8 +77,12 @@ fn the_settings_types_build_from_default() {
 fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
     let vfs = vault();
     let scan = discover_components(&vfs, Path::new("/vault")).unwrap();
-    let component = scan.components.iter().find(|c| c.name == "review").unwrap();
-    assert_eq!(component.plugin.as_deref(), Some("tools"));
+    let component = scan
+        .components
+        .iter()
+        .find(|c| c.position.name() == "review")
+        .unwrap();
+    assert_eq!(component.position.plugin(), Some("tools"));
     let warning = DiscoveryWarning::new("review.md", "missing-version", "detail");
     assert_eq!(warning.reason, "missing-version");
 
@@ -90,30 +94,7 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
             ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => *status,
             _ => continue,
         };
-        let word = match status {
-            UnitStatus::Written => "written",
-            _ => status.as_str(),
-        };
-        assert_eq!(word, "written");
-    }
-}
-
-#[test]
-fn each_unit_status_as_str_is_the_serialized_word() {
-    fn wire<T: serde::Serialize>(value: T) -> String {
-        serde_json::to_value(value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_owned()
-    }
-    for status in [
-        UnitStatus::Ok,
-        UnitStatus::Drift,
-        UnitStatus::Written,
-        UnitStatus::Unchanged,
-    ] {
-        assert_eq!(status.as_str(), wire(status));
+        assert_eq!(status, UnitStatus::Differs);
     }
 }
 
@@ -137,7 +118,11 @@ fn a_skipped_note_reads_by_field() {
     )
     .unwrap();
     let scan = discover_components(&vfs, Path::new("/vault")).unwrap();
-    assert!(scan.components.iter().all(|c| c.name != "review"));
+    assert!(
+        scan.components
+            .iter()
+            .all(|c| c.position.name() != "review")
+    );
     assert_eq!(
         scan.skipped[0].path,
         "marketplaces/house/plugins/tools/skills/review/review.md"

@@ -56,12 +56,12 @@ for (path, text) in [
 }
 
 // Only the vault is required. The other fields start empty; set any of them
-// on the value. `marketplace` picks one marketplace; without it, every one is
-// built. `harnesses` replaces the root file's `build.harnesses`. A build
-// writes `dist/<m>/`. Everything else comes from `skillwright.md` and the
-// vault's notes.
+// on the value. `scope` picks one marketplace; without it, every one is
+// built. `options.harnesses` replaces the root file's `build.harnesses`. A
+// build writes `dist/<m>/`. Everything else comes from `skillwright.md` and
+// the vault's notes.
 let mut request = VaultRequest::new("/vault");
-request.harnesses.insert("claude".to_owned());
+request.options.harnesses.insert("claude".to_owned());
 let report = build_vault(&vfs, &request)?;
 assert!(report.marketplaces[0].report.changed);
 assert!(vfs.exists(Path::new(
@@ -77,20 +77,20 @@ The CLI does the same steps.
 1. `find_vault_root(&vfs, start)` walks up from `start` to the first folder
    that holds both `skillwright.md` and `marketplaces/`. For a root the user
    names, `check_vault_root(&vfs, dir)` checks it instead.
-2. `load_vault(&vfs, root, marketplace)` checks the layout, parses the
+2. `load_vault(&vfs, root, &scope)` checks the layout, parses the
    root file, and reads each marketplace's note.
-   `Some(name)` loads one marketplace. It returns a `LoadedVault`: the root
+   `BuildScope::Marketplace(name)` loads one marketplace. It returns a `LoadedVault`: the root
    file as `settings` and one `VaultMarketplace` per marketplace.
 3. `build_vault(&vfs, &VaultRequest::new(root))` builds every marketplace
-   into its `<root>/dist/<m>/`, or checks them with `mode` set to
-   `ExportMode::Check`. It is the one build and check entry point. It plans
-   every marketplace before it writes any, and writes all of them or none: a
-   failed swap rolls back every marketplace already swapped. A host that asks
-   before it writes runs a check first; `owned_paths` names what a build
-   replaces.
-4. `loaded.vault_request(&marketplace, mode)` is the request for one
-   marketplace. A check of one marketplace may set `compare_with` to compare
-   with another built folder in place of `dist/<m>/`.
+   into its `<root>/dist/<m>/`, or checks them with `options.mode` set to
+   `ExportMode::Check`. It plans every marketplace before it writes any, and
+   writes all of them or none: a failed swap rolls back every marketplace
+   already swapped. A host that asks before it writes calls the three steps
+   itself: `plan(&vfs, &loaded, &options)`, then `VaultPlan::report()`, then
+   `VaultPlan::commit(&vfs)`. `owned_paths` names what a build replaces.
+4. `VaultRequest::for_marketplace(root, name)` is the request for one
+   marketplace. A check of one marketplace may set `options.compare_with` to
+   compare with another built folder in place of `dist/<m>/`.
 
 ```rust
 use std::path::Path;

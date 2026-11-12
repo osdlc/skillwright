@@ -275,6 +275,9 @@ fn collect_named(model: &Model, ty: &syn::Type, out: &mut Vec<String>) -> Result
         }
         return Ok(());
     }
+    if let Some(wire) = wire_type(model, &head)? {
+        return collect_named(model, &wire, out);
+    }
     if model.types.contains_key(&head) && !out.contains(&head) {
         out.push(head);
     }
@@ -340,8 +343,35 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
         // `Map` is `serde_json::Map<String, Value>`: an object, as a map is.
         "BTreeMap" | "HashMap" | "Map" => format!("Record<{}, {}>", arg(0)?, arg(1)?),
         _ if is_builtin(&head) => "number".to_string(),
-        _ => ts_name(model, &head)?,
+        _ => match wire_type(model, &head)? {
+            Some(wire) => ts_type(model, &wire)?,
+            None => ts_name(model, &head)?,
+        },
     })
+}
+
+/// The type a `#[serde(from = "...")]` type crosses the wire as, so a request
+/// spells that type and never the Rust one. One TS type serves both
+/// directions, so `into` must name the same type as `from`.
+fn wire_type(model: &Model, name: &str) -> Result<Option<syn::Type>, Error> {
+    let attrs = match model.types.get(name) {
+        Some(TypeDef::Struct(s)) => &s.attrs,
+        Some(TypeDef::Enum(e)) => &e.attrs,
+        None => return Ok(None),
+    };
+    if attrs.into != attrs.from {
+        return Err(format!(
+            "`{name}`: serde reads it as `from` and writes it as `into`, and typegen needs \
+             both to name one type"
+        ));
+    }
+    attrs
+        .from
+        .as_deref()
+        .map(|from| {
+            syn::parse_str(from).map_err(|e| format!("`{name}`'s `from = \"{from}\"`: {e}"))
+        })
+        .transpose()
 }
 
 /// The TypeScript name of a Rust type.

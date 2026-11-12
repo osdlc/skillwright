@@ -45,6 +45,7 @@ use serde_json::{Map, Value};
 use crate::error::CoreError;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::Harness;
+use crate::layout::Position;
 use crate::refusal;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vault::frontmatter_map;
@@ -54,23 +55,17 @@ use crate::vfs::Vfs;
 // No `Eq`: `identity` carries JSON for the two manifest fields
 // whose dialects allow an object, and `serde_json::Value` is only `PartialEq`
 // because it can hold a float. Nothing keys a map or a set on a whole
-// component — uniqueness is keyed on `(marketplace, plugin, name)`.
+// component — uniqueness is keyed on its position.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct DiscoveredComponent {
-    /// The folder's name, which the layout has checked against the name rule.
-    pub name: String,
+    /// Where the note sits: its marketplace, plugin, kind and folder name,
+    /// which the layout has checked against the name rule.
+    pub position: Position,
     /// The frontmatter `description`, ≤1024 characters. Empty when the note
     /// wrote none. A build refuses a skill, command or agent with none
     /// ([`Self::lacks_description`]); a container need not have one.
     pub description: String,
-    /// What this component is, from its position.
-    pub kind: EntityKind,
-    /// The plugin folder holding this note. `None` for a marketplace's note.
-    pub plugin: Option<String>,
-    /// The marketplace folder this sits under. `None` for a marketplace's
-    /// own note.
-    pub marketplace: Option<String>,
     /// Absolute path of the entry note.
     pub entry_path: PathBuf,
     /// The folder this note owns, the one named for it.
@@ -107,15 +102,7 @@ pub struct DiscoveredComponent {
 impl DiscoveredComponent {
     /// A component with no `description`, which a build refuses.
     pub fn lacks_description(&self) -> bool {
-        self.description.is_empty() && needs_description(self.kind)
-    }
-
-    /// The folder this note is named for.
-    pub fn folder(&self) -> &str {
-        self.entry_path
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default()
+        self.description.is_empty() && needs_description(self.position.kind())
     }
 }
 
@@ -426,7 +413,7 @@ pub fn discover_in(
     let vault_root = layout.root.as_path();
     let files: Vec<PathBuf> = layout.files.iter().map(|file| file.path.clone()).collect();
     let files = &files;
-    let placed: BTreeMap<PathBuf, crate::layout::Position> = layout
+    let placed: BTreeMap<PathBuf, Position> = layout
         .files
         .iter()
         .filter_map(|file| Some((file.path.clone(), file.position()?)))
@@ -449,7 +436,7 @@ pub fn discover_in(
                 }
                 if let Some(warning) = unknown_key_warning(
                     &component.vault_relative_path,
-                    component.kind,
+                    component.position.kind(),
                     &component.unknown_keys,
                 ) {
                     warnings.push(warning);
@@ -463,47 +450,58 @@ pub fn discover_in(
         }
     }
 
-    // Names are unique within a plugin across all kinds (spec section 3 rule
-    // 7). A two-note diagnosis, so it runs after collection and names both.
-    type PublishKey<'a> = (Option<&'a str>, Option<&'a str>, &'a str);
-    let mut by_key: BTreeMap<PublishKey, Vec<&DiscoveredComponent>> = BTreeMap::new();
-    for component in discovered.iter().filter(|c| !c.kind.holds_components()) {
-        let key = (
-            component.marketplace.as_deref(),
-            component.plugin.as_deref(),
-            component.name.as_str(),
-        );
-        by_key.entry(key).or_default().push(component);
-    }
-    if let Some(((_, plugin, name), group)) = by_key.iter().find(|(_, g)| g.len() > 1) {
-        let paths: Vec<String> = group
-            .iter()
-            .map(|c| format!("{} {}", c.kind.as_str(), c.vault_relative_path))
-            .collect();
-        let detail = format!(
-            "duplicate name `{name}` in plugin `{}`: {}. Names are unique within a plugin, \
-             across skills, agents and commands",
-            plugin.unwrap_or_default(),
-            paths.join(", ")
-        );
-        return Err(CoreError::refused(refusal::PATH_COLLISION, detail));
-    }
+    refuse_duplicate_names(&discovered)?;
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     // Keys are unique by the check above, so this order is total.
-    discovered.sort_by(|a, b| {
-        (&a.name, a.kind.as_str(), &a.plugin, &a.vault_relative_path).cmp(&(
-            &b.name,
-            b.kind.as_str(),
-            &b.plugin,
-            &b.vault_relative_path,
-        ))
-    });
+    fn order(c: &DiscoveredComponent) -> (&str, &str, Option<&str>, &str) {
+        let at = &c.position;
+        (
+            at.name(),
+            at.kind().as_str(),
+            at.plugin(),
+            &c.vault_relative_path,
+        )
+    }
+    discovered.sort_by(|a, b| order(a).cmp(&order(b)));
     // `skipped` is in path order: `placed` is a sorted map.
     Ok(DiscoveryReport {
         components: discovered,
         skipped,
         warnings,
     })
+}
+
+/// Names are unique within a plugin across all kinds (spec section 3 rule
+/// 7). A two-note diagnosis, so it runs after collection and names both.
+///
+/// # Errors
+///
+/// `refused: path-collision`, naming both notes.
+fn refuse_duplicate_names(discovered: &[DiscoveredComponent]) -> Result<(), CoreError> {
+    type PublishKey<'a> = (&'a str, Option<&'a str>, &'a str);
+    let mut by_key: BTreeMap<PublishKey, Vec<&DiscoveredComponent>> = BTreeMap::new();
+    for component in discovered
+        .iter()
+        .filter(|c| !c.position.kind().holds_components())
+    {
+        let at = &component.position;
+        let key = (at.marketplace(), at.plugin(), at.name());
+        by_key.entry(key).or_default().push(component);
+    }
+    let Some(((_, plugin, name), group)) = by_key.iter().find(|(_, g)| g.len() > 1) else {
+        return Ok(());
+    };
+    let paths: Vec<String> = group
+        .iter()
+        .map(|c| format!("{} {}", c.position.kind().as_str(), c.vault_relative_path))
+        .collect();
+    let detail = format!(
+        "duplicate name `{name}` in plugin `{}`: {}. Names are unique within a plugin, \
+         across skills, agents and commands",
+        plugin.unwrap_or_default(),
+        paths.join(", ")
+    );
+    Err(CoreError::refused(refusal::PATH_COLLISION, detail))
 }
 
 /// Whether a note of `kind` must describe itself to publish. A container
@@ -519,7 +517,7 @@ fn missing_description(component: &DiscoveredComponent) -> DiscoveryWarning {
         reason: refusal::MISSING_DESCRIPTION.to_string(),
         detail: format!(
             "`{}` has no `description`; a build refuses it",
-            component.name
+            component.position.name()
         ),
     }
 }
@@ -552,8 +550,8 @@ fn read_source(
     vfs: &dyn Vfs,
     vault_root: &Path,
     entry_path: &Path,
-    position: &crate::layout::Position,
-    placed: &BTreeMap<PathBuf, crate::layout::Position>,
+    position: &Position,
+    placed: &BTreeMap<PathBuf, Position>,
     files: &[PathBuf],
 ) -> Result<DiscoveredComponent, CoreError> {
     let source = read_utf8(vfs, entry_path)?;
@@ -563,7 +561,6 @@ fn read_source(
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, kind)?;
     let unknown_keys = unknown_keys(&ours, kind);
     crate::vault::check_spec_kinds(&mut fields, entry_path, kind)?;
-    let name = position.name().to_owned();
     let description = trimmed_string(&fields, "description").unwrap_or_default();
 
     // The value checks a build makes on this note, so the scan refuses what a
@@ -588,11 +585,8 @@ fn read_source(
         .map_err(|_| CoreError::PathEscapesRoot(entry_path.to_path_buf()))?;
 
     Ok(DiscoveredComponent {
-        name,
+        position: position.clone(),
         description,
-        kind,
-        plugin: position.plugin().map(str::to_owned),
-        marketplace: (kind != EntityKind::Marketplace).then(|| position.marketplace().to_owned()),
         entry_path: entry_path.to_path_buf(),
         bundle_root,
         resources,
@@ -608,7 +602,7 @@ fn read_source(
 /// not own its components' files and a marketplace does not own its plugins'.
 fn owned_resources(
     files: &[PathBuf],
-    placed: &BTreeMap<PathBuf, crate::layout::Position>,
+    placed: &BTreeMap<PathBuf, Position>,
     dir: &Path,
 ) -> Vec<String> {
     let deeper: Vec<&Path> = placed
@@ -789,26 +783,22 @@ mod tests {
             ),
         ]);
         let report = scan(&vfs).unwrap();
-        let found: Vec<(&str, EntityKind, Option<&str>, Option<&str>)> = report
+        let found: Vec<(&str, EntityKind, Option<&str>, &str)> = report
             .components
             .iter()
             .map(|c| {
-                (
-                    c.name.as_str(),
-                    c.kind,
-                    c.plugin.as_deref(),
-                    c.marketplace.as_deref(),
-                )
+                let at = &c.position;
+                (at.name(), at.kind(), at.plugin(), at.marketplace())
             })
             .collect();
         assert_eq!(
             found,
             [
-                ("acme", EntityKind::Marketplace, None, None),
-                ("helper", EntityKind::Agent, Some("tools"), Some("acme")),
-                ("review", EntityKind::Skill, Some("tools"), Some("acme")),
-                ("ship", EntityKind::Command, Some("tools"), Some("acme")),
-                ("tools", EntityKind::Plugin, Some("tools"), Some("acme")),
+                ("acme", EntityKind::Marketplace, None, "acme"),
+                ("helper", EntityKind::Agent, Some("tools"), "acme"),
+                ("review", EntityKind::Skill, Some("tools"), "acme"),
+                ("ship", EntityKind::Command, Some("tools"), "acme"),
+                ("tools", EntityKind::Plugin, Some("tools"), "acme"),
             ]
         );
     }
@@ -825,7 +815,7 @@ mod tests {
         let draft = report
             .components
             .iter()
-            .find(|c| c.name == "draft")
+            .find(|c| c.position.name() == "draft")
             .unwrap();
         assert!(draft.lacks_description());
         assert!(
@@ -883,13 +873,13 @@ mod tests {
             ),
         ]);
         let report = scan(&vfs).unwrap();
-        let copies: Vec<Option<&str>> = report
+        let copies: Vec<&str> = report
             .components
             .iter()
-            .filter(|c| c.name == "review")
-            .map(|c| c.marketplace.as_deref())
+            .filter(|c| c.position.name() == "review")
+            .map(|c| c.position.marketplace())
             .collect();
-        assert_eq!(copies, [Some("acme"), Some("beta")]);
+        assert_eq!(copies, ["acme", "beta"]);
     }
 
     /// A plugin owns its shared folders, not its components' files, and a
@@ -916,7 +906,7 @@ mod tests {
             report
                 .components
                 .iter()
-                .find(|c| c.name == name && c.kind != EntityKind::Marketplace)
+                .find(|c| c.position.name() == name && c.position.kind() != EntityKind::Marketplace)
                 .unwrap()
                 .resources
                 .clone()
@@ -958,7 +948,7 @@ mod tests {
                 ),
             ]
         );
-        assert!(report.components.iter().any(|c| c.name == "ok"));
+        assert!(report.components.iter().any(|c| c.position.name() == "ok"));
     }
 
     #[test]
@@ -999,10 +989,10 @@ mod tests {
         let review = report
             .components
             .iter()
-            .find(|c| c.name == "review")
+            .find(|c| c.position.name() == "review")
             .unwrap();
-        assert_eq!(review.kind, EntityKind::Skill);
-        assert_eq!(review.plugin.as_deref(), Some("tools"));
-        assert_eq!(review.marketplace.as_deref(), Some("acme"));
+        assert_eq!(review.position.kind(), EntityKind::Skill);
+        assert_eq!(review.position.plugin(), Some("tools"));
+        assert_eq!(review.position.marketplace(), "acme");
     }
 }

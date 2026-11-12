@@ -28,6 +28,7 @@
 - A `Refused` `CoreError` carries its reason token as `token`. `MarketplaceRefusal` has `token` and `detail` in place of `error`.
 - `CoreErrorName` loses `RootNotFound`, which the core never threw.
 - A note that is not UTF-8 or whose frontmatter does not parse throws `Refused` (`unreadable-note`), not `Io`.
+- `UnitStatus` is `Same` or `Differs`, and `DiscoveredComponent` carries `Position`; the TS types are regenerated. A unit's `status` is `'same'` or `'differs'` in place of `'ok'`, `'drift'`, `'written'` and `'unchanged'`; the report's `mode` gives the verb. `ExportUnit`'s not-carried `kind` is typed as `EntityKind`. A `DiscoveredComponent`'s `position` (`at`, `marketplace`, and `plugin`, `kind` and `name` where the note has them) replaces `name`, `kind`, `plugin` and `marketplace`. `Position` is exported.
 
 ## 0.2.0
 

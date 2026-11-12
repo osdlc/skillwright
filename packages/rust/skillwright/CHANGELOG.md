@@ -14,10 +14,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 API:
 
 - `prompt::ask` is removed.
+- `resolve::ResolvedRun` is removed. `resolve_run` and `resolve_at` return the core's `LoadedVault`; its `root` is the vault root.
 
 ### Changed
 
 - `build --json` and `check --json` over several marketplaces list each refusal with `token` and `detail` in place of `error`.
+- `UnitStatus` is `Same` or `Differs`: in `build --json` and `check --json`, a unit's `status` is `same` or `differs` in place of `ok`, `drift`, `written` and `unchanged`. The report's `mode` gives the verb. The text output is unchanged.
+- A build plans every marketplace once, not twice (once to check, once to write).
 - A note that is not UTF-8 or whose frontmatter does not parse is no longer reported as `reading <path>: <what>`. It is `<path>: <what>` in the list of skipped notes, and `unreadable-note: <path>: <what>` on its own.
 - A `build.harnesses` name that is not a harness is refused as `` `<name>` is not a harness `` and names the first such name only.
 
