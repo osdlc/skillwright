@@ -607,7 +607,10 @@ mod tests {
         let snap = snapshot("ship", vec![]);
         for target in [RuntimeId::Cursor, RuntimeId::Pi] {
             let err = project_command(&snap, &[target], None).unwrap_err();
-            assert!(matches!(err, CoreError::Refused { .. }), "{target:?}: {err}");
+            assert!(
+                matches!(err, CoreError::Refused { .. }),
+                "{target:?}: {err}"
+            );
             assert!(err.to_string().contains("no-renderer"), "{target:?}: {err}");
         }
     }
