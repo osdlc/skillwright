@@ -755,7 +755,7 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skillwright"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "chrono",
  "clap",
@@ -929,7 +929,7 @@ dependencies = [
 
 [[package]]
 name = "tradecraft-core"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "agent-adapt",
  "frontmatter-lossless",
