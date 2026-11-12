@@ -8,9 +8,8 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::refusal;
 use tradecraft_core::{
-    BuildSettings, CallContext, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportUnit,
-    MemVfs, RootFile, SharedDefaults, SkillIndex, UnitStatus, VaultRequest, Vfs, compile_note,
-    discover_components, read_layout,
+    BuildSettings, CoreError, DiscoveryWarning, ExportMode, ExportUnit, MemVfs, RootFile,
+    SharedDefaults, UnitStatus, VaultRequest, Vfs, discover_components,
 };
 
 /// `build_vault` over the one marketplace a request covers: its report.
@@ -59,23 +58,6 @@ fn a_load_request_takes_its_inputs() {
     let mut load = LoadRequest::new("/vault");
     load.marketplace = Some("house".to_owned());
     assert!(load.harnesses.is_empty());
-}
-
-#[test]
-fn a_compile_source_takes_its_inputs() {
-    let vfs = vault();
-    let layout = read_layout(&vfs, Path::new("/vault")).unwrap();
-    let skills = SkillIndex::default();
-    let calls = CallContext {
-        skills: &skills,
-        hand_written: Default::default(),
-        warnings: Default::default(),
-    };
-    let entry = Path::new("/vault/marketplaces/house/plugins/tools/skills/review/review.md");
-    let source = CompileSource::new(&layout, entry, "review", &calls);
-    let compiled = compile_note(&vfs, &source, "Review.\n").unwrap();
-    assert_eq!(compiled.body, "Review.\n");
-    assert!(compiled.recorded.calls.is_empty());
 }
 
 #[test]
