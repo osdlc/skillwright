@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -102,6 +110,20 @@ test('buildVault builds every marketplace', () => {
   }
   const check = buildVault(createNodeVfs(), { vault_root: vault, mode: 'check' })
   expect(check.marketplaces.every((m) => !m.report.changed)).toBe(true)
+})
+
+test('a buildVault check compares with the folder compare_with names', () => {
+  marketplace('acme')
+  buildVault(createNodeVfs(), { vault_root: vault })
+  const baseline = path.join(root, 'baseline')
+  renameSync(path.join(vault, 'dist/acme'), baseline)
+  const check = buildVault(createNodeVfs(), {
+    vault_root: vault,
+    mode: 'check',
+    compare_with: toCorePath(baseline),
+  })
+  expect(check.marketplaces[0]?.report.changed).toBe(false)
+  expect(existsSync(path.join(vault, 'dist/acme'))).toBe(false)
 })
 
 test('a buildVault check reports every marketplace when one refuses', () => {

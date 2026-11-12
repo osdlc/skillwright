@@ -26,7 +26,7 @@
 //! out this way has no file and no manifest mention there, and the report
 //! names it as [`ExportUnit::NotCarried`] for that harness.
 //!
-//! Which harnesses a build renders is [`ExportRequest::harnesses`] when it
+//! Which harnesses a build renders is [`VaultRequest::harnesses`] when it
 //! names any, else the root file's `build.harnesses`, else all of them. A
 //! name no harness answers to is refused rather than ignored — publishing
 //! other than was asked for, quietly, is the failure this crate is built
@@ -87,10 +87,10 @@
 //!
 //! # One render, then the write
 //!
-//! [`plan_in`] loads, renders and compares, and writes nothing.
-//! [`ExportPlan::write`] then swaps in what drifted. [`build_vault`] plans
-//! every marketplace before it writes any, so a refusal in one leaves all of
-//! them unwritten.
+//! [`build_vault`] is the one entry point. It loads, renders and compares
+//! every marketplace, and writes nothing until all of them are planned, so a
+//! refusal in one leaves all of them unwritten. Then a build swaps in what
+//! drifted.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -108,48 +108,34 @@ use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plu
 use crate::layout::Layout;
 use crate::model::load::{built_harnesses, kind_carried, load_for};
 use crate::model::{Component, Marketplace};
-use crate::paths::{LoadedVault, VaultMarketplace, load_vault, read_root_file};
+use crate::paths::{VaultMarketplace, load_vault, read_root_file};
 use crate::settings::RootFile;
 use crate::skill::forward_slashed;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
 use crate::vfs::{PreviewWrite, Vfs, normalize};
 
 /// One marketplace export: this vault, built into its `dist/<m>/` or checked
-/// against it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[non_exhaustive]
-pub struct ExportRequest {
+/// against it. [`VaultRequest`] is the public form.
+#[derive(Debug, Clone)]
+pub(crate) struct ExportRequest {
     /// Absolute path to the vault root. Discovery, compilation, the output
     /// folder and the provenance markers all resolve against it.
     pub vault_root: PathBuf,
     /// Which marketplace this build renders, by folder. `None` names the
     /// vault's only one; a vault holding more than one is refused.
-    #[serde(default)]
     pub marketplace: Option<String>,
-    /// Which harnesses to build, by name. It replaces the root file's
-    /// `build.harnesses` for this run; empty means that list, and with no
-    /// list, every harness.
-    ///
-    /// A name no harness answers to is refused rather than ignored: silently
-    /// publishing other than was asked for is the failure this crate is
-    /// built around.
-    #[serde(default)]
+    /// [`VaultRequest::harnesses`].
     pub harnesses: BTreeSet<String>,
-    /// Build, or check. Absent on the wire means [`ExportMode::Build`].
-    #[serde(default)]
+    /// Build, or check.
     pub mode: ExportMode,
-    /// Check only: the built marketplace to compare the render with, in place
-    /// of `<root>/dist/<m>/`. `bump --changed-since` compares with a baseline
-    /// this way. A build refuses it: a build always writes `dist/<m>/`.
-    #[serde(default)]
+    /// [`VaultRequest::compare_with`].
     pub compare_with: Option<PathBuf>,
 }
 
 impl ExportRequest {
     /// A build of the vault at `vault_root`. Every other field starts empty,
     /// and the mode is a build; set them after.
-    pub fn new(vault_root: impl Into<PathBuf>) -> Self {
+    pub(crate) fn new(vault_root: impl Into<PathBuf>) -> Self {
         Self {
             vault_root: vault_root.into(),
             marketplace: None,
@@ -423,10 +409,11 @@ fn contains(bytes: &[u8], marker: &str) -> bool {
 /// this is never one of them.
 pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 
-/// Which harnesses this request renders under the vault's root file `root`,
-/// each with every path it owns in the marketplace directory.
+/// The harnesses a build renders under the vault's root file `root`, each
+/// with every path it owns in the marketplace directory. `harnesses` is
+/// [`VaultRequest::harnesses`].
 ///
-/// So a caller can say what a build is about to replace, before it plans,
+/// So a caller can say what a build is about to replace, before it builds,
 /// without owning a second copy of the roots table or of the harness
 /// selection.
 ///
@@ -435,9 +422,9 @@ pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 /// `refused: unknown-harness`.
 pub fn owned_paths(
     root: &RootFile,
-    request: &ExportRequest,
+    harnesses: &BTreeSet<String>,
 ) -> Result<Vec<(&'static str, &'static str)>, CoreError> {
-    Ok(paths_of(&built_harnesses(root, &request.harnesses)?))
+    Ok(paths_of(&built_harnesses(root, harnesses)?))
 }
 
 /// Each of `roots` with every path it owns.
@@ -472,61 +459,12 @@ pub fn packs_path(root: &str) -> Option<&'static str> {
         .map(|spec| spec.format().packs)
 }
 
-/// Renders the vault into its `dist/<m>/`, or checks it against what is
-/// already there.
-///
-/// # Errors
-///
-/// What [`crate::layout::read_layout`], [`plan_in`] and
-/// [`ExportPlan::write`] refuse.
-pub fn export_skills(vfs: &dyn Vfs, request: &ExportRequest) -> Result<ExportReport, CoreError> {
-    let vault_root = normalize(&request.vault_root);
-    let layout = crate::layout::read_layout(vfs, &vault_root)?;
-    plan_in(vfs, &layout, request)?.write(vfs)
-}
-
 /// One marketplace rendered and compared with its output folder, with
 /// nothing written yet.
-pub struct ExportPlan {
-    mode: ExportMode,
+pub(crate) struct ExportPlan {
     out: PathBuf,
     report: ExportReport,
-    roots: Vec<&'static HarnessProfile>,
     swapping: Vec<(&'static HarnessProfile, BTreeMap<String, PreviewWrite>)>,
-}
-
-impl ExportPlan {
-    /// The folder this plan compared with, and a build writes:
-    /// `<root>/dist/<m>/`, or a check's [`ExportRequest::compare_with`].
-    pub fn out(&self) -> &Path {
-        &self.out
-    }
-
-    /// The check's report: what matches and what drifted.
-    pub fn report(&self) -> &ExportReport {
-        &self.report
-    }
-
-    /// The harnesses this plan renders, each with every path a build of it
-    /// replaces under [`Self::out`].
-    pub fn owned_paths(&self) -> Vec<(&'static str, &'static str)> {
-        paths_of(&self.roots)
-    }
-
-    /// A check returns its report and writes nothing. A build swaps in each
-    /// harness tree that drifted, and reports it written.
-    ///
-    /// # Errors
-    ///
-    /// [`CoreError::SwapFailed`] and the I/O errors of the swap; a failed swap
-    /// rolls back.
-    pub fn write(self, vfs: &dyn Vfs) -> Result<ExportReport, CoreError> {
-        if self.mode == ExportMode::Check {
-            return Ok(self.report);
-        }
-        commit(vfs, &[&self])?;
-        Ok(built(self.report))
-    }
 }
 
 /// A check's report under the write verbs: what matched is unchanged, what
@@ -559,13 +497,25 @@ pub struct VaultRequest {
     /// Which marketplace to build, by folder. `None` builds every one.
     #[serde(default)]
     pub marketplace: Option<String>,
-    /// Which harnesses to build. It replaces the root file's
-    /// `build.harnesses`, as [`ExportRequest::harnesses`] does.
+    /// Which harnesses to build, by name. It replaces the root file's
+    /// `build.harnesses` for this run; empty means that list, and with no
+    /// list, every harness.
+    ///
+    /// A name no harness answers to is refused rather than ignored: silently
+    /// publishing other than was asked for is the failure this crate is
+    /// built around.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
     /// Build, or check. Absent on the wire means [`ExportMode::Build`].
     #[serde(default)]
     pub mode: ExportMode,
+    /// Check only: the built marketplace to compare the render with, in place
+    /// of `<root>/dist/<m>/`. `bump --changed-since` compares with a baseline
+    /// this way. It names one marketplace's output, so the request must
+    /// cover one marketplace. A build refuses it: a build always writes
+    /// `dist/<m>/`.
+    #[serde(default)]
+    pub compare_with: Option<PathBuf>,
 }
 
 impl VaultRequest {
@@ -577,6 +527,7 @@ impl VaultRequest {
             marketplace: None,
             harnesses: BTreeSet::new(),
             mode: ExportMode::default(),
+            compare_with: None,
         }
     }
 }
@@ -614,21 +565,14 @@ pub struct MarketplaceRefusal {
 }
 
 /// Every marketplace of a [`VaultRequest`] planned, with nothing written.
-#[non_exhaustive]
-pub struct VaultPlan {
+pub(crate) struct VaultPlan {
     /// The request's mode.
-    pub mode: ExportMode,
+    mode: ExportMode,
     /// Each marketplace with its plan, or what refused it, in folder order.
-    pub marketplaces: Vec<(VaultMarketplace, Result<ExportPlan, CoreError>)>,
+    marketplaces: Vec<(VaultMarketplace, Result<ExportPlan, CoreError>)>,
 }
 
 impl VaultPlan {
-    /// Whether any marketplace failed to plan. A build of this plan writes
-    /// nothing.
-    pub fn failed(&self) -> bool {
-        self.marketplaces.iter().any(|(_, plan)| plan.is_err())
-    }
-
     /// A check returns every marketplace's report or refusal and writes
     /// nothing. A build stages every marketplace, then swaps them all in; a
     /// failed swap rolls back every marketplace already swapped.
@@ -637,7 +581,7 @@ impl VaultPlan {
     ///
     /// A build only: the first marketplace's refusal, with nothing written.
     /// Then [`CoreError::SwapFailed`] and the I/O errors of the swap.
-    pub fn write(self, vfs: &dyn Vfs) -> Result<VaultReport, CoreError> {
+    fn write(self, vfs: &dyn Vfs) -> Result<VaultReport, CoreError> {
         let mut planned = Vec::with_capacity(self.marketplaces.len());
         let mut refused = Vec::new();
         for (market, plan) in self.marketplaces {
@@ -678,21 +622,21 @@ impl VaultPlan {
 /// # Errors
 ///
 /// What [`load_vault`] refuses: the layout, the root file, an unknown
-/// marketplace. Each marketplace's own refusal is in its entry.
-pub fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreError> {
+/// marketplace. `refused: compare-with` for a build that names
+/// `compare_with`, or a request covering several marketplaces that does.
+/// Each marketplace's own refusal is in its entry.
+fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreError> {
+    if request.mode == ExportMode::Build && request.compare_with.is_some() {
+        return Err(compare_with_on_build());
+    }
     let loaded = load_vault(vfs, &request.vault_root, request.marketplace.as_deref())?;
-    Ok(plan_loaded(vfs, &loaded, request.mode, &request.harnesses))
-}
-
-/// [`plan_vault`] for a vault already loaded with [`load_vault`]: plans each
-/// marketplace the load lists. `harnesses` replaces the root file's
-/// `build.harnesses`, as [`VaultRequest::harnesses`] does.
-pub fn plan_loaded(
-    vfs: &dyn Vfs,
-    loaded: &LoadedVault,
-    mode: ExportMode,
-    harnesses: &BTreeSet<String>,
-) -> VaultPlan {
+    if request.compare_with.is_some() && loaded.marketplaces.len() > 1 {
+        return Err(CoreError::refused(
+            "compare-with",
+            "`compare_with` names one built marketplace, and this vault holds several; name \
+             one with `marketplace`",
+        ));
+    }
     // Pass 1 once for every marketplace. A scan that refuses refuses each
     // marketplace the same way, so `plan_in` repeats it for each.
     let scan = crate::discover::discover_in(vfs, &loaded.layout).ok();
@@ -700,8 +644,11 @@ pub fn plan_loaded(
         .marketplaces
         .iter()
         .map(|market| {
-            let mut export = loaded.export_request(market, mode);
-            export.harnesses.clone_from(harnesses);
+            let mut export = ExportRequest::new(loaded.root.clone());
+            export.marketplace = Some(market.name.clone());
+            export.mode = request.mode;
+            export.harnesses.clone_from(&request.harnesses);
+            export.compare_with.clone_from(&request.compare_with);
             let plan = match &scan {
                 Some(scan) => plan_with(vfs, &loaded.layout, &loaded.settings, scan, &export),
                 None => plan_in(vfs, &loaded.layout, &export),
@@ -709,16 +656,30 @@ pub fn plan_loaded(
             (market.clone(), plan)
         })
         .collect();
-    VaultPlan { mode, marketplaces }
+    Ok(VaultPlan {
+        mode: request.mode,
+        marketplaces,
+    })
 }
 
-/// Builds or checks every marketplace of the vault: [`plan_vault`], then
-/// [`VaultPlan::write`]. A build writes every marketplace or none. A check
-/// reports each marketplace that refused in [`VaultReport::refused`].
+/// Builds or checks every marketplace of the vault, or the one the request
+/// names. Every marketplace is planned before any is written. A build writes
+/// every marketplace or none, and a failed swap rolls back every marketplace
+/// already swapped. A check writes nothing, and reports each marketplace
+/// that refused in [`VaultReport::refused`].
 ///
 /// # Errors
 ///
-/// What [`plan_vault`] and [`VaultPlan::write`] refuse.
+/// * What [`load_vault`] refuses: the layout, the root file, an unknown
+///   marketplace.
+/// * `refused: compare-with`: a build that names
+///   [`VaultRequest::compare_with`], or a request for several marketplaces
+///   that does.
+/// * A build only: the first marketplace's refusal, among them
+///   `refused: empty-marketplace` (no plugin), `unknown-harness` (a harness
+///   name no harness answers to), `foreign-tree` (output this vault did not
+///   build) and `path-collision`. Nothing is written.
+/// * A build only: [`CoreError::SwapFailed`] and the I/O errors of the swap.
 pub fn build_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultReport, CoreError> {
     plan_vault(vfs, request)?.write(vfs)
 }
@@ -735,7 +696,7 @@ pub fn build_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultReport,
 /// * `refused: compare-with` — a build that names
 ///   [`ExportRequest::compare_with`].
 /// * `refused: foreign-tree` — output this vault did not build.
-pub fn plan_in(
+pub(crate) fn plan_in(
     vfs: &dyn Vfs,
     layout: &Layout,
     request: &ExportRequest,
@@ -751,13 +712,16 @@ pub fn plan_in(
 /// A build always writes `dist/<m>/`.
 fn refuse_compare_with_on_build(request: &ExportRequest) -> Result<(), CoreError> {
     if request.mode == ExportMode::Build && request.compare_with.is_some() {
-        return Err(CoreError::refused(
-            "compare-with",
-            "a build always writes `dist/<m>/`; `compare_with` is for a check. Nothing was \
-             written",
-        ));
+        return Err(compare_with_on_build());
     }
     Ok(())
+}
+
+fn compare_with_on_build() -> CoreError {
+    CoreError::refused(
+        "compare-with",
+        "a build always writes `dist/<m>/`; `compare_with` is for a check. Nothing was written",
+    )
 }
 
 /// [`plan_in`] with the root file read and pass 1 done: `scan` is
@@ -878,9 +842,7 @@ fn plan_with(
         }
     }
     Ok(ExportPlan {
-        mode: request.mode,
         out,
-        roots,
         report: ExportReport {
             mode: ExportMode::Check,
             checked: market.checked,
@@ -1512,6 +1474,17 @@ fn roll_back(vfs: &dyn Vfs, swapped: &[(usize, PathBuf, PathBuf)]) -> Result<(),
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+
+    /// One marketplace's build or check, as `build_vault` runs it.
+    fn export_skills(vfs: &dyn Vfs, request: &ExportRequest) -> Result<ExportReport, CoreError> {
+        let layout = crate::layout::read_layout(vfs, &normalize(&request.vault_root))?;
+        let plan = plan_in(vfs, &layout, request)?;
+        if request.mode == ExportMode::Check {
+            return Ok(plan.report);
+        }
+        commit(vfs, &[&plan])?;
+        Ok(built(plan.report))
+    }
 
     use serde_json::json;
 
@@ -4393,7 +4366,7 @@ mod tests {
             r#"{"mode":"check","checked":3,"changed":true,"units":[{"unit":"plugin","root":"claude","name":"tools","skills":2,"status":"drift","version_bump_suggestion":null},{"unit":"manifest","root":"codex","status":"ok"},{"unit":"stale","root":"claude","path":"plugins/old","kind":"plugin"}],"warnings":[]}"#
         );
         // And a request with no mode means build, the write.
-        let request: ExportRequest = serde_json::from_str(r#"{"vault_root":"/v"}"#).unwrap();
+        let request: VaultRequest = serde_json::from_str(r#"{"vault_root":"/v"}"#).unwrap();
         assert_eq!(request.mode, ExportMode::Build);
     }
 

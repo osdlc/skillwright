@@ -4,9 +4,18 @@
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    ExportMode, ExportReport, ExportRequest, MemVfs, UNKNOWN_KEY_REASON, Vfs, export_skills,
-    parse_root_file,
+    ExportMode, ExportReport, MemVfs, UNKNOWN_KEY_REASON, VaultRequest, Vfs, parse_root_file,
 };
+
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
 
 const ROOT: &str = "/vault/skillwright.md";
 const HOUSE: &str = "/vault/marketplaces/house";
@@ -51,14 +60,14 @@ fn vault(market: &str, tools: &str, review: &str) -> MemVfs {
     vfs
 }
 
-fn request() -> ExportRequest {
-    let mut request = ExportRequest::new("/vault");
+fn request() -> VaultRequest {
+    let mut request = VaultRequest::new("/vault");
     request.marketplace = Some("house".to_owned());
     request
 }
 
 fn build(vfs: &dyn Vfs) -> ExportReport {
-    export_skills(vfs, &request()).unwrap()
+    export(vfs, &request()).unwrap()
 }
 
 fn entry<'a>(manifest: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
@@ -212,7 +221,7 @@ fn a_request_carries_no_configuration() {
         ]
     );
 
-    export_skills(&vfs, &request).unwrap();
+    export(&vfs, &request).unwrap();
     let tools = json_at(
         &vfs,
         "/vault/dist/house/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
@@ -368,7 +377,7 @@ fn a_marketplace_is_matched_and_published_by_its_folder() {
 fn a_plugin_note_setting_name_is_refused() {
     let vfs = vault("", "", "");
     write(&vfs, TOOLS, "---\nname: tools\ndescription: Tools.\n---\n");
-    let err = export_skills(&vfs, &request()).unwrap_err();
+    let err = export(&vfs, &request()).unwrap_err();
     assert!(err.to_string().contains("delete it"), "{err}");
 }
 
@@ -472,7 +481,7 @@ fn a_dotted_key_of_the_authors_is_published_and_said_to_be() {
 #[test]
 fn block_metadata_that_is_not_a_mapping_is_refused() {
     let vfs = vault("", "", "foo: 1\nclaude:\n  metadata: x\n");
-    let err = export_skills(&vfs, &request()).unwrap_err();
+    let err = export(&vfs, &request()).unwrap_err();
     assert!(err.to_string().contains("must be a mapping"), "{err}");
 }
 
@@ -570,7 +579,7 @@ fn the_warning_says_what_happens_to_each_kind() {
 #[test]
 fn an_author_of_the_wrong_shape_is_refused() {
     let vfs = vault("", "author: 5\n", "");
-    let err = export_skills(&vfs, &request()).unwrap_err();
+    let err = export(&vfs, &request()).unwrap_err();
     assert!(err.to_string().contains("`author`"), "{err}");
 
     let err = parse_root_file("---\nowner: 5\n---\n").unwrap_err();
@@ -641,7 +650,7 @@ fn build_root(vfs: &MemVfs, frontmatter: &str) -> Result<ExportReport, String> {
     }
     let mut named = request();
     named.marketplace = None;
-    export_skills(vfs, &named).map_err(|err| err.to_string())
+    export(vfs, &named).map_err(|err| err.to_string())
 }
 
 #[test]
@@ -1009,7 +1018,7 @@ fn build_with(vfs: &MemVfs, root_file: &str) -> Result<ExportReport, String> {
     write(vfs, ROOT, root_file);
     let mut request = request();
     request.marketplace = None;
-    export_skills(vfs, &request).map_err(|err| err.to_string())
+    export(vfs, &request).map_err(|err| err.to_string())
 }
 
 const TOOL_SKILL: (&str, &str) = (
@@ -1133,14 +1142,14 @@ fn a_build_of_one_marketplace_ships_only_that_marketplace() {
     }
     let mut build = request();
     build.marketplace = Some("b".to_owned());
-    export_skills(&vfs, &build).unwrap();
+    export(&vfs, &build).unwrap();
     assert!(vfs.exists(Path::new(
         "/vault/dist/b/.claude-plugin/packs/own/.claude-plugin/plugin.json"
     )));
     assert!(!vfs.exists(Path::new("/vault/dist/b/.claude-plugin/packs/rev")));
 
     build.marketplace = Some("a".to_owned());
-    export_skills(&vfs, &build).unwrap();
+    export(&vfs, &build).unwrap();
     let manifest = "/vault/dist/a/.claude-plugin/packs/rev/.claude-plugin/plugin.json";
     assert!(vfs.exists(Path::new(manifest)));
 }
@@ -1164,8 +1173,8 @@ fn a_marketplace_named_skillwright_loads_and_builds() {
     let found = loaded.marketplace("skillwright").unwrap();
     assert_eq!(found.dir, PathBuf::from(market));
     assert_eq!(found.dist, PathBuf::from("/w/dist/skillwright"));
-    let request = loaded.export_request(found, ExportMode::Build);
-    export_skills(&vfs, &request).unwrap();
+    let request = loaded.vault_request(found, ExportMode::Build);
+    export(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new(
         "/w/dist/skillwright/.claude-plugin/marketplace.json"
     )));

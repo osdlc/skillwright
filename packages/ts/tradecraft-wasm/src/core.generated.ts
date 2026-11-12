@@ -325,13 +325,27 @@ export interface VaultRequest {
   marketplace?: string;
 
   /**
-   * Which harnesses to build. It replaces the root file's
-   * `build.harnesses`, as [`ExportRequest::harnesses`] does.
+   * Which harnesses to build, by name. It replaces the root file's
+   * `build.harnesses` for this run; empty means that list, and with no
+   * list, every harness.
+   *
+   * A name no harness answers to is refused rather than ignored: silently
+   * publishing other than was asked for is the failure this crate is
+   * built around.
    */
   harnesses?: string[];
 
   /** Build, or check. Absent on the wire means [`ExportMode::Build`]. */
   mode?: ExportMode;
+
+  /**
+   * Check only: the built marketplace to compare the render with, in place
+   * of `<root>/dist/<m>/`. `bump --changed-since` compares with a baseline
+   * this way. It names one marketplace's output, so the request must
+   * cover one marketplace. A build refuses it: a build always writes
+   * `dist/<m>/`.
+   */
+  compare_with?: string;
 }
 
 /** Whether an export writes the marketplace, or only reports its drift. */

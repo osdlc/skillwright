@@ -8,7 +8,17 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use tradecraft_core::{ExportMode, ExportReport, ExportRequest, MemVfs, Vfs, export_skills};
+use tradecraft_core::{ExportMode, ExportReport, MemVfs, VaultRequest, Vfs};
+
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hooks-file");
 
@@ -56,8 +66,8 @@ fn without_hooks() -> MemVfs {
     vfs
 }
 
-fn request(mode: ExportMode) -> ExportRequest {
-    let mut request = ExportRequest::new("/vault");
+fn request(mode: ExportMode) -> VaultRequest {
+    let mut request = VaultRequest::new("/vault");
     request.mode = mode;
     request
 }
@@ -68,7 +78,7 @@ fn canonical() -> String {
 
 fn built() -> MemVfs {
     let vfs = vault(&canonical());
-    export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+    export(&vfs, &request(ExportMode::Build)).unwrap();
     vfs
 }
 
@@ -113,7 +123,7 @@ fn claude_and_codex_packs_match_their_fixtures() {
 fn each_harness_writes_its_own_plugin_root_or_no_hooks() {
     let vfs = vault(&one_hook("${PLUGIN_ROOT}/scripts/hook.sh"));
     write(&vfs, &format!("{PLUGIN}/scripts/hook.sh"), "#!/bin/sh\n");
-    let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+    let report = export(&vfs, &request(ExportMode::Build)).unwrap();
     let command = |pack: &str| -> String {
         let hooks: serde_json::Value =
             serde_json::from_str(&text_at(&vfs, &format!("{pack}/hooks/hooks.json"))).unwrap();
@@ -169,7 +179,7 @@ fn a_plugin_with_only_a_hooks_file_ships_its_hooks() {
         &format!("{PLUGIN}/hooks/hooks.json"),
         &one_hook("${PLUGIN_ROOT}"),
     );
-    export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+    export(&vfs, &request(ExportMode::Build)).unwrap();
     let hooks = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[0].1));
     assert!(hooks.contains("${CLAUDE_PLUGIN_ROOT}"), "{hooks}");
 }
@@ -177,7 +187,7 @@ fn a_plugin_with_only_a_hooks_file_ships_its_hooks() {
 #[test]
 fn claude_plugin_root_in_a_hooks_file_is_refused() {
     let vfs = vault(&one_hook("${CLAUDE_PLUGIN_ROOT}/scripts/tool"));
-    let err = export_skills(&vfs, &request(ExportMode::Build))
+    let err = export(&vfs, &request(ExportMode::Build))
         .unwrap_err()
         .to_string();
     assert!(err.contains(HOOKS_REL), "{err}");
@@ -190,14 +200,14 @@ fn the_cursor_warning_needs_cursor_in_the_build() {
     let vfs = vault(&canonical());
     let mut request = request(ExportMode::Build);
     request.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
-    let report = export_skills(&vfs, &request).unwrap();
+    let report = export(&vfs, &request).unwrap();
     assert!(cursor_warnings(&report).is_empty(), "{:?}", report.warnings);
 }
 
 #[test]
 fn the_cursor_warning_needs_a_hooks_file() {
     let vfs = without_hooks();
-    let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+    let report = export(&vfs, &request(ExportMode::Build)).unwrap();
     assert!(cursor_warnings(&report).is_empty(), "{:?}", report.warnings);
 }
 
@@ -214,7 +224,7 @@ fn the_cursor_warning_fires_once_per_plugin() {
     write(&vfs, &format!("{other}/extra.md"), "---\n---\n");
     write(&vfs, &format!("{other}/hooks/hooks.json"), &canonical());
     write(&vfs, &format!("{other}/scripts/tool"), "#!/bin/sh\n");
-    let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+    let report = export(&vfs, &request(ExportMode::Build)).unwrap();
     assert_eq!(
         cursor_warnings(&report),
         [
@@ -227,7 +237,7 @@ fn the_cursor_warning_fires_once_per_plugin() {
 #[test]
 fn an_unknown_placeholder_fails_the_build() {
     let vfs = vault(&one_hook("x {{foo}}"));
-    let err = export_skills(&vfs, &request(ExportMode::Build))
+    let err = export(&vfs, &request(ExportMode::Build))
         .unwrap_err()
         .to_string();
     assert!(err.contains(HOOKS_REL), "{err}");
@@ -268,7 +278,7 @@ fn an_uncarried_event_is_left_out() {
 #[test]
 fn an_event_only_codex_carries_gives_only_codex_a_hooks_file() {
     let vfs = vault(r#"{"hooks": {"Interrupt": [{"hooks": [{"command": "x"}]}]}}"#);
-    export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+    export(&vfs, &request(ExportMode::Build)).unwrap();
     for (harness, pack) in &PACKS {
         let path = format!("{pack}/hooks/hooks.json");
         assert_eq!(
@@ -285,14 +295,14 @@ fn a_hand_edited_hooks_file_is_drift() {
     let path = format!("{}/hooks/hooks.json", PACKS[1].1);
     let edited = text_at(&vfs, &path).replace("session stop", "session halt");
     write(&vfs, &path, &edited);
-    let report = export_skills(&vfs, &request(ExportMode::Check)).unwrap();
+    let report = export(&vfs, &request(ExportMode::Check)).unwrap();
     assert!(report.changed, "the edit is reported as drift");
 }
 
 #[test]
 fn an_unknown_event_fails_the_build() {
     let vfs = vault(r#"{"hooks": {"OnBoot": [{"hooks": [{"command": "x"}]}]}}"#);
-    let err = export_skills(&vfs, &request(ExportMode::Build))
+    let err = export(&vfs, &request(ExportMode::Build))
         .unwrap_err()
         .to_string();
     assert!(err.contains(HOOKS_REL), "{err}");
@@ -312,7 +322,7 @@ fn each_hook_a_harness_cannot_carry_is_a_warning() {
     );
     let mut request = request(ExportMode::Build);
     request.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
-    let report = export_skills(&vfs, &request).unwrap();
+    let report = export(&vfs, &request).unwrap();
     let left_out: Vec<_> = report
         .warnings
         .iter()

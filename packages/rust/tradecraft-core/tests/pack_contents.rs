@@ -3,7 +3,17 @@
 
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::{ExportMode, MemVfs, NativeVfs, Vfs, export_skills, load_vault};
+use tradecraft_core::{ExportMode, MemVfs, NativeVfs, Vfs, load_vault};
+
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
 
 const NOTE: &str = "---\nversion: 1.0.0\n---\n";
 const SKILL: &str = "---\ndescription: Use it.\n---\n\nBody.\n";
@@ -42,8 +52,8 @@ fn put(vfs: &MemVfs, rel: &str, text: &str) {
 /// Builds the vault at `root`.
 fn build(vfs: &dyn Vfs, root: &Path) -> Result<(), tradecraft_core::CoreError> {
     let loaded = load_vault(vfs, root, None)?;
-    let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-    export_skills(vfs, &request).map(|_| ())
+    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    export(vfs, &request).map(|_| ())
 }
 
 fn read(vfs: &dyn Vfs, rel: &str) -> String {

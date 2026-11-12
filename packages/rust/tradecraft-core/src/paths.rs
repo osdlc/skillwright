@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::CoreError;
-use crate::export::{ExportMode, ExportRequest};
+use crate::export::{ExportMode, VaultRequest};
 use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
 use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
@@ -100,8 +100,7 @@ pub struct LoadedVault {
     /// The marketplaces the load was asked for, by folder name: every one, or
     /// the one named.
     pub marketplaces: Vec<VaultMarketplace>,
-    /// The vault's layout, read once: pass it to [`crate::plan_in`] for
-    /// each marketplace.
+    /// The vault's layout, read once.
     pub layout: Layout,
 }
 
@@ -111,14 +110,11 @@ impl LoadedVault {
         self.marketplaces.iter().find(|m| m.name == name)
     }
 
-    /// The build or check of `marketplace`, against its `dist/<m>/` folder.
-    /// The core reads the root file's defaults and harnesses itself.
-    pub fn export_request(
-        &self,
-        marketplace: &VaultMarketplace,
-        mode: ExportMode,
-    ) -> ExportRequest {
-        let mut request = ExportRequest::new(self.root.clone());
+    /// The build or check of `marketplace`, against its `dist/<m>/` folder,
+    /// for [`crate::build_vault`]. The core reads the root file's defaults
+    /// and harnesses itself.
+    pub fn vault_request(&self, marketplace: &VaultMarketplace, mode: ExportMode) -> VaultRequest {
+        let mut request = VaultRequest::new(self.root.clone());
         request.marketplace = Some(marketplace.name.clone());
         request.mode = mode;
         request
@@ -256,7 +252,7 @@ mod tests {
         let house = loaded.marketplace("house").unwrap();
         assert_eq!(house.note, Path::new("/v/marketplaces/house/house.md"));
         assert_eq!(house.dist, Path::new("/v/dist/house"));
-        let request = loaded.export_request(house, ExportMode::Build);
+        let request = loaded.vault_request(house, ExportMode::Build);
         assert_eq!(request.marketplace.as_deref(), Some("house"));
         assert_eq!(request.vault_root, Path::new("/v"));
     }

@@ -159,10 +159,14 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
 /// all of them or none: a failed swap rolls back every marketplace already
 /// swapped.
 ///
+/// A check of one marketplace may name `compare_with`, another built folder
+/// to compare with in place of `dist/<m>/`.
+///
 /// # Errors
 ///
 /// A build: the first marketplace's refusal, with nothing written, or
-/// `SwapFailed`.
+/// `SwapFailed`. `Refused` (`compare-with`) for a build that names
+/// `compare_with`, or a request for several marketplaces that does.
 #[wasm_bindgen(js_name = buildVault)]
 pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
@@ -248,6 +252,7 @@ mod tests {
         assert_eq!(request.mode, ExportMode::Build);
         assert_eq!(request.marketplace, None);
         assert!(request.harnesses.is_empty());
+        assert_eq!(request.compare_with, None);
     }
 
     #[test]

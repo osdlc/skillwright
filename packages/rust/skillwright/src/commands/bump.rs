@@ -23,9 +23,10 @@ use serde::Serialize;
 use tradecraft_core::discover::discover_in;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
-    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit, NativeVfs,
-    PatchScheme, ROOT_FILE, UnitStatus, Vfs, dist_dir, is_vault_root, next_version, owned_paths,
-    packs_path, parse_semver, plan_in, plugin_manifest_path, read_version, set_version,
+    BumpLevel, CoreError, DiscoveredComponent, EntityKind, ExportMode, ExportReport, ExportUnit,
+    NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest, Vfs, build_vault,
+    dist_dir, is_vault_root, next_version, owned_paths, packs_path, parse_semver,
+    plugin_manifest_path, read_version, set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -448,6 +449,19 @@ fn holds_a_plugin_manifest(dir: &Path, roots: &[&str]) -> bool {
     })
 }
 
+/// The one marketplace's report from a request for one, or what refused it.
+fn one_report(report: Result<VaultReport, CoreError>) -> Result<ExportReport, String> {
+    let mut report = report.map_err(|err| err.to_string())?;
+    if let Some(refusal) = report.refused.pop() {
+        return Err(refusal.error);
+    }
+    report
+        .marketplaces
+        .pop()
+        .map(|m| m.report)
+        .ok_or_else(|| "the build reported no marketplace".to_owned())
+}
+
 fn run_changed(
     flags: &BumpFlags,
     ctx: &mut CommandContext<'_>,
@@ -457,11 +471,11 @@ fn run_changed(
     scheme: PatchScheme,
 ) -> i32 {
     // Each request compares with its baseline once that resolves.
-    let requests: Vec<(&str, ExportRequest)> = run
+    let requests: Vec<(&str, VaultRequest)> = run
         .marketplaces()
         .iter()
         .map(|m| {
-            let mut request = run.loaded.export_request(m, ExportMode::Check);
+            let mut request = run.loaded.vault_request(m, ExportMode::Check);
             request.harnesses.clone_from(&flags.harnesses);
             (m.name.as_str(), request)
         })
@@ -475,7 +489,7 @@ fn run_changed(
     let mut rows: Vec<Row> = Vec::new();
     for (market, mut request) in requests {
         request.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<&str> = match owned_paths(&run.loaded.settings, &request) {
+        let mut roots: Vec<&str> = match owned_paths(&run.loaded.settings, &request.harnesses) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return refused(ctx.err, normalize_thrown_reason(&err.to_string())),
         };
@@ -502,16 +516,14 @@ fn run_changed(
                 ),
             );
         }
-        let report = match plan_in(&NativeVfs, &run.loaded.layout, &request)
-            .and_then(|plan| plan.write(&NativeVfs))
-        {
+        let report = match one_report(build_vault(&NativeVfs, &request)) {
             Ok(report) => report,
             Err(err) => {
                 return refused(
                     ctx.err,
                     &format!(
                         "comparing against `{since}` failed: {}",
-                        normalize_thrown_reason(&err.to_string())
+                        normalize_thrown_reason(&err)
                     ),
                 );
             }
@@ -962,11 +974,9 @@ impl BuiltRef {
             };
             let mut request = base_run
                 .loaded
-                .export_request(base_market, ExportMode::Build);
+                .vault_request(base_market, ExportMode::Build);
             request.harnesses.clone_from(harnesses);
-            let result = plan_in(&NativeVfs, &base_run.loaded.layout, &request)
-                .and_then(|plan| plan.write(&NativeVfs));
-            if let Err(err) = result {
+            if let Err(err) = build_vault(&NativeVfs, &request) {
                 return fail(
                     ctx,
                     format!(

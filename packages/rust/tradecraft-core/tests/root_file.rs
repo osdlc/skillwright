@@ -6,6 +6,16 @@ use std::path::Path;
 
 use tradecraft_core::{ExportMode, MemVfs, Vfs, load_vault, parse_root_file, read_layout};
 
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
+
 const SKILL: &str = "---\ndescription: Use it.\n---\n\nBody.\n";
 
 /// A vault at `/v`: marketplace `acme`, plugin `tools`, skill `review`, with
@@ -52,8 +62,8 @@ fn build_error(vfs: &MemVfs) -> String {
         Err(err) => return err.to_string(),
     };
     for marketplace in &loaded.marketplaces {
-        let request = loaded.export_request(marketplace, ExportMode::Build);
-        if let Err(err) = tradecraft_core::export_skills(vfs, &request) {
+        let request = loaded.vault_request(marketplace, ExportMode::Build);
+        if let Err(err) = export(vfs, &request) {
             return err.to_string();
         }
     }
@@ -285,8 +295,8 @@ fn build_harnesses_accept_only_the_four_harness_names() {
 fn build_harnesses_picks_the_trees_written() {
     let vfs = root("build:\n  harnesses: [claude, pi]");
     let loaded = load_vault(&vfs, Path::new("/v"), None).unwrap();
-    let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-    tradecraft_core::export_skills(&vfs, &request).unwrap();
+    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    export(&vfs, &request).unwrap();
     let mut trees: Vec<String> = vfs
         .read_dir(Path::new("/v/dist/acme"))
         .unwrap()

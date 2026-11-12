@@ -7,6 +7,16 @@ use std::path::Path;
 use serde_json::Value;
 use tradecraft_core::{DiscoveryWarning, ExportMode, MemVfs, Vfs, load_vault};
 
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
+
 const ROOT: &str = "skillwright.md";
 const MARKET: &str = "marketplaces/acme/acme.md";
 const PLUGIN: &str = "marketplaces/acme/plugins/tools/tools.md";
@@ -47,8 +57,8 @@ fn build(vfs: &MemVfs) -> Vec<DiscoveryWarning> {
     let loaded = load_vault(vfs, Path::new("/v"), None).unwrap();
     let mut warnings = Vec::new();
     for marketplace in &loaded.marketplaces {
-        let request = loaded.export_request(marketplace, ExportMode::Build);
-        let report = tradecraft_core::export_skills(vfs, &request).unwrap();
+        let request = loaded.vault_request(marketplace, ExportMode::Build);
+        let report = export(vfs, &request).unwrap();
         warnings.extend(report.warnings);
     }
     warnings
@@ -61,8 +71,8 @@ fn build_error(vfs: &MemVfs) -> String {
         Err(err) => return err.to_string(),
     };
     for marketplace in &loaded.marketplaces {
-        let request = loaded.export_request(marketplace, ExportMode::Build);
-        if let Err(err) = tradecraft_core::export_skills(vfs, &request) {
+        let request = loaded.vault_request(marketplace, ExportMode::Build);
+        if let Err(err) = export(vfs, &request) {
             return err.to_string();
         }
     }

@@ -5,9 +5,17 @@
 
 use std::path::Path;
 
-use tradecraft_core::{
-    CoreError, DiscoveryWarning, ExportMode, MemVfs, Vfs, export_skills, load_vault,
-};
+use tradecraft_core::{CoreError, DiscoveryWarning, ExportMode, MemVfs, Vfs, load_vault};
+
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
 
 const SKILL: &str = "---\ndescription: Use it.\n---\n\n";
 
@@ -55,11 +63,11 @@ fn build(vfs: &dyn Vfs) -> Result<Vec<DiscoveryWarning>, CoreError> {
 /// Builds `harnesses`, or what the root file names when empty.
 fn build_for(vfs: &dyn Vfs, harnesses: &[&str]) -> Result<Vec<DiscoveryWarning>, CoreError> {
     let loaded = load_vault(vfs, Path::new("/v"), None)?;
-    let mut request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
+    let mut request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
     if !harnesses.is_empty() {
         request.harnesses = harnesses.iter().map(|h| (*h).to_owned()).collect();
     }
-    export_skills(vfs, &request).map(|report| report.warnings)
+    export(vfs, &request).map(|report| report.warnings)
 }
 
 fn refusal(vfs: &dyn Vfs) -> String {
@@ -136,8 +144,8 @@ fn disk_refusal(tmp: &tempfile::TempDir) -> String {
     let vfs = tradecraft_core::NativeVfs;
     let root = tmp.path().join("v");
     let result = load_vault(&vfs, &root, None).and_then(|loaded| {
-        let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-        export_skills(&vfs, &request).map(|_| ())
+        let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+        export(&vfs, &request).map(|_| ())
     });
     match result {
         Ok(()) => panic!("the build succeeded"),
@@ -304,8 +312,8 @@ fn a_symlink_in_a_never_ship_folder_is_not_followed() {
     let vfs = tradecraft_core::NativeVfs;
     let root = tmp.path().join("v");
     let loaded = load_vault(&vfs, &root, None).unwrap();
-    let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-    export_skills(&vfs, &request).unwrap();
+    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    export(&vfs, &request).unwrap();
     let pack = root.join(CLAUDE);
     assert!(pack.join("skills/author/SKILL.md").is_file());
     assert!(!pack.join("src").exists());

@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 
 use tradecraft_core::vfs::{DirEntry, Metadata, VfsError};
 use tradecraft_core::{
-    CoreError, ExportMode, ExportRequest, MemVfs, VaultRequest, Vfs, build_vault, export_skills,
-    load_vault, model::LoadRequest, plan_loaded,
+    CoreError, ExportMode, MemVfs, VaultRequest, Vfs, build_vault, load_vault, model::LoadRequest,
 };
 
 const SKILL: &str = "---\ndescription: Use it.\n---\n\nBody.\n";
@@ -41,8 +40,8 @@ fn write(vfs: &MemVfs, path: &str, text: &str) {
     vfs.write_file(path, text.as_bytes()).unwrap();
 }
 
-fn request(marketplace: &str) -> ExportRequest {
-    let mut request = ExportRequest::new("/v");
+fn request(marketplace: &str) -> VaultRequest {
+    let mut request = VaultRequest::new("/v");
     request.marketplace = Some(marketplace.to_owned());
     request
 }
@@ -68,7 +67,6 @@ fn files_under(vfs: &MemVfs, dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 fn every_request_refuses_defaults() {
     let json = r#"{ "vault_root": "/v", "defaults": { "license": "MIT" } }"#;
     for err in [
-        serde_json::from_str::<ExportRequest>(json).unwrap_err(),
         serde_json::from_str::<LoadRequest>(json).unwrap_err(),
         serde_json::from_str::<VaultRequest>(json).unwrap_err(),
     ] {
@@ -79,7 +77,7 @@ fn every_request_refuses_defaults() {
 #[test]
 fn the_core_reads_the_root_files_defaults() {
     let vfs = vault("license: MIT\nhomepage: https://root.example\n", &["acme"]);
-    export_skills(&vfs, &request("acme")).unwrap();
+    build_vault(&vfs, &request("acme")).unwrap();
     let manifest = vfs
         .read_file(Path::new(
             "/v/dist/acme/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
@@ -93,7 +91,7 @@ fn the_core_reads_the_root_files_defaults() {
 #[test]
 fn the_root_files_harnesses_decide_with_no_filter() {
     let vfs = vault("build:\n  harnesses: [claude, codex]\n", &["acme"]);
-    export_skills(&vfs, &request("acme")).unwrap();
+    build_vault(&vfs, &request("acme")).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme/.claude-plugin")));
     assert!(vfs.exists(Path::new("/v/dist/acme/.agents")));
     assert!(!vfs.exists(Path::new("/v/dist/acme/.cursor-plugin")));
@@ -105,7 +103,7 @@ fn the_requests_harnesses_can_narrow_the_root_files_list() {
     let vfs = vault("build:\n  harnesses: [claude, codex]\n", &["acme"]);
     let mut narrowed = request("acme");
     narrowed.harnesses = BTreeSet::from(["codex".to_owned()]);
-    export_skills(&vfs, &narrowed).unwrap();
+    build_vault(&vfs, &narrowed).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme/.agents")));
     assert!(!vfs.exists(Path::new("/v/dist/acme/.claude-plugin")));
 }
@@ -115,7 +113,7 @@ fn the_requests_harnesses_replace_the_root_files_list() {
     let vfs = vault("build:\n  harnesses: [claude]\n", &["acme"]);
     let mut widened = request("acme");
     widened.harnesses = BTreeSet::from(["codex".to_owned(), "pi".to_owned()]);
-    export_skills(&vfs, &widened).unwrap();
+    build_vault(&vfs, &widened).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme/.agents")));
     assert!(vfs.exists(Path::new("/v/dist/acme/.pi")));
     assert!(!vfs.exists(Path::new("/v/dist/acme/.claude-plugin")));
@@ -124,7 +122,7 @@ fn the_requests_harnesses_replace_the_root_files_list() {
     let vfs = vault("", &["acme"]);
     let mut narrowed = request("acme");
     narrowed.harnesses = BTreeSet::from(["pi".to_owned()]);
-    export_skills(&vfs, &narrowed).unwrap();
+    build_vault(&vfs, &narrowed).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme/.pi")));
     assert!(!vfs.exists(Path::new("/v/dist/acme/.claude-plugin")));
 }
@@ -150,19 +148,69 @@ fn build_vault_builds_every_marketplace() {
     assert!(report.marketplaces.iter().all(|m| !m.report.changed));
 }
 
-/// A caller that has already loaded the vault plans it without a second load.
 #[test]
-fn a_loaded_vault_plans_each_of_its_marketplaces() {
+fn a_named_marketplace_is_the_only_one_built() {
     let vfs = vault("", &["acme", "shop"]);
     let loaded = load_vault(&vfs, Path::new("/v"), Some("shop")).unwrap();
-    let plan = plan_loaded(&vfs, &loaded, ExportMode::Check, &BTreeSet::new());
-    let names: Vec<&str> = plan
+    let report = build_vault(
+        &vfs,
+        &loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build),
+    )
+    .unwrap();
+    let names: Vec<&str> = report
         .marketplaces
         .iter()
-        .map(|(market, _)| market.name.as_str())
+        .map(|m| m.marketplace.as_str())
         .collect();
     assert_eq!(names, ["shop"]);
-    assert!(plan.marketplaces.iter().all(|(_, planned)| planned.is_ok()));
+    assert!(vfs.exists(Path::new("/v/dist/shop")));
+    assert!(!vfs.exists(Path::new("/v/dist/acme")));
+}
+
+/// A check can compare with another built folder, as `bump --changed-since`
+/// does. A build cannot be pointed anywhere, and one folder cannot stand for
+/// several marketplaces.
+#[test]
+fn a_check_compares_with_another_folder() {
+    let vfs = vault("", &["acme", "shop"]);
+    build_vault(&vfs, &VaultRequest::new("/v")).unwrap();
+    vfs.rename(Path::new("/v/dist/shop"), Path::new("/baseline"))
+        .unwrap();
+
+    let mut check = request("shop");
+    check.mode = ExportMode::Check;
+    check.compare_with = Some(PathBuf::from("/baseline"));
+    let report = build_vault(&vfs, &check).unwrap();
+    assert!(!report.marketplaces[0].report.changed);
+    // Without it, the check compares with the missing `dist/shop/`.
+    check.compare_with = None;
+    assert!(
+        build_vault(&vfs, &check).unwrap().marketplaces[0]
+            .report
+            .changed
+    );
+
+    let mut build = request("shop");
+    build.compare_with = Some(PathBuf::from("/baseline"));
+    let err = build_vault(&vfs, &build).unwrap_err().to_string();
+    assert!(err.contains("compare-with"), "{err}");
+    assert!(!vfs.exists(Path::new("/v/dist/shop")));
+
+    let mut several = VaultRequest::new("/v");
+    several.mode = ExportMode::Check;
+    several.compare_with = Some(PathBuf::from("/baseline"));
+    let err = build_vault(&vfs, &several).unwrap_err().to_string();
+    assert!(err.contains("compare-with"), "{err}");
+    assert!(err.contains("`marketplace`"), "{err}");
+}
+
+#[test]
+fn compare_with_crosses_on_the_wire() {
+    let request: VaultRequest =
+        serde_json::from_str(r#"{ "vault_root": "/v", "compare_with": "/baseline" }"#).unwrap();
+    assert_eq!(request.compare_with, Some(PathBuf::from("/baseline")));
+    let request: VaultRequest = serde_json::from_str(r#"{ "vault_root": "/v" }"#).unwrap();
+    assert_eq!(request.compare_with, None);
 }
 
 fn check() -> VaultRequest {

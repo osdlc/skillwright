@@ -41,6 +41,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `build` checks every marketplace before it asks, then builds through the core's one build entry point. The vault is rendered twice; what `build` writes and prints is the same.
 - `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts. It also lists, per harness, the block keys that stay with a plugin or marketplace and never reach its members.
 - A root file value of the wrong shape is refused with the words a note gets, naming the key.
 

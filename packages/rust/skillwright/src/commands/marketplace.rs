@@ -10,9 +10,9 @@
 //! Nothing about the marketplace is decided here. Which skills ship, how they
 //! group into plugins, what each manifest says, which harnesses are built,
 //! what counts as stale, and whether the swap is safe
-//! all live in [`tradecraft_core::export`]. This file has the core plan every
-//! marketplace once, asks the user, has the core write the plan, and renders
-//! the report.
+//! all live in [`tradecraft_core::export`]. This file has the core check
+//! every marketplace, asks the user, has the core build, and renders the
+//! report. A build so renders twice: once to check, once to write.
 //!
 //! # `--dry-run` on `build` is not `check`
 //!
@@ -25,11 +25,12 @@
 use std::collections::BTreeSet;
 
 use tradecraft_core::{
-    CoreError, ExportMode, ExportReport, ExportUnit, NativeVfs, VaultPlan, plan_loaded,
+    CoreError, ExportMode, ExportReport, ExportUnit, NativeVfs, VaultReport, VaultRequest,
+    build_vault, owned_paths,
 };
 
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_DRIFT, EXIT_OK, refused};
+use crate::exit::{EXIT_DRIFT, EXIT_OK, EXIT_REFUSED, refused};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{
     count_checked_units, normalize_thrown_reason, print_json, render_export_tally,
@@ -98,13 +99,20 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     // module doc). So the only run that reaches `ExportMode::Build` is a
     // plain `build`.
     let writes = verb == ExportVerb::Build && !flags.dry_run;
-    let mode = if writes {
-        ExportMode::Build
-    } else {
-        ExportMode::Check
+    let request = |mode: ExportMode| {
+        let mut request = VaultRequest::new(run.loaded.root.clone());
+        request.marketplace.clone_from(&flags.marketplace);
+        request.harnesses.clone_from(&flags.harnesses);
+        request.mode = mode;
+        request
     };
-    let plan = plan_loaded(&NativeVfs, &run.loaded, mode, &flags.harnesses);
-    let several = plan.marketplaces.len() > 1;
+    // Every run checks first. A build writes only when every marketplace
+    // passed, after asking.
+    let checked = match build_vault(&NativeVfs, &request(ExportMode::Check)) {
+        Ok(checked) => checked,
+        Err(err) => return failed_run(verb, &err, ctx),
+    };
+    let several = run.marketplaces().len() > 1;
     // `bump` needs `--marketplace` only when the vault holds several, but
     // naming it always runs.
     let name_market = flags.marketplace.is_some() || several;
@@ -115,23 +123,17 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     };
 
     // A build writes nothing when any marketplace failed.
-    if writes && plan.failed() {
-        let mut exit = EXIT_OK;
-        for (market, planned) in &plan.marketplaces {
-            if let Err(err) = planned {
-                header(&market.name, ctx);
-                let code = failed_run(verb, err, ctx);
-                if exit == EXIT_OK {
-                    exit = code;
-                }
-            }
+    if writes && !checked.refused.is_empty() {
+        for refusal in &checked.refused {
+            header(&refusal.marketplace, ctx);
+            refused_run(verb, &refusal.error, ctx);
         }
         let _ = writeln!(ctx.err, "Nothing was written.");
-        return exit;
+        return EXIT_REFUSED;
     }
 
     if writes && !flags.yes {
-        let gate = confirm_build(&run, &plan, ctx);
+        let gate = confirm_build(&run, flags, ctx);
         if gate != EXIT_OK {
             return gate;
         }
@@ -143,25 +145,13 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         );
     }
 
-    let reports: Vec<(String, Result<ExportReport, CoreError>)> = if writes {
-        match plan.write(&NativeVfs) {
-            Ok(report) => report
-                .marketplaces
-                .into_iter()
-                .map(|m| (m.marketplace, Ok(m.report)))
-                .collect(),
+    let reports = if writes {
+        match build_vault(&NativeVfs, &request(ExportMode::Build)) {
+            Ok(built) => in_folder_order(&run, built),
             Err(err) => return failed_run(verb, &err, ctx),
         }
     } else {
-        plan.marketplaces
-            .into_iter()
-            .map(|(market, planned)| {
-                (
-                    market.name,
-                    planned.and_then(|planned| planned.write(&NativeVfs)),
-                )
-            })
-            .collect()
+        in_folder_order(&run, checked)
     };
 
     // With several marketplaces, `--json` gathers every report into one
@@ -171,14 +161,15 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     for (name, report) in reports {
         header(&name, ctx);
         let code = match report {
-            Err(err) => {
+            Err(error) => {
+                let code = refused_run(verb, &error, ctx);
                 if let Some(document) = &mut document {
                     document.refused.push(Refusal {
-                        marketplace: name.clone(),
-                        error: err.to_string(),
+                        marketplace: name,
+                        error,
                     });
                 }
-                failed_run(verb, &err, ctx)
+                code
             }
             Ok(report) => {
                 let advise = name_market.then(|| name.clone());
@@ -225,33 +216,56 @@ struct Refusal {
     error: String,
 }
 
+/// Each marketplace's report, or what refused it, in folder order.
+fn in_folder_order(
+    run: &ResolvedRun,
+    report: VaultReport,
+) -> Vec<(String, Result<ExportReport, String>)> {
+    let mut reports: Vec<(String, Result<ExportReport, String>)> = report
+        .marketplaces
+        .into_iter()
+        .map(|m| (m.marketplace, Ok(m.report)))
+        .chain(
+            report
+                .refused
+                .into_iter()
+                .map(|r| (r.marketplace, Err(r.error))),
+        )
+        .collect();
+    let at = |name: &str| run.marketplaces().iter().position(|m| m.name == name);
+    reports.sort_by_key(|(name, _)| at(name));
+    reports
+}
+
 /// Report a run-level failure: an export has no partial report, since its
 /// checks run before anything is staged and a failed swap rolls back.
 fn failed_run(verb: ExportVerb, err: &CoreError, ctx: &mut CommandContext<'_>) -> i32 {
+    refused_run(verb, &err.to_string(), ctx)
+}
+
+/// [`failed_run`] for an error the core gave as text.
+fn refused_run(verb: ExportVerb, error: &str, ctx: &mut CommandContext<'_>) -> i32 {
     refused(
         ctx.err,
         &format!(
             "{} failed: {}",
             verb.as_str(),
-            normalize_thrown_reason(&err.to_string())
+            normalize_thrown_reason(error)
         ),
     )
 }
 
 /// Ask before a build replaces what it owns in each `dist/<m>/`.
-fn confirm_build(run: &ResolvedRun, plan: &VaultPlan, ctx: &mut CommandContext<'_>) -> i32 {
+fn confirm_build(run: &ResolvedRun, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
+    // The harnesses are named, and the paths each one replaces with them.
+    // The list comes from the core, not from a copy of the table here. The
+    // check before this one has already refused an unknown harness.
+    let owned = owned_paths(&run.loaded.settings, &flags.harnesses).unwrap_or_default();
+    // The paths are padded to each other so the harness names line up after
+    // them, the way `plan_flow` lines the labels up against each other.
+    let width = owned.iter().map(|(_, path)| path.len()).max().unwrap_or(0);
     let mut lines = vec!["build the marketplace".to_string(), String::new()];
-    for (market, planned) in &plan.marketplaces {
-        // The harnesses are named, and the paths each one replaces with them.
-        // The list comes from the plan, not from a copy of the table here.
-        let owned = planned
-            .as_ref()
-            .map(|planned| planned.owned_paths())
-            .unwrap_or_default();
-        // The paths are padded to each other so the harness names line up
-        // after them, the way `plan_flow` lines the labels up against each
-        // other.
-        let width = owned.iter().map(|(_, path)| path.len()).max().unwrap_or(0);
+    for market in run.marketplaces() {
         lines.extend(plan_flow(&[
             ("from vault", vec![run.vault.display().to_string()]),
             ("into", vec![market.dist.display().to_string()]),

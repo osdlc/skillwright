@@ -194,8 +194,12 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
  * before any is written, and a build writes all of them or none: a failed
  * swap rolls back every marketplace already swapped.
  *
+ * A check of one marketplace may set `compare_with`, another built folder to
+ * compare with in place of `dist/<m>/`.
+ *
  * Throws {@link CoreError} for the first marketplace's refusal, with nothing
- * written, and for a failed swap.
+ * written, for a failed swap, and for `compare_with` on a build or on a
+ * request for several marketplaces.
  */
 export function buildVault(vfs: Vfs, request: VaultRequest): VaultReport {
   return callCore<VaultReport>(() => buildVaultWasm(vfs, JSON.stringify(request)))

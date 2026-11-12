@@ -1,10 +1,10 @@
 //! The CLI's `build` verb and a request built the way another host builds
 //! it must render byte-identical trees for the same vault.
 //!
-//! Both sides reach the same `tradecraft_core::export_skills`. The host side
+//! Both sides reach the same `tradecraft_core::build_vault`. The host side
 //! is not reachable from here, so this calls that function directly with a
-//! request shaped the way a host that embeds the core shapes it: name,
-//! display_name, owner and author absent, `plugins` empty. What it proves:
+//! request shaped the way a host that embeds the core shapes it: the vault
+//! root and the marketplace's name, nothing else. What it proves:
 //! the CLI's own flag-to-request resolution in `commands/marketplace.rs` and
 //! a host's request-building do not disagree about what an equivalent build
 //! means.
@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
-use tradecraft_core::{ExportRequest, NativeVfs, export_skills};
+use tradecraft_core::{NativeVfs, VaultRequest, build_vault};
 
 fn fixture_vault() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -101,9 +101,9 @@ fn the_cli_and_a_host_request_render_identical_trees() {
     assert!(cli_out.is_dir());
     assert!(!copy.join("dist/labs").exists());
 
-    export_skills(&NativeVfs, &{
+    build_vault(&NativeVfs, &{
         // The core reads the root file itself, as the CLI's build does.
-        let mut request = ExportRequest::new(host_copy.clone());
+        let mut request = VaultRequest::new(host_copy.clone());
         request.marketplace = Some("acme".to_string());
         request
     })

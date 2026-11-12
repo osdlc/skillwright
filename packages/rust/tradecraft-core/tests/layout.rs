@@ -4,9 +4,19 @@
 use std::path::Path;
 
 use tradecraft_core::{
-    CoreError, EntityKind, ExportMode, ExportRequest, MemVfs, Vfs, check_vault_root,
-    discover_components, export_skills, find_vault_root, load_vault, read_layout,
+    CoreError, EntityKind, ExportMode, MemVfs, VaultRequest, Vfs, build_vault, check_vault_root,
+    discover_components, find_vault_root, load_vault, read_layout,
 };
+
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
 
 const ROOT: &str = "---\n---\n";
 const NOTE: &str = "---\n---\n";
@@ -145,8 +155,8 @@ fn files_beside_the_root_file_are_not_read_and_a_build_leaves_them() {
         .map(|rel| vfs.read_file(&Path::new("/v").join(rel)).unwrap())
         .collect();
     let loaded = load_vault(&vfs, Path::new("/v"), None).unwrap();
-    let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-    export_skills(&vfs, &request).unwrap();
+    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    export(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme")));
     let after: Vec<Vec<u8>> = ["README.md", "notes/plain.md", "notes/marketplaces/x/x.md"]
         .iter()
@@ -520,8 +530,8 @@ fn node_modules_is_skipped_in_a_plugin_and_a_skill() {
 /// as `path: reason: detail`, and every file written under `dist/`.
 fn build(vfs: &MemVfs) -> (Vec<String>, Vec<String>) {
     let loaded = load_vault(vfs, Path::new("/v"), None).unwrap();
-    let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-    let report = export_skills(vfs, &request).unwrap();
+    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let report = export(vfs, &request).unwrap();
     let warnings = report
         .warnings
         .iter()
@@ -789,10 +799,11 @@ fn case_7_packs_in_a_marketplace_or_plugin_block_is_refused() {
         let text = format!("---\n{at}:\n  packs: elsewhere\n---\n");
         files.retain(|(path, _)| path != note);
         files.push((note.to_owned(), text));
-        let mut request = ExportRequest::new("/v");
+        let mut request = VaultRequest::new("/v");
         request.mode = ExportMode::Check;
-        let err = export_skills(&vault_of(&files), &request).unwrap_err();
-        let said = err.to_string();
+        // A check lists the refusal in its report.
+        let report = build_vault(&vault_of(&files), &request).unwrap();
+        let said = &report.refused[0].error;
         assert!(said.contains(&format!("`{at}.packs`")), "{note}: {said}");
         assert!(said.contains("removed"), "{note}: {said}");
         assert!(said.contains(note), "{note}: {said}");
@@ -1018,8 +1029,8 @@ fn a_symlinked_folder_in_a_skill_builds() {
 
     let vfs = tradecraft_core::NativeVfs;
     let result = load_vault(&vfs, &tmp, None).and_then(|loaded| {
-        let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-        export_skills(&vfs, &request)
+        let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+        export(&vfs, &request)
     });
     let shipped = tmp.join("dist/acme/.claude-plugin/packs/tools/skills/review/references/x.md");
     let exists = shipped.exists();

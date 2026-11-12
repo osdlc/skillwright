@@ -7,10 +7,19 @@ use std::path::Path;
 
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
-    BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportRequest,
-    ExportUnit, MemVfs, RootFile, SharedDefaults, StaleKind, UnitStatus, Vfs, discover_components,
-    export_skills,
+    BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportUnit, MemVfs,
+    RootFile, SharedDefaults, StaleKind, UnitStatus, VaultRequest, Vfs, discover_components,
 };
+
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
 
@@ -33,10 +42,10 @@ fn vault() -> MemVfs {
 #[test]
 fn an_export_request_takes_its_vault_root() {
     let vfs = vault();
-    let mut request = ExportRequest::new("/vault");
+    let mut request = VaultRequest::new("/vault");
     assert_eq!(request.mode, ExportMode::Build);
     request.harnesses.insert("claude".to_owned());
-    let report = export_skills(&vfs, &request).unwrap();
+    let report = export(&vfs, &request).unwrap();
     assert!(report.changed);
     assert!(vfs.exists(Path::new(
         "/vault/dist/house/.claude-plugin/marketplace.json"
@@ -81,8 +90,8 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
     let warning = DiscoveryWarning::new("review.md", "missing-version", "detail");
     assert_eq!(warning.reason, "missing-version");
 
-    let request = ExportRequest::new("/vault");
-    let report = export_skills(&vfs, &request).unwrap();
+    let request = VaultRequest::new("/vault");
+    let report = export(&vfs, &request).unwrap();
     assert_eq!(report.mode, ExportMode::Build);
     for unit in &report.units {
         let status = match unit {
