@@ -50,6 +50,7 @@ describe('a host filesystem that throws a value with no message', () => {
 
       expect(raw).toBeInstanceOf(CoreError)
       expect((raw as CoreError).coreName).toBe('Io')
+      expect((raw as CoreError).token).toBeUndefined()
       expect((raw as CoreError).message).toContain(tmp)
     })
   }

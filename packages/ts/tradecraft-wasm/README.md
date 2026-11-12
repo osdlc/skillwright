@@ -63,7 +63,8 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 | `toCorePath`, `toHostPath`    | Convert a host path to the core's `/` form and back. They matter on Windows.    |
 
 A call that the core refuses throws `CoreError`. Its `coreName` is the core's
-error variant, such as `Refused` or `PathEscapesRoot`.
+error variant, such as `Refused` or `PathEscapesRoot`. A `Refused` error's
+`token` is its reason, such as `unsafe-path`.
 
 The request and report types are exported too. They are generated from the
 Rust source, so they cannot drift from it.

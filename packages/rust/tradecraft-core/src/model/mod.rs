@@ -53,6 +53,7 @@ use crate::discover::{DiscoveredComponent, DiscoveryWarning};
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
+use crate::refusal;
 
 pub use load::{LoadRequest, load, load_in, resolve_body};
 
@@ -331,7 +332,7 @@ impl Call {
             return Ok(());
         }
         Err(CoreError::refused(
-            "skill-call-not-shipped",
+            refusal::SKILL_CALL_NOT_SHIPPED,
             format!(
                 "{}: `/[[{}]]` calls {} `{}`, which the {target} pack does not contain \
                  (section 4 rule 8)",

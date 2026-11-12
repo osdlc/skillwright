@@ -27,15 +27,12 @@ fn tally_words<'a>(order: &[&str], words: impl IntoIterator<Item = &'a str>) -> 
         .collect()
 }
 
-/// A thrown message as the prose an export's reason column carries.
-///
-/// [`tradecraft_core::CoreError::Refused`]'s `Display` is
-/// `refused: <token>: <prose>`, and the `refused:` is the status, carried by
-/// the line's own status column — left whole the line reads
-/// `… refused · refused: no-renderer: …`. The token stays at the front, which
-/// is what the CLI spec wants leading a reason.
-pub fn normalize_thrown_reason(message: &str) -> &str {
-    message.strip_prefix("refused: ").unwrap_or(message)
+/// `dry run — reporting <what>; nothing will be written`, on stderr.
+pub fn dry_run_notice(ctx: &mut CommandContext<'_>, what: &str) {
+    let _ = writeln!(
+        ctx.err,
+        "dry run — reporting {what}; nothing will be written"
+    );
 }
 
 /// Writes `value` to stdout as one pretty JSON document. `Err` is the exit
