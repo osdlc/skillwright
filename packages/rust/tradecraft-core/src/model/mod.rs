@@ -41,6 +41,7 @@
 pub mod cascade;
 pub(crate) mod config;
 pub mod load;
+pub mod vault;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

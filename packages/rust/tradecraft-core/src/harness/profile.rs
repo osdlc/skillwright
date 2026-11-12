@@ -623,7 +623,7 @@ fn resolve_format(harness: Harness) -> PluginFormat {
     let policy = &profile.plugin;
     PluginFormat {
         policy,
-        skills_dir: crate::skill::forward_slashed(
+        skills_dir: crate::vfs::forward_slashed(
             agent_adapt::runtimes::for_id(profile.runtime)
                 .expect("every harness renders through an agent-adapt runtime")
                 .paths()

@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::frontmatter::EntityKind;
 use crate::harness::Harness;
 use crate::keys::{KEYS, Shape};
-use crate::skill::split_frontmatter;
+use crate::note::split_frontmatter;
 use crate::text::list;
 
 /// The root file's name.

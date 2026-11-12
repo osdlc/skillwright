@@ -9,11 +9,11 @@
 //! # One directory, one tree per harness
 //!
 //! `build` writes each marketplace into `<root>/dist/<m>/`
-//! ([`crate::paths::dist_dir`]); nothing moves it. Each harness gets its own
-//! top-level tree inside it: `.claude-plugin/`, `.agents/`, `.cursor-plugin/`
-//! and `.pi/`. Each tree carries that harness's marketplace manifest (Pi has
-//! none), its pack manifests in its own dialect, and every skill, at
-//! `<packs>/<plugin>/skills/<name>/`.
+//! ([`crate::model::vault::dist_dir`]); nothing moves it. Each harness gets its own
+//! top-level tree inside it: `.claude-plugin/`,
+//! `.agents/`, `.cursor-plugin/` and `.pi/`. Each tree carries that harness's
+//! marketplace manifest (Pi has none), its pack manifests in its own dialect,
+//! and every skill, at `<packs>/<plugin>/skills/<name>/`.
 //!
 //! The trees are disjoint by construction: the harnesses translate a skill's
 //! tool names and frontmatter differently, so the same skill is one file per
@@ -104,13 +104,13 @@ use crate::discover::DiscoveryReport;
 use crate::error::CoreError;
 use crate::harness::{Harness, Translator};
 use crate::model::load::{built_harnesses, load_for};
+use crate::model::vault::{BuildScope, LoadedVault, VaultMarketplace, load_vault};
 use crate::model::{Component, Marketplace};
-use crate::paths::{BuildScope, LoadedVault, VaultMarketplace, load_vault};
 use crate::refusal;
 use crate::settings::RootFile;
 use crate::vfs::{PreviewWrite, Vfs, normalize};
 use dest::{admitted_plugins, diff_root};
-pub use report::{ExportReport, ExportUnit, StaleKind, UnitStatus};
+pub use report::{ExportReport, ExportUnit, StaleKind, UnitStatus, VersionBumpSuggestion};
 use swap::{Swap, commit};
 
 /// Whether an export writes the marketplace, or only reports its drift.
@@ -421,6 +421,10 @@ fn plan_with(
     // before it renders, it refuses here.
     let market = load_for(vfs, &loaded.layout, scan, &scope, roots, defaults)?;
     let warnings = market.warnings.clone();
+    let out = match &options.compare_with {
+        Some(path) => normalize(path),
+        None => crate::model::vault::dist_dir(&loaded.root, &market.name),
+    };
 
     // One tree per harness, translated from the one model, at the final
     // destination paths. Both modes read this and nothing else; `build`
@@ -546,7 +550,6 @@ mod tests {
     use crate::frontmatter::{ContainerIdentity, EntityKind};
     use crate::harness::translator::GENERATED_MARKER;
     use crate::refusal;
-    use crate::status::VersionBumpSuggestion;
     use crate::vfs::{MemVfs, NativeVfs};
 
     /// Writes `content` at `path`. For a path under a `marketplaces/` folder it
