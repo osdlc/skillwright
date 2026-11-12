@@ -138,7 +138,7 @@ struct WireDiscoverRequest {
 /// half-written draft must not block every build out of a shared vault.
 #[wasm_bindgen(js_name = discoverComponents)]
 pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
-    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
+    let vfs = JsVfs::from_js(vfs).map_err(|e| core_error_to_js(&e))?;
     let wire: WireDiscoverRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid discovery request: {e}")))?;
     let report =
@@ -170,7 +170,7 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
 /// `compare_with`, or a request for several marketplaces that does.
 #[wasm_bindgen(js_name = buildVault)]
 pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
-    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
+    let vfs = JsVfs::from_js(vfs).map_err(|e| core_error_to_js(&e))?;
     let request: VaultRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid VaultRequest: {e}")))?;
     let report = core_build_vault(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
@@ -197,7 +197,7 @@ pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> 
 /// marketplace.
 #[wasm_bindgen(js_name = loadMarketplace)]
 pub fn load_marketplace(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
-    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
+    let vfs = JsVfs::from_js(vfs).map_err(|e| core_error_to_js(&e))?;
     let request: LoadRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid LoadRequest: {e}")))?;
     let market = wire_marketplace(&vfs, &request).map_err(|e| core_error_to_js(&e))?;

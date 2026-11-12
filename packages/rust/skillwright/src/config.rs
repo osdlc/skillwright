@@ -7,15 +7,28 @@
 
 use std::path::{Path, PathBuf};
 
-pub use tradecraft_core::paths::{normalize_join, relative_path};
-pub use tradecraft_core::{BuildSettings, ROOT_FILE, RootFile, resolve_path};
+use tradecraft_core::vfs::normalize;
+
+pub use tradecraft_core::{BuildSettings, ROOT_FILE, RootFile};
 
 /// Resolve a flag's path as the shell would: absolute as given, `~` or a
 /// `~/` prefix against the home directory, anything else relative to
-/// `base`. The rule `--vault` and `--changed-since` follow, with `base`
-/// the working directory.
+/// `base` with `.` and `..` collapsed. `~name` and `~\` are relative
+/// paths. The rule `--vault` and `--changed-since` follow, with `base` the
+/// working directory.
 pub fn resolve_against_cwd(path: &str, base: &Path) -> PathBuf {
-    resolve_path(path, base, &home_dir())
+    if path == "~" || path == "~/" {
+        return home_dir();
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return home_dir().join(rest);
+    }
+    let p = Path::new(path);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        normalize(&base.join(p))
+    }
 }
 
 /// The user's home directory, read directly from `$HOME`. Falls back to `/`
@@ -36,6 +49,20 @@ pub fn print_warnings(root: &RootFile, path: &Path, err: &mut dyn std::io::Write
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A relative path joins the base with `.` and `..` collapsed, and a `..`
+    /// with nothing left to pop stays at the root.
+    #[test]
+    fn a_relative_path_collapses_dots_against_the_base() {
+        assert_eq!(
+            resolve_against_cwd("../v/./x", Path::new("/work/sub")),
+            PathBuf::from("/work/v/x")
+        );
+        assert_eq!(
+            resolve_against_cwd("../../..", Path::new("/work")),
+            PathBuf::from("/")
+        );
+    }
 
     /// Only `~` and `~/` name the home directory. `~alice/notes` and
     /// `~notes` are ordinary relative paths.

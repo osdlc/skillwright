@@ -22,18 +22,18 @@ use crate::discover::{
     refuse_undescribed,
 };
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{Harness, SkillNaming};
+use crate::model::config::MarketplaceConfig;
+use crate::note::{VaultNote, read_vault_note};
 use crate::refusal;
 use crate::settings::{RootFile, SharedDefaults};
-use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
 use crate::layout::{Layout, Place, SharedDir};
-use crate::paths::BuildScope;
+use crate::model::vault::BuildScope;
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
@@ -114,7 +114,7 @@ pub(crate) fn built_harnesses(
 /// * What [`crate::layout::read_layout`] refuses.
 pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreError> {
     let layout = crate::layout::read_layout(vfs, &normalize(&request.vault_root))?;
-    let root = crate::paths::read_root_file(vfs, &layout.root)?;
+    let root = crate::model::vault::read_root_file(vfs, &layout.root)?;
     let roots = built_harnesses(&root, &request.harnesses)?;
     let scan = discover_in(vfs, &layout)?;
     load_for(vfs, &layout, &scan, &request.scope, &roots, &root.defaults)
@@ -417,7 +417,6 @@ pub fn resolve_body(
         content,
         body,
         resources,
-        closures: compiled.closures,
     })
 }
 
@@ -453,7 +452,7 @@ fn hand_written_forms(
                 .iter()
                 .filter(|_| root.format().carries(EntityKind::Command));
             for member in plugin.skills.iter().chain(commands) {
-                if let Ok(form) = crate::export::rendered_skill_call(
+                if let Ok(form) = crate::harness::rendered_skill_call(
                     root.profile().runtime,
                     naming,
                     &plugin.name,
@@ -776,7 +775,7 @@ fn shared_references(
         if owner != plugin || !shared_markdown(&file.place) {
             continue;
         }
-        let raw = crate::skill::read_utf8(vfs, &file.path)?;
+        let raw = crate::note::read_utf8(vfs, &file.path)?;
         // Its frontmatter ships as written; only the body is compiled.
         let split = frontmatter_lossless::split(&raw);
         let source = CompileSource::new(layout, &file.path, path, calls);

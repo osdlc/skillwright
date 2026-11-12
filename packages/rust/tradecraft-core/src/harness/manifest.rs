@@ -13,9 +13,9 @@
 use serde::Serialize;
 
 use crate::error::CoreError;
-use crate::export::{MarketplaceConfig, PluginOverrides};
 use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::harness::{Harness, SkillNaming};
+use crate::model::config::{MarketplaceConfig, PluginOverrides};
 use crate::refusal;
 
 /// Two-space indentation, stable key order, one trailing newline — the byte

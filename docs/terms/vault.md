@@ -8,7 +8,7 @@ osdlc's shared crates call it a [corpus](https://github.com/osdlc/osdlc/blob/mai
 
 ## In code
 
-`--vault`, or the first folder at or above the working directory that holds both; read by `tradecraft-core/src/vault.rs`.
+`--vault`, or the first folder at or above the working directory that holds both; found by `find_vault_root` in `tradecraft-core/src/layout.rs` and loaded by `load_vault` in `model/vault.rs`.
 
 ## Not to be confused with
 

@@ -6,4 +6,4 @@ The last stage: write a [file-tree](file-tree.md) out. `build` swaps what each h
 
 ## In code
 
-`diff_root` and `commit` in `export.rs`.
+`diff_root` in `export/dest.rs` and `commit` in `export/swap.rs`.

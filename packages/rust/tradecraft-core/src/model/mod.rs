@@ -36,26 +36,27 @@
 //! # Embeds are expanded on load
 //!
 //! An embed's bytes become the body's text, the same for every harness, so
-//! the model keeps the expanded text and records what it consumed in the
-//! node's closures rather than as a segment.
+//! the model keeps the expanded text, not a segment.
 
 pub mod cascade;
+pub(crate) mod config;
 pub mod load;
+pub mod vault;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::compile::{Closure, MARK_CLOSE, MARK_OPEN, Recorded};
+use crate::compile::{MARK_CLOSE, MARK_OPEN, Recorded};
 use crate::content::SkillContent;
 use crate::discover::{DiscoveredComponent, DiscoveryWarning};
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 use crate::harness::Harness;
 use crate::layout::Position;
 use crate::refusal;
+use config::MarketplaceConfig;
 
 pub use load::{LoadRequest, load, resolve_body};
 
@@ -161,8 +162,6 @@ pub struct Resolved {
     pub body: Body,
     /// Every file that travels with it, by output path.
     pub resources: Vec<Resource>,
-    /// Per emitted file, what fed it — the manifest's staleness record.
-    pub closures: BTreeMap<String, Closure>,
 }
 
 /// One file a component carries.
@@ -327,7 +326,7 @@ pub struct Call {
     /// default, as its plugin's [`Plugin::bare_on`].
     pub bare_on: Vec<Harness>,
     /// The call's target as written, without `/[[` and `]]`, for a refusal.
-    pub destination: String,
+    pub written: String,
     /// The note the call is in, for a refusal.
     pub caller: String,
 }
@@ -350,7 +349,7 @@ impl Call {
                 "{}: `/[[{}]]` calls {} `{}`, which the {target} pack does not contain \
                  (section 4 rule 8)",
                 self.caller,
-                self.destination,
+                self.written,
                 self.skill.kind.as_str(),
                 self.skill.call_id()
             ),
@@ -389,7 +388,7 @@ impl SkillId {
         }
     }
 
-    /// `plugin:name`, the closure's spelling.
+    /// `plugin:name`.
     pub fn call_id(&self) -> String {
         format!("{}:{}", self.plugin, self.name)
     }
@@ -477,7 +476,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
     Call {
         skill: site.skill.clone(),
         bare_on: Vec::new(),
-        destination: site.destination.clone(),
+        written: site.written.clone(),
         caller: site.caller.clone(),
     }
 }
@@ -518,7 +517,7 @@ mod tests {
                     name: "a".into(),
                     kind: EntityKind::Skill,
                 },
-                destination: "a".into(),
+                written: "a".into(),
                 caller: "b.md".into(),
             }],
             links: vec![ResolvedRef {

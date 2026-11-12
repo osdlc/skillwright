@@ -114,7 +114,7 @@ fn edit_version(yaml: &str, version: &str) -> Result<String, CoreError> {
 /// The frontmatter of `source` as the build reads it, as a mapping, or
 /// `None` for no block.
 fn frontmatter_mapping(source: &str) -> Result<Option<yaml_splice::Mapping>, CoreError> {
-    let yaml = crate::skill::split_frontmatter(source).0;
+    let yaml = crate::note::split_frontmatter(source).0;
     if yaml.trim().is_empty() {
         return Ok(None);
     }

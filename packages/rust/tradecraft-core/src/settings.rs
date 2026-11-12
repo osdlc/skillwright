@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::frontmatter::EntityKind;
 use crate::harness::Harness;
 use crate::keys::{KEYS, Shape};
-use crate::skill::split_frontmatter;
+use crate::note::split_frontmatter;
 
 /// The root file's name.
 pub const ROOT_FILE: &str = "skillwright.md";
@@ -140,9 +140,9 @@ pub const REFUSED_BUILD_KEYS: &[&str] = &[
     "hooks",
 ];
 
-/// The top-level keys the root file refuses besides the key table's rows
+/// The v1 top-level keys the root file refuses, besides the key table's rows
 /// that are not inherited.
-pub const REFUSED_ROOT_KEYS: &[&str] = &["workspace"];
+pub const V1_ROOT_KEYS: &[&str] = &["workspace"];
 
 /// A YAML value read as `T` through its JSON equivalent, so free-shaped
 /// fields come out as the JSON a manifest carries.
@@ -319,7 +319,7 @@ fn root_key_refusal(key: &str) -> Option<String> {
     if key == TARGETS_KEY {
         return Some(format!("it is a removed key; {TARGETS_REFUSAL}"));
     }
-    if REFUSED_ROOT_KEYS.contains(&key) {
+    if V1_ROOT_KEYS.contains(&key) {
         return Some("it is a removed key; delete it".to_owned());
     }
     let rows: Vec<_> = KEYS.iter().filter(|spec| spec.key == key).collect();

@@ -29,14 +29,14 @@
 //! # Two methods are optional until something calls them
 //!
 //! `rename` and `remove` are optional on the host object, so a host written
-//! before them still adopts cleanly:
+//! before them is still accepted:
 //!
 //! ```ts
 //! rename?(from: string, to: string): void
 //! remove?(path: string): void
 //! ```
 //!
-//! Nothing checks for them at [`JsVfs::adopt`] — a host without them pays
+//! Nothing checks for them at [`JsVfs::from_js`] — a host without them pays
 //! only when something actually renames or removes, and then it gets an error
 //! naming the missing method rather than the JS engine's `undefined is not a
 //! function`.
@@ -86,7 +86,7 @@
 //!
 //! They map to `Vfs::canonicalize`, `Vfs::read_link` and `Vfs::is_symlink`,
 //! which `path-guard`'s containment checks and discovery's symlink refusal
-//! use. [`JsVfs::adopt`] checks for all three once. With all three,
+//! use. [`JsVfs::from_js`] checks for all three once. With all three,
 //! `Vfs::sees_links` is `true`, and the core runs the narrowed checks that
 //! need an honest answer about links. With fewer, the bridge uses none of
 //! them: `canonicalize` folds `.` and `..` and asks nothing, `is_symlink`
@@ -123,7 +123,7 @@ extern "C" {
     /// The host's filesystem object, as seen from Rust.
     ///
     /// `extends = js_sys::Object` gives it the `JsCast` machinery (so a
-    /// `JsValue` can be checked and adopted) without asserting anything about
+    /// `JsValue` can be checked and cast) without asserting anything about
     /// its prototype.
     #[wasm_bindgen(extends = js_sys::Object)]
     pub type HostVfs;
@@ -147,7 +147,7 @@ extern "C" {
     #[wasm_bindgen(method, structural, catch)]
     fn exists(this: &HostVfs, path: &str) -> Result<JsValue, JsValue>;
 
-    // Optional. Only ever invoked after `JsVfs::adopt` saw a function under
+    // Optional. Only ever invoked after `JsVfs::from_js` saw a function under
     // the name.
     #[wasm_bindgen(method, structural, catch)]
     fn stat(this: &HostVfs, path: &str) -> Result<JsValue, JsValue>;
@@ -167,7 +167,7 @@ extern "C" {
     #[wasm_bindgen(method, structural, catch)]
     fn remove(this: &HostVfs, path: &str) -> Result<(), JsValue>;
 
-    // The link questions. Only ever invoked when `JsVfs::adopt` saw all three.
+    // The link questions. Only ever invoked when `JsVfs::from_js` saw all three.
     #[wasm_bindgen(method, structural, catch)]
     fn realpath(this: &HostVfs, path: &str) -> Result<JsValue, JsValue>;
 
@@ -195,14 +195,14 @@ pub struct JsVfs {
 }
 
 impl JsVfs {
-    /// Adopt a `JsValue` the caller passed as its filesystem.
+    /// Takes the `JsValue` the caller passed as its filesystem.
     ///
     /// Checked here: that it is an object, and whether it has all three link
     /// methods (see the module doc). The seven required methods are resolved
     /// at call time by the `structural` imports, so a host missing one fails
     /// on the operation that needed it, with the path in the message, rather
     /// than failing the whole build before anything is attempted.
-    pub fn adopt(value: JsValue) -> Result<Self, CoreError> {
+    pub fn from_js(value: JsValue) -> Result<Self, CoreError> {
         if !value.is_object() {
             return Err(CoreError::refused(
                 refusal::INVALID_VFS,
@@ -223,7 +223,7 @@ impl JsVfs {
     /// The `structural` import's own failure — a `TypeError` about `undefined`
     /// not being a function — names neither the contract nor the fix, so the
     /// presence check is explicit and the error says what to add. Checked per
-    /// call rather than at [`JsVfs::adopt`] on purpose: see the module doc.
+    /// call rather than at [`JsVfs::from_js`] on purpose: see the module doc.
     fn require(&self, method: &str, path: &Path) -> Result<(), VfsError> {
         if has_function(&self.host, method) {
             return Ok(());

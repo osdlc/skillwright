@@ -492,7 +492,7 @@ fn check_real_paths(vfs: &dyn Vfs, layout: &Layout) -> Result<(), CoreError> {
             format!(
                 "{MARKETPLACES_DIR}/{}/{}",
                 file.marketplace,
-                crate::skill::forward_slashed(inside)
+                crate::vfs::forward_slashed(inside)
             )
         });
         let target = real_rel
@@ -516,7 +516,7 @@ fn check_real_paths(vfs: &dyn Vfs, layout: &Layout) -> Result<(), CoreError> {
                 |to| to.display().to_string(),
             );
             let rel = link.strip_prefix(&layout.root).unwrap_or(link);
-            return Err(why.refuse(&crate::skill::forward_slashed(rel), &written));
+            return Err(why.refuse(&crate::vfs::forward_slashed(rel), &written));
         }
     }
     Ok(())
@@ -626,9 +626,9 @@ fn layout_error(message: String) -> CoreError {
 ///   folder (spec section 4, containment rule 2). The refusal is the one a
 ///   link spelling that target gets, naming the symlink and its target.
 /// * `refused: unsafe-path` — a symlinked `skillwright.md`, `marketplaces/`
-///   or `dist/` ([`check_vault_root`]); a symlink to a folder the walk is inside, one whose target
-///   cannot be read, or one outside `marketplaces/<m>/`; or a file whose real
-///   path the host cannot tell.
+///   or `dist/` ([`check_vault_root`]); a symlink to a folder the walk is
+///   inside, one whose target cannot be read, or one outside
+///   `marketplaces/<m>/`; or a path the host cannot resolve.
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
     let root = &crate::vfs::normalize(root);
@@ -789,16 +789,15 @@ impl Walk<'_> {
             )));
         };
         let market_dir = self.root.join(MARKETPLACES_DIR).join(market);
-        let scope = self.vfs.canonicalize(&market_dir)?;
         let Ok(target) = self.vfs.canonicalize(path) else {
             return Err(refuse("whose real target cannot be read".to_owned()));
         };
-        if !target.starts_with(&scope) {
+        if !crate::guard::within(self.vfs, &market_dir, &target)? {
             // Refused as a link spelling the target is (containment rule 2).
             let written = self.vfs.read_link(path).unwrap_or_else(|_| target.clone());
             let rel = path.strip_prefix(self.root).unwrap_or(path);
             return Err(Unreachable::outside(market).refuse(
-                &crate::skill::forward_slashed(rel),
+                &crate::vfs::forward_slashed(rel),
                 &written.display().to_string(),
             ));
         }
@@ -814,7 +813,7 @@ impl Walk<'_> {
             .skip(1)
             .take_while(|folder| folder.starts_with(&market_dir))
         {
-            if self.vfs.canonicalize(folder)?.starts_with(&target) {
+            if crate::guard::within(self.vfs, &target, folder)? {
                 return Err(refuse(
                     "to a folder the walk is inside, so it would never end".to_owned(),
                 ));

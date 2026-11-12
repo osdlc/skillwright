@@ -15,6 +15,20 @@
 //! [`crate::CoreError`] turns it into [`crate::CoreError::Io`], with the same
 //! path and cause.
 
+use std::path::{Component, Path};
+
 pub use vfs_seam::{
     DirEntry, MemVfs, Metadata, NativeVfs, PreviewWrite, Vfs, VfsError, ms_f64_to_ns, normalize,
 };
+
+/// Renders a relative path with forward slashes, so ids are stable across
+/// platforms and safe to use as wire identifiers.
+pub(crate) fn forward_slashed(path: &Path) -> String {
+    path.components()
+        .filter_map(|c| match c {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}

@@ -8,7 +8,7 @@
 //!
 //! # The strip, again
 //!
-//! [`crate::vault::read_vault_note`] lifts skillwright's keys out of a
+//! [`crate::note::read_vault_note`] lifts skillwright's keys out of a
 //! note's frontmatter before a [`crate::SkillContent`] exists. But
 //! `SkillContent` is a public type with a public `annotations` map, and
 //! `agent-adapt` emits `annotations` verbatim, so `skill_metadata` drops
@@ -19,7 +19,7 @@ use agent_adapt::RuntimeId;
 use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::refusal;
-use crate::skill::forward_slashed;
+use crate::vfs::forward_slashed;
 
 /// One file projection wants on disk, relative to a pack root.
 #[derive(Debug, Clone, PartialEq, Eq)]

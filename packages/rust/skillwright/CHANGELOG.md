@@ -15,6 +15,8 @@ API:
 
 - `prompt::ask` is removed.
 - `resolve::ResolvedRun` is removed. `resolve_run` and `resolve_at` return the core's `LoadedVault`; its `root` is the vault root.
+- `resolve::CommonFlags` and `commands::marketplace::ExportFlags` are removed. `resolve::RunFlags` holds the flags every verb shares, and `resolve_run` takes it in place of a `marketplace` argument. `BumpFlags::{marketplace, common, json, dry_run, yes, quiet, harnesses}` move into its new `run: RunFlags` field, and `BumpFlags::level` is `commands::bump::BumpLevel`, which replaces `tradecraft_core::BumpLevel`.
+- `config` no longer re-exports `normalize_join`, `relative_path` and `resolve_path`.
 
 ### Changed
 
