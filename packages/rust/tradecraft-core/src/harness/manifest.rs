@@ -419,15 +419,11 @@ fn cursor_display_name(config: &MarketplaceConfig, plugin: &str) -> Option<Strin
 }
 
 /// One plugin's pack manifest, `members` its skills' names.
-///
-/// `hooks` is the manifest's `hooks` entry, written as given; `None` writes
-/// none.
 pub(crate) fn render_plugin_manifest(
     dialect: PluginDialect,
     plugin: &str,
     members: &[&str],
     config: &MarketplaceConfig,
-    hooks: Option<&str>,
 ) -> String {
     if dialect == PluginDialect::Pi {
         return pi_package_manifest(plugin, members, config);
@@ -440,7 +436,7 @@ pub(crate) fn render_plugin_manifest(
     }
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
-    struct Manifest<'a> {
+    struct Manifest {
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         display_name: Option<String>,
@@ -451,8 +447,6 @@ pub(crate) fn render_plugin_manifest(
         license: String,
         keywords: Vec<String>,
         skills: &'static str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        hooks: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         interface: Option<Interface>,
     }
@@ -475,7 +469,6 @@ pub(crate) fn render_plugin_manifest(
         license: plugin_license(config, plugin),
         keywords: plugin_keywords(config, plugin),
         skills: "./skills/",
-        hooks,
         interface,
     };
     finish_plugin(&manifest, config, plugin, profile_of(dialect).name)
@@ -824,7 +817,6 @@ mod tests {
             "t",
             &[],
             config,
-            None,
         ))
         .unwrap()
     }

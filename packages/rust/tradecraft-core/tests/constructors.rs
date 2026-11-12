@@ -7,8 +7,8 @@ use std::path::Path;
 
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
-    BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportUnit, MemVfs,
-    RootFile, SharedDefaults, StaleKind, UnitStatus, VaultRequest, Vfs, discover_components,
+    BuildSettings, CoreError, DiscoveryWarning, ExportMode, ExportUnit, MemVfs, RootFile,
+    SharedDefaults, UnitStatus, VaultRequest, Vfs, discover_components,
 };
 
 /// `build_vault` over the one marketplace a request covers: its report.
@@ -60,15 +60,6 @@ fn a_load_request_takes_its_inputs() {
 }
 
 #[test]
-fn a_compile_source_takes_its_inputs() {
-    let vault = Path::new("/vault");
-    let entry = Path::new("/vault/marketplaces/house/plugins/tools/skills/a/a.md");
-    let source = CompileSource::new(vault, entry, "a");
-    assert!(source.calls.is_none() && source.layout.is_none());
-    assert_eq!(source.skill_name, "a");
-}
-
-#[test]
 fn the_settings_types_build_from_default() {
     let mut fields = SharedDefaults::default();
     fields.license = Some("MIT".to_owned());
@@ -107,16 +98,13 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
 }
 
 #[test]
-fn each_as_str_is_the_serialized_word() {
+fn each_unit_status_as_str_is_the_serialized_word() {
     fn wire<T: serde::Serialize>(value: T) -> String {
         serde_json::to_value(value)
             .unwrap()
             .as_str()
             .unwrap()
             .to_owned()
-    }
-    for kind in [StaleKind::Plugin, StaleKind::File, StaleKind::EmptyDir] {
-        assert_eq!(kind.as_str(), wire(kind));
     }
     for status in [
         UnitStatus::Ok,

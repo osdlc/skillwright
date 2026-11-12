@@ -20,8 +20,7 @@ cargo add tradecraft-core
 
 Every function that reads or writes files takes a `&dyn Vfs` first.
 `NativeVfs` works over `std::fs`. `MemVfs` is an in-memory tree.
-`PreviewVfs` wraps either one and keeps writes in memory, which is how a dry
-run works.
+`ExportMode::Check` renders and compares without writing anything.
 
 A vault holds `skillwright.md` and `marketplaces/` at its root. Each
 marketplace, plugin and component is a folder with a note of the same name:
@@ -175,8 +174,7 @@ in the [CHANGELOG](CHANGELOG.md).
 Most public types are `#[non_exhaustive]`, so a new field or variant is not a
 breaking change:
 
-- The request types (`VaultRequest`, `LoadRequest`,
-  `CompileSource`).
+- The request types (`VaultRequest`, `LoadRequest`).
   Build one with
   its `new` constructor, which takes the required inputs, and set the other
   fields on the value.

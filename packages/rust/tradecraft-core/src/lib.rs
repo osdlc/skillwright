@@ -80,9 +80,7 @@ pub mod vault;
 pub mod vfs;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
-pub use compile::{
-    CallContext, CompileSource, CompiledNote, IndexedSkill, SkillIndex, compile_note,
-};
+pub use compile::{CallContext, IndexedSkill, SkillIndex};
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, MISSING_DESCRIPTION_REASON,
@@ -110,5 +108,5 @@ pub use settings::{
     BuildSettings, BumpSettings, PatchScheme, ROOT_FILE, RootFile, SettingsError, SharedDefaults,
     compose_root_file, parse_root_file,
 };
-pub use vault::{VaultNote, read_vault_note, read_vault_skill};
-pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
+pub use vault::{VaultNote, read_vault_note};
+pub use vfs::{DirEntry, MemVfs, NativeVfs, PreviewWrite, Vfs};

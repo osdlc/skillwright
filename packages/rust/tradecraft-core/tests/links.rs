@@ -895,12 +895,11 @@ fn a_call_to_a_command_renders_on_claude_and_fails_elsewhere() {
     assert!(author(&vfs).contains("Run `/tools:deploy`."));
     for harness in ["codex", "cursor", "pi"] {
         let vfs = with_setup("Run /[[deploy]].");
-        names(
-            &refusal_for(&vfs, &[harness]),
-            AUTHOR,
-            "/[[deploy]]",
-            "rule 8",
-        );
+        let err = refusal_for(&vfs, &[harness]);
+        names(&err, AUTHOR, "/[[deploy]]", "rule 8");
+        assert!(err.contains("skill-call-not-shipped"), "{harness}: {err}");
+        assert!(err.contains("command `tools:deploy`"), "{harness}: {err}");
+        assert!(err.contains("pack does not contain"), "{harness}: {err}");
     }
 }
 

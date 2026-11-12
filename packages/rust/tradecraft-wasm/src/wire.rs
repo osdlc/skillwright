@@ -169,7 +169,7 @@ impl WireComponent {
             name: c.name.clone(),
             path: c.path.clone(),
             blocks: c.extensions.blocks.clone(),
-            description: c.content.as_ref().map(|s| s.description.clone()),
+            description: resolved.map(|r| r.content.description.clone()),
             calls: resolved
                 .into_iter()
                 .flat_map(|r| &r.body.segments)

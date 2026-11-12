@@ -8,7 +8,7 @@
 //!
 //! # The strip, again
 //!
-//! [`crate::vault::read_vault_skill`] lifts skillwright's keys out of a
+//! [`crate::vault::read_vault_note`] lifts skillwright's keys out of a
 //! note's frontmatter before a [`crate::SkillContent`] exists. But
 //! `SkillContent` is a public type with a public `annotations` map, and
 //! `agent-adapt` emits `annotations` verbatim, so `skill_metadata` drops
@@ -37,76 +37,23 @@ pub struct ProjectedFile {
 /// target this build cannot render is a configuration error, and skipping
 /// would ship less, silently.
 ///
-/// Carries no per-target override block: the callers that hold one render
-/// through [`project_skill_reporting`], which takes the harness to look one
-/// up by.
-pub fn project_skill(
-    snapshot: &SkillProjection,
-    targets: &[String],
-) -> Result<Vec<ProjectedFile>, CoreError> {
-    project_skill_reporting(snapshot, targets, None).map(|(files, _)| files)
-}
-
-/// One harness block key that changed nothing in the render for the harness
-/// it was written for.
-///
-/// A diagnostic, never a refusal: the note builds exactly as it would
-/// have, and the report says the key is spending an author's attention on
-/// something the projection already emits.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RedundantOverride {
-    /// The harness, canonically named.
-    pub target: String,
-    /// The key, spelled as the block spells it.
-    pub key: String,
-}
-
-impl std::fmt::Display for RedundantOverride {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "`{}` for `{}` is what the projection already writes",
-            self.key, self.target
-        )
-    }
-}
-
-/// [`project_skill`], plus the redundant-override diagnostics the render
-/// produced.
-///
-/// Two entry points rather than one because the diagnostic is not a file and
-/// most callers want files. Whichever is called, the render happens once.
-///
 /// `overrides_target` is the canonical harness whose harness block this
 /// render applies, which need not be the runtime target it renders with.
 /// `None` renders no override block.
-///
-/// # Errors
-///
-/// Every one [`project_skill`] raises.
-pub fn project_skill_reporting(
+pub fn project_skill(
     snapshot: &SkillProjection,
-    targets: &[String],
+    targets: &[RuntimeId],
     overrides_target: Option<&str>,
-) -> Result<(Vec<ProjectedFile>, Vec<RedundantOverride>), CoreError> {
+) -> Result<Vec<ProjectedFile>, CoreError> {
     let mut out = Vec::new();
-    let mut redundant = Vec::new();
-    for target in targets {
-        let id = parse_runtime_target(target)?;
+    for &id in targets {
+        let target = id.as_str();
         let skill = to_adapt_skill(snapshot, overrides_target);
         let runtime = agent_adapt::runtimes::skill_renderer_for(id)
             .ok_or_else(|| CoreError::Projection(format!("{target}: runtime renders no skills")))?;
         let files = runtime
             .render_skill(&skill)
             .map_err(|e| refusal(target, e))?;
-        // The renderer applies the block; this asks the same render what it
-        // changed. `render_skill_md` and its reporting sibling produce the
-        // same bytes, so the report cannot describe a different file.
-        let keys = redundant_override_keys(snapshot, target, overrides_target)?;
-        redundant.extend(keys.into_iter().map(|key| RedundantOverride {
-            target: overrides_target.unwrap_or(target).to_owned(),
-            key,
-        }));
         for file in files {
             out.push(ProjectedFile {
                 relative_path: forward_slashed(&file.path),
@@ -116,37 +63,7 @@ pub fn project_skill_reporting(
         }
     }
     out.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    Ok((out, redundant))
-}
-
-/// Which of one snapshot's override keys for `target` the render already
-/// writes byte for byte.
-///
-/// Empty when the note carries no block for this harness, which is the
-/// ordinary note, and empty when the runtime renders no skills — there is no
-/// render for a key to be redundant against.
-///
-/// `target` is a runtime target name, the vocabulary [`project_skill`] takes;
-/// `overrides_target` is the canonical harness whose block to score, or
-/// `None` for a snapshot that carries none.
-///
-/// # Errors
-///
-/// An unknown target name, and the refusal a render raises.
-pub fn redundant_override_keys(
-    snapshot: &SkillProjection,
-    target: &str,
-    overrides_target: Option<&str>,
-) -> Result<Vec<String>, CoreError> {
-    let id = parse_runtime_target(target)?;
-    let skill = to_adapt_skill(snapshot, overrides_target);
-    if skill.overrides.is_empty() {
-        return Ok(Vec::new());
-    }
-    match agent_adapt::runtimes::redundant_skill_overrides(id, &skill) {
-        None => Ok(Vec::new()),
-        Some(report) => report.map_err(|e| refusal(target, e)),
-    }
+    Ok(out)
 }
 
 /// A render failure, as the variant that says what actually happened.
@@ -158,8 +75,8 @@ pub fn redundant_override_keys(
 /// so an attempted path escape logged as a generic render failure is an
 /// attempted path escape nobody will ever notice.
 ///
-/// The token is `unsafe-path`, the same one
-/// [`crate::guard::resolve_write_path`] refuses under: two layers apply one
+/// The token is `unsafe-path`, the same one [`crate::guard::within`]
+/// refuses under: two layers apply one
 /// rule, so they answer in one word. Everything else `agent-adapt` can fail
 /// with is a projection error, unchanged.
 fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
@@ -172,19 +89,6 @@ fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
             ),
         ),
         other => CoreError::Projection(other.to_string()),
-    }
-}
-
-/// Maps a harness's runtime name to agent-adapt's id.
-pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError> {
-    match target {
-        "claude-code" => Ok(RuntimeId::ClaudeCode),
-        "codex-cli" => Ok(RuntimeId::CodexCli),
-        "cursor" => Ok(RuntimeId::Cursor),
-        "pi" => Ok(RuntimeId::Pi),
-        other => Err(CoreError::Projection(format!(
-            "unsupported runtime target: {other}"
-        ))),
     }
 }
 
@@ -210,12 +114,12 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 /// harness block merges over those.
 pub fn project_command(
     snapshot: &SkillProjection,
-    targets: &[String],
+    targets: &[RuntimeId],
     overrides_target: Option<&str>,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
     let mut out = Vec::new();
-    for target in targets {
-        let id = parse_runtime_target(target)?;
+    for &id in targets {
+        let target = id.as_str();
         let command = to_adapt_command(snapshot, id, overrides_target)?;
         let runtime = agent_adapt::runtimes::command_renderer_for(id).ok_or_else(|| {
             CoreError::refused(
@@ -255,12 +159,12 @@ pub fn project_command(
 /// * [`CoreError::Projection`] -- the target does not carry one of the events; see the docs of `agent_adapt::render::render_hooks_json` (<https://docs.rs/agent-adapt>) for the refusal contract.
 pub fn project_plugin_hooks(
     hooks: &[agent_adapt::Hook],
-    target: &str,
+    id: RuntimeId,
 ) -> Result<Option<Vec<u8>>, CoreError> {
     if hooks.is_empty() {
         return Ok(None);
     }
-    let id = parse_runtime_target(target)?;
+    let target = id.as_str();
     let Some(renderer) = agent_adapt::runtimes::hook_renderer_for(id) else {
         return Err(CoreError::refused(
             "no-renderer",
@@ -507,27 +411,33 @@ mod tests {
     #[test]
     fn a_target_with_no_hooks_layout_refuses_by_name() {
         let hook = agent_adapt::Hook::command("h", "h", "PreToolUse", "echo");
-        let err = project_plugin_hooks(&[hook], "pi").unwrap_err().to_string();
+        let err = project_plugin_hooks(&[hook], RuntimeId::Pi)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("no-renderer"), "{err}");
         assert!(err.contains("pi"), "{err}");
     }
 
     #[test]
     fn no_hooks_means_no_document() {
-        assert!(project_plugin_hooks(&[], "claude-code").unwrap().is_none());
+        assert!(
+            project_plugin_hooks(&[], RuntimeId::ClaudeCode)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
     fn per_target_layouts_match_the_live_corpus() {
         let snap = snapshot("alpha", vec![]);
         let cases = [
-            ("claude-code", ".claude/skills/alpha/SKILL.md"),
-            ("codex-cli", ".agents/skills/alpha/SKILL.md"),
+            (RuntimeId::ClaudeCode, ".claude/skills/alpha/SKILL.md"),
+            (RuntimeId::CodexCli, ".agents/skills/alpha/SKILL.md"),
         ];
         for (target, expected) in cases {
-            let files = project_skill(&snap, &[target.to_owned()]).unwrap();
-            assert_eq!(files.len(), 1, "{target}");
-            assert_eq!(files[0].relative_path, expected, "{target}");
+            let files = project_skill(&snap, &[target], None).unwrap();
+            assert_eq!(files.len(), 1, "{target:?}");
+            assert_eq!(files[0].relative_path, expected, "{target:?}");
         }
     }
 
@@ -540,7 +450,7 @@ mod tests {
                 ("helper.ts".to_owned(), b"export {}\n".to_vec(), false),
             ],
         );
-        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let files = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
         let paths: Vec<_> = files.iter().map(|f| f.relative_path.as_str()).collect();
         assert_eq!(
             paths,
@@ -568,7 +478,7 @@ mod tests {
             content: c,
             resources: vec![],
         };
-        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let files = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         let close = text.find("\n---\n").expect("closing fence");
@@ -594,13 +504,13 @@ mod tests {
             "sorted key order"
         );
         // Rendering twice with the same input is byte-stable.
-        let again = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let again = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
         assert_eq!(files[0].content, again[0].content);
     }
 
     #[test]
     fn our_keys_are_stripped_at_emit_whatever_route_they_arrived_by() {
-        // `read_vault_skill` never puts one of our keys in `annotations`, but
+        // `read_vault_note` never puts one of our keys in `annotations`, but
         // `SkillContent` is public and a caller can build one from anywhere,
         // so the emit seam checks too. A prefixed key is not ours.
         let mut c = content("alpha");
@@ -615,7 +525,7 @@ mod tests {
             resources: vec![],
         };
 
-        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let files = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         assert!(!text.contains("ours"), "{text}");
@@ -636,7 +546,7 @@ mod tests {
             "C:\\Windows\\evil.md",
         ] {
             let snap = snapshot("alpha", vec![(escape.to_owned(), b"x".to_vec(), true)]);
-            let err = project_skill(&snap, &["claude-code".to_owned()]).unwrap_err();
+            let err = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap_err();
             let message = err.to_string();
 
             assert!(matches!(err, CoreError::Refused(_)), "{escape}: {message}");
@@ -655,26 +565,15 @@ mod tests {
         // A name with no legal slug is refused by the renderer too, and it is
         // not a path escape — so the `unsafe-path` mapping must not swallow it.
         let snap = snapshot("!!!", vec![]);
-        let err = project_skill(&snap, &["claude-code".to_owned()]).unwrap_err();
+        let err = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)), "{err}");
-    }
-
-    #[test]
-    fn unknown_target_is_refused_not_skipped() {
-        let snap = snapshot("alpha", vec![]);
-        // `opencode` is a runtime agent-adapt renders, but not a harness
-        // skillwright builds.
-        for target in ["windsurf", "opencode"] {
-            let err = project_skill(&snap, &[target.to_owned()]).unwrap_err();
-            assert!(matches!(err, CoreError::Projection(_)), "{target}: {err}");
-        }
     }
 
     #[test]
     fn multi_target_projection_renders_every_target_once() {
         let snap = snapshot("alpha", vec![("h.ts".to_owned(), b"x".to_vec(), false)]);
         let files =
-            project_skill(&snap, &["claude-code".to_owned(), "codex-cli".to_owned()]).unwrap();
+            project_skill(&snap, &[RuntimeId::ClaudeCode, RuntimeId::CodexCli], None).unwrap();
         assert_eq!(files.len(), 4);
         assert!(
             files
@@ -689,23 +588,23 @@ mod tests {
     fn a_command_projects_into_every_verified_runtimes_layout() {
         let snap = snapshot("ship", vec![]);
         let cases = [
-            ("claude-code", ".claude/commands/ship.md"),
-            ("codex-cli", ".codex/prompts/ship.md"),
+            (RuntimeId::ClaudeCode, ".claude/commands/ship.md"),
+            (RuntimeId::CodexCli, ".codex/prompts/ship.md"),
         ];
         for (target, expected) in cases {
-            let files = project_command(&snap, &[target.to_owned()], None).unwrap();
-            assert_eq!(files.len(), 1, "{target}");
-            assert_eq!(files[0].relative_path, expected, "{target}");
+            let files = project_command(&snap, &[target], None).unwrap();
+            assert_eq!(files.len(), 1, "{target:?}");
+            assert_eq!(files[0].relative_path, expected, "{target:?}");
         }
     }
 
     #[test]
     fn a_command_has_no_renderer_for_cursor_or_pi() {
         let snap = snapshot("ship", vec![]);
-        for target in ["cursor", "pi"] {
-            let err = project_command(&snap, &[target.to_owned()], None).unwrap_err();
-            assert!(matches!(err, CoreError::Refused(_)), "{target}: {err}");
-            assert!(err.to_string().contains("no-renderer"), "{target}: {err}");
+        for target in [RuntimeId::Cursor, RuntimeId::Pi] {
+            let err = project_command(&snap, &[target], None).unwrap_err();
+            assert!(matches!(err, CoreError::Refused(_)), "{target:?}: {err}");
+            assert!(err.to_string().contains("no-renderer"), "{target:?}: {err}");
         }
     }
 
@@ -736,7 +635,7 @@ mod tests {
         snap.content.user_invocable = false;
         snap.content.context_mode = Some("fork".into());
         snap.content.annotations = keys(serde_json::json!({"foo": "bar"}));
-        let text = only_file(&project_command(&snap, &["codex-cli".to_owned()], None).unwrap());
+        let text = only_file(&project_command(&snap, &[RuntimeId::CodexCli], None).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("foo"), Some(&serde_json::json!("bar")), "{text}");
         for key in ["disable-model-invocation", "user-invocable", "context"] {
@@ -754,7 +653,7 @@ mod tests {
         snap.content.context_mode = Some("fork".into());
         snap.content.annotations = keys(serde_json::json!({"foo": "bar"}));
 
-        let text = only_file(&project_command(&snap, &["claude-code".to_owned()], None).unwrap());
+        let text = only_file(&project_command(&snap, &[RuntimeId::ClaudeCode], None).unwrap());
         let fm = frontmatter(&text);
         for (key, value) in [
             ("disable-model-invocation", serde_json::json!(true)),
@@ -772,7 +671,7 @@ mod tests {
             keys(serde_json::json!({"foo": "baz"})),
         );
         let text = only_file(
-            &project_command(&snap, &["claude-code".to_owned()], Some("claude-code")).unwrap(),
+            &project_command(&snap, &[RuntimeId::ClaudeCode], Some("claude-code")).unwrap(),
         );
         assert_eq!(
             frontmatter(&text).get("foo"),
