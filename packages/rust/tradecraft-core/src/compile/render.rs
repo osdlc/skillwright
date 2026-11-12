@@ -20,8 +20,7 @@ use crate::layout::{Layout, MARKETPLACES_DIR, Place, SharedDir};
 use crate::model::{LinkForm, PluginRootPath, ResolvedRef};
 use crate::note::read_utf8;
 use crate::refusal;
-use crate::vfs::forward_slashed;
-use crate::vfs::{Vfs, normalize};
+use crate::vfs::{Vfs, forward_slashed, normalize};
 
 /// One compile's state: the layout links resolve in, and the resources
 /// claimed so far.

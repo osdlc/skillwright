@@ -9,8 +9,7 @@
 //! The seam itself lives in the `vfs-seam` crate, shared with the osdlc vault
 //! crates (`markdown-vault-fs`, `markdown-corpus`, `markdown-relink`), so a
 //! vault walk and a build read through one trait. This module re-exports
-//! it as `crate::vfs`, beside the one path helper the crate adds,
-//! `forward_slashed`.
+//! it as `crate::vfs`.
 //!
 //! A [`Vfs`] method fails with [`VfsError`]. A `?` in a function returning
 //! [`crate::CoreError`] turns it into [`crate::CoreError::Io`], with the same

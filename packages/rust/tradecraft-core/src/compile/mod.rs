@@ -185,7 +185,7 @@ pub struct CallSite {
 }
 
 /// Opens and closes a compile's mark. Unicode noncharacters, which
-/// are for internal use; [`refuse_marks`] refuses a source that holds one.
+/// are for internal use; [`validate::refuse_marks`] refuses a source that holds one.
 pub(crate) const MARK_OPEN: char = '\u{FDD0}';
 pub(crate) const MARK_CLOSE: char = '\u{FDD1}';
 

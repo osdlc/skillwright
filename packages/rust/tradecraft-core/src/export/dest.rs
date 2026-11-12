@@ -51,7 +51,7 @@ impl Snapshot {
         base: &Path,
         paths: Vec<&'static str>,
     ) -> Result<Self, CoreError> {
-        let state = scan_destination(vfs, base, &paths)?;
+        let state = scan_output(vfs, base, &paths)?;
         let stamps = state
             .files
             .keys()
@@ -72,7 +72,7 @@ impl Snapshot {
 /// Reads `base`, but only the `owned` paths, never the whole directory: what
 /// the swap would replace is exactly what the report may call stale, and
 /// `dist/<m>/` may hold files of its own beside the packs.
-fn scan_destination(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestState, CoreError> {
+fn scan_output(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestState, CoreError> {
     let mut state = DestState::default();
     for &owned in owned {
         // A link or a file above an owned path is recorded and goes no
@@ -174,7 +174,7 @@ struct DestTree<'v> {
 
 impl<'v> DestTree<'v> {
     fn scan(vfs: &'v dyn Vfs, base: PathBuf, owned: &[&str]) -> Result<Self, CoreError> {
-        let state = scan_destination(vfs, &base, owned)?;
+        let state = scan_output(vfs, &base, owned)?;
         Ok(Self { vfs, base, state })
     }
 

@@ -18,8 +18,7 @@ impl Renderer<'_> {
         body: &str,
         outputs: &mut BTreeMap<String, (Vec<u8>, bool)>,
     ) -> Result<String, CoreError> {
-        // Every transformation above either replaced a token or refused, but
-        // splicing can move text across fence boundaries and frontmatter is
+        // `transform_body` replaced every token or refused, but splicing can move text across fence boundaries and frontmatter is
         // carried untransformed, so the emitted files are scanned once more. An
         // escape wrote [`ESCAPED`] for its `[[`, so the scan skips it.
         let entry_label = self.relative_or_verbatim(&self.entry_path);

@@ -942,9 +942,10 @@ fn sibling_folder_links_that_lead_back_are_refused() {
     );
 }
 
-/// The host on disk, except that it cannot resolve the marketplace folder.
+/// The host on disk, except that it cannot resolve the path ending in the
+/// given suffix.
 #[cfg(unix)]
-struct DeniedMarket;
+struct DeniedMarket(&'static str);
 
 #[cfg(unix)]
 impl Vfs for DeniedMarket {
@@ -988,7 +989,7 @@ impl Vfs for DeniedMarket {
         NativeVfs.read_link(path)
     }
     fn canonicalize(&self, path: &Path) -> Result<std::path::PathBuf, VfsError> {
-        if path.ends_with("marketplaces/acme") {
+        if path.ends_with(self.0) {
             let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
             return Err(VfsError::io(path, denied));
         }
@@ -1012,7 +1013,30 @@ fn a_symlink_whose_scope_cannot_be_resolved_is_refused() {
     std::os::unix::fs::symlink(tools.join("references/x.md"), tools.join("references/y.md"))
         .unwrap();
 
-    let err = read_layout(&DeniedMarket, &tmp).unwrap_err();
+    let err = read_layout(&DeniedMarket("marketplaces/acme"), &tmp).unwrap_err();
+    std::fs::remove_dir_all(&tmp).unwrap();
+    assert!(
+        err.to_string().starts_with("refused: unsafe-path: "),
+        "{err}"
+    );
+}
+
+/// The walk-ancestor check refuses the same way when a folder the walk is
+/// inside cannot be resolved.
+#[cfg(unix)]
+#[test]
+fn a_walk_ancestor_that_cannot_be_resolved_is_refused() {
+    let tmp = std::env::temp_dir().join(format!("tc-layout-denied-up-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let tools = tmp.join("marketplaces/acme/plugins/tools");
+    std::fs::create_dir_all(tools.join("references")).unwrap();
+    std::fs::create_dir_all(tools.join("other")).unwrap();
+    std::fs::write(tmp.join("skillwright.md"), ROOT).unwrap();
+    std::fs::write(tmp.join("marketplaces/acme/acme.md"), NOTE).unwrap();
+    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
+    std::os::unix::fs::symlink(tools.join("other"), tools.join("references/y")).unwrap();
+
+    let err = read_layout(&DeniedMarket("plugins/tools/references"), &tmp).unwrap_err();
     std::fs::remove_dir_all(&tmp).unwrap();
     assert!(
         err.to_string().starts_with("refused: unsafe-path: "),

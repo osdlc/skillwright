@@ -16,7 +16,7 @@ use crate::vfs::{PreviewWrite, Vfs};
 /// rename is only atomic within one filesystem: the one directory guaranteed
 /// to share a filesystem with the thing being replaced is the thing's own
 /// parent. It stays invisible to the
-/// diff because `scan_destination` reads only the entries a root owns, and
+/// diff because `scan_output` reads only the entries a root owns, and
 /// this is never one of them.
 const STAGE_DIR: &str = ".skillwright-stage";
 

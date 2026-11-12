@@ -54,16 +54,15 @@ struct ReadOnlyGlobals {
 }
 
 impl ReadOnlyGlobals {
-    /// The run's flags, with `--marketplace` and `--harness` and nothing
-    /// written.
-    fn run(&self, marketplace: Option<&String>, harness: &HarnessArg) -> RunFlags {
+    /// The run's flags for a verb that writes nothing: dry_run and yes are false.
+    fn run(&self, marketplace: Option<&str>, harness: &HarnessArg) -> RunFlags {
         RunFlags {
             vault: self.vault.clone(),
             json: self.json,
             quiet: self.quiet,
             dry_run: false,
             yes: false,
-            marketplace: marketplace.cloned(),
+            marketplace: marketplace.map(str::to_owned),
             harnesses: harness.names.iter().cloned().collect(),
         }
     }
@@ -86,7 +85,7 @@ struct Globals {
 
 impl Globals {
     /// [`ReadOnlyGlobals::run`], with `--dry-run` and `--yes`.
-    fn run(&self, marketplace: Option<&String>, harness: &HarnessArg) -> RunFlags {
+    fn run(&self, marketplace: Option<&str>, harness: &HarnessArg) -> RunFlags {
         RunFlags {
             dry_run: self.dry_run,
             yes: self.yes,
@@ -273,7 +272,7 @@ impl BumpArgs {
             } else {
                 BumpLevel::Patch
             },
-            run: self.globals.run(self.marketplace.as_ref(), &self.harness),
+            run: self.globals.run(self.marketplace.as_deref(), &self.harness),
         }
     }
 }
@@ -315,14 +314,14 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
             let export = &args.export;
             let flags = args
                 .globals
-                .run(export.marketplace.as_ref(), &export.harness);
+                .run(export.marketplace.as_deref(), &export.harness);
             run_export(ExportVerb::Build, &flags, ctx)
         }
         Verb::Check(args) => {
             let export = &args.export;
             let flags = args
                 .globals
-                .run(export.marketplace.as_ref(), &export.harness);
+                .run(export.marketplace.as_deref(), &export.harness);
             run_export(ExportVerb::Check, &flags, ctx)
         }
         Verb::Bump(args) => run_bump(&args.flags(), ctx),

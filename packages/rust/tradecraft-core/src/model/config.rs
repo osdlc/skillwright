@@ -7,7 +7,7 @@ use crate::frontmatter::ContainerIdentity;
 
 /// The marketplace and its plugins as the cascade folds them: the root
 /// file's shared defaults, the marketplace note over them, and each plugin
-/// note. Built only by [`crate::model::Cascade`], never by a host.
+/// note. Built only by [`crate::model::cascade::Cascade`].
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MarketplaceConfig {
     /// The name both manifests publish under: the marketplace note's.

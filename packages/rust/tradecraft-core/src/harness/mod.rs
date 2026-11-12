@@ -8,7 +8,7 @@
 pub(crate) mod field_types;
 pub mod knowledge;
 pub mod manifest;
-pub mod naming;
+mod naming;
 pub mod profile;
 pub mod translator;
 
