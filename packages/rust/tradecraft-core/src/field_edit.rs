@@ -40,13 +40,37 @@ pub fn read_version(source: &str) -> Result<Option<String>, CoreError> {
 
 /// The note with its `version` set to `version`, every other byte kept. A
 /// note with no frontmatter block, or an empty one, starts from an empty
-/// mapping.
+/// mapping. The block edited is the one the build reads (the lenient split),
+/// so a note never gains a second block.
 ///
 /// # Errors
 ///
-/// A refusal when the frontmatter cannot be read or edited.
+/// A refusal when the frontmatter cannot be read or edited, and
+/// `refused: frontmatter-edit` for an empty block only the lenient split
+/// reads, which cannot be filled in place.
 pub fn set_version(source: &str, version: &str) -> Result<String, CoreError> {
     let split = frontmatter_lossless::split(source);
+    if let Some(lenient) = frontmatter_lossless::split_lenient(source) {
+        // `lenient.yaml` is a slice of `source`. Widen it over a CRLF `\r`
+        // to match the strict split's range.
+        let start = lenient.yaml.as_ptr() as usize - source.as_ptr() as usize;
+        let mut end = start + lenient.yaml.len();
+        if source[end..].starts_with('\r') {
+            end += 1;
+        }
+        if split.yaml.is_none() || split.yaml_range != (start..end) {
+            if lenient.yaml.trim().is_empty() {
+                return Err(CoreError::refused(
+                    "frontmatter-edit",
+                    "the frontmatter block is empty and its fences are not plain `---` \
+                     lines at the top of the note, so `version` cannot be added in place. \
+                     Write each fence as `---` alone on its line, at the top",
+                ));
+            }
+            let block = edit_version(&source[start..end], version)?;
+            return Ok(format!("{}{block}{}", &source[..start], &source[end..]));
+        }
+    }
     let mut shape = split.shape;
     let yaml = match split.yaml {
         Some(yaml) if !yaml.trim().is_empty() => yaml,
@@ -58,6 +82,16 @@ pub fn set_version(source: &str, version: &str) -> Result<String, CoreError> {
             ""
         }
     };
+    let block = edit_version(yaml, version)?;
+    Ok(frontmatter_lossless::compose(
+        Some(&block),
+        split.body,
+        shape,
+    ))
+}
+
+/// `yaml` with its `version` set, every other byte kept.
+fn edit_version(yaml: &str, version: &str) -> Result<String, CoreError> {
     let edit = yaml_splice::FieldEdit::Set {
         key: "version".to_owned(),
         value: yaml_splice::Value::Str(version.to_owned()),
@@ -68,25 +102,21 @@ pub fn set_version(source: &str, version: &str) -> Result<String, CoreError> {
             format!("frontmatter could not be edited: {e}"),
         )
     })?;
-    let block = String::from_utf8(outcome.bytes).map_err(|e| {
+    String::from_utf8(outcome.bytes).map_err(|e| {
         CoreError::refused(
             "frontmatter-encoding",
             format!("edited frontmatter is not UTF-8: {e}"),
         )
-    })?;
-    Ok(frontmatter_lossless::compose(
-        Some(&block),
-        split.body,
-        shape,
-    ))
+    })
 }
 
-/// The frontmatter of `source` as a mapping, or `None` for no block.
+/// The frontmatter of `source` as the build reads it, as a mapping, or
+/// `None` for no block.
 fn frontmatter_mapping(source: &str) -> Result<Option<yaml_splice::Mapping>, CoreError> {
-    let yaml = match frontmatter_lossless::split(source).yaml {
-        Some(yaml) if !yaml.trim().is_empty() => yaml,
-        _ => return Ok(None),
-    };
+    let yaml = crate::skill::split_frontmatter(source).0;
+    if yaml.trim().is_empty() {
+        return Ok(None);
+    }
     parse_mapping(yaml).map(Some).map_err(|e| {
         CoreError::refused(
             "frontmatter-read",
@@ -141,6 +171,64 @@ mod tests {
             out,
             "---\ndescription: d # keep\nversion: 1.0.1\ntail: x\n---\nbody\n"
         );
+    }
+
+    /// Fences only the build's lenient split accepts: the version is read
+    /// and set inside the block the build reads, never in a second block.
+    #[test]
+    fn lenient_fences_are_read_and_edited_in_place() {
+        for (source, edited) in [
+            // Trailing space on the opening fence.
+            (
+                "--- \nversion: 1.0.0\n---\nb\n",
+                "--- \nversion: 1.0.1\n---\nb\n",
+            ),
+            // Trailing tab on the closing fence.
+            (
+                "---\nversion: 1.0.0\n---\t\nb\n",
+                "---\nversion: 1.0.1\n---\t\nb\n",
+            ),
+            // A blank line before the opening fence.
+            (
+                "\n---\nversion: 1.0.0\n---\nb\n",
+                "\n---\nversion: 1.0.1\n---\nb\n",
+            ),
+            // CRLF fences with trailing tabs and a leading blank line.
+            (
+                "\r\n---\t\r\nversion: 1.0.0\r\n---\t\r\nb\r\n",
+                "\r\n---\t\r\nversion: 1.0.1\r\n---\t\r\nb\r\n",
+            ),
+            // A `--- ` line closes the block before a later strict `---`.
+            (
+                "---\nversion: 1.0.0\n--- \nversion: 9.9.9\n---\nb\n",
+                "---\nversion: 1.0.1\n--- \nversion: 9.9.9\n---\nb\n",
+            ),
+        ] {
+            assert_eq!(
+                read_version(source).unwrap().as_deref(),
+                Some("1.0.0"),
+                "{source:?}"
+            );
+            assert_eq!(set_version(source, "1.0.1").unwrap(), edited, "{source:?}");
+        }
+    }
+
+    /// A lenient block without a version gets the key added inside it.
+    #[test]
+    fn a_lenient_block_without_a_version_gains_one_inside_it() {
+        let out = set_version("--- \ndescription: d\n---\nb\n", "1.0.0").unwrap();
+        assert_eq!(out, "--- \ndescription: d\nversion: 1.0.0\n---\nb\n");
+    }
+
+    /// An empty block only the lenient split reads cannot be filled in
+    /// place, so it is refused rather than given a second block.
+    #[test]
+    fn an_empty_lenient_block_is_refused() {
+        for source in ["--- \n---\nb\n", "\n---\n---\nb\n"] {
+            assert_eq!(read_version(source).unwrap(), None, "{source:?}");
+            let err = set_version(source, "1.0.0").unwrap_err().to_string();
+            assert!(err.contains("frontmatter-edit"), "{source:?}: {err}");
+        }
     }
 
     #[test]
