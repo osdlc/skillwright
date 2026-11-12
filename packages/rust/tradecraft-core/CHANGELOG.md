@@ -9,6 +9,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Depend on markdown-link 0.9, so an install builds one copy of it.
 
+### Breaking
+
+API:
+
+- `read_vault_skill`, `vfs::{Clock, FixedClock, PlannedOp, PreviewVfs}`, the root `PlannedOp` and `PreviewVfs`, `StaleKind::as_str`, `Extensions::blocks`, `Closure::unresolved` and `IndexedSkill::shipped` are removed.
+- `harness::{TreeFile, FileSource}` are removed, and `FileTree` is no longer public. `FileTree::files` holds `vfs::PreviewWrite`.
+- `projection::{project_skill_reporting, redundant_override_keys, RedundantOverride}` and `FileTree::redundant_overrides` are removed. `project_skill` and `project_command` take `&[RuntimeId]` and `project_plugin_hooks` takes a `RuntimeId`, not runtime names.
+- `CallContext::{render, target, record}` and `Component::content` are removed. `Resolved::content` and `resolve_body`'s return type change.
+- `CompileSource` requires `layout` and `calls` and has no `vault_root`. `CompileSource::new` changes to match. `CompiledNote::recorded` is always filled.
+- `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId` and `Marketplace::folder` is a `String`.
+- `keys::field_reference` is no longer public.
+
 ## [0.50.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.1...tradecraft-core/v0.50.0) - 2026-11-12
 
 0.49.1 shipped these changes by mistake under a patch version and was yanked.
