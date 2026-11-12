@@ -25,16 +25,16 @@
 use std::collections::BTreeSet;
 
 use tradecraft_core::{
-    CoreError, ExportMode, ExportReport, ExportUnit, NativeVfs, VaultReport, VaultRequest,
+    ExportMode, ExportReport, ExportUnit, MarketplaceRefusal, NativeVfs, VaultReport, VaultRequest,
     build_vault, owned_paths,
 };
 
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_DRIFT, EXIT_OK, EXIT_REFUSED, refused};
+use crate::exit::{EXIT_DRIFT, EXIT_OK, EXIT_REFUSED, failed};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{
-    count_checked_units, normalize_thrown_reason, print_json, render_export_tally,
-    render_unit_line, render_warning_line,
+    count_checked_units, dry_run_notice, print_json, render_export_tally, render_unit_line,
+    render_warning_line,
 };
 use crate::resolve::{CommonFlags, ResolvedRun, resolve_run};
 
@@ -110,7 +110,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     // passed, after asking.
     let checked = match build_vault(&NativeVfs, &request(ExportMode::Check)) {
         Ok(checked) => checked,
-        Err(err) => return failed_run(verb, &err, ctx),
+        Err(err) => return failed(ctx.err, verb.as_str(), &err.reason()),
     };
     let several = run.marketplaces().len() > 1;
     // `bump` needs `--marketplace` only when the vault holds several, but
@@ -126,7 +126,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     if writes && !checked.refused.is_empty() {
         for refusal in &checked.refused {
             header(&refusal.marketplace, ctx);
-            refused_run(verb, &refusal.error, ctx);
+            failed(ctx.err, verb.as_str(), &refusal.reason());
         }
         let _ = writeln!(ctx.err, "Nothing was written.");
         return EXIT_REFUSED;
@@ -139,16 +139,13 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         }
     }
     if flags.dry_run && !flags.quiet {
-        let _ = writeln!(
-            ctx.err,
-            "dry run — reporting the drift a build would act on; nothing will be written"
-        );
+        dry_run_notice(ctx, "the drift a build would act on");
     }
 
     let reports = if writes {
         match build_vault(&NativeVfs, &request(ExportMode::Build)) {
             Ok(built) => in_folder_order(&run, built),
-            Err(err) => return failed_run(verb, &err, ctx),
+            Err(err) => return failed(ctx.err, verb.as_str(), &err.reason()),
         }
     } else {
         in_folder_order(&run, checked)
@@ -161,13 +158,10 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     for (name, report) in reports {
         header(&name, ctx);
         let code = match report {
-            Err(error) => {
-                let code = refused_run(verb, &error, ctx);
+            Err(refusal) => {
+                let code = failed(ctx.err, verb.as_str(), &refusal.reason());
                 if let Some(document) = &mut document {
-                    document.refused.push(Refusal {
-                        marketplace: name,
-                        error,
-                    });
+                    document.refused.push(refusal);
                 }
                 code
             }
@@ -199,7 +193,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
 struct VaultDocument {
     marketplaces: Vec<Market>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    refused: Vec<Refusal>,
+    refused: Vec<MarketplaceRefusal>,
 }
 
 #[derive(serde::Serialize)]
@@ -208,18 +202,12 @@ struct Market {
     report: ExportReport,
 }
 
-#[derive(serde::Serialize)]
-struct Refusal {
-    marketplace: String,
-    error: String,
-}
-
 /// Each marketplace's report, or what refused it, in folder order.
 fn in_folder_order(
     run: &ResolvedRun,
     report: VaultReport,
-) -> Vec<(String, Result<ExportReport, String>)> {
-    let mut reports: Vec<(String, Result<ExportReport, String>)> = report
+) -> Vec<(String, Result<ExportReport, MarketplaceRefusal>)> {
+    let mut reports: Vec<(String, Result<ExportReport, MarketplaceRefusal>)> = report
         .marketplaces
         .into_iter()
         .map(|m| (m.marketplace, Ok(m.report)))
@@ -227,30 +215,12 @@ fn in_folder_order(
             report
                 .refused
                 .into_iter()
-                .map(|r| (r.marketplace, Err(r.error))),
+                .map(|r| (r.marketplace.clone(), Err(r))),
         )
         .collect();
     let at = |name: &str| run.marketplaces().iter().position(|m| m.name == name);
     reports.sort_by_key(|(name, _)| at(name));
     reports
-}
-
-/// Report a run-level failure: an export has no partial report, since its
-/// checks run before anything is staged and a failed swap rolls back.
-fn failed_run(verb: ExportVerb, err: &CoreError, ctx: &mut CommandContext<'_>) -> i32 {
-    refused_run(verb, &err.to_string(), ctx)
-}
-
-/// [`failed_run`] for an error the core gave as text.
-fn refused_run(verb: ExportVerb, error: &str, ctx: &mut CommandContext<'_>) -> i32 {
-    refused(
-        ctx.err,
-        &format!(
-            "{} failed: {}",
-            verb.as_str(),
-            normalize_thrown_reason(error)
-        ),
-    )
 }
 
 /// Ask before a build replaces what it owns in each `dist/<m>/`.

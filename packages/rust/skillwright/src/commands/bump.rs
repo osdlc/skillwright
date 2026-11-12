@@ -30,9 +30,9 @@ use tradecraft_core::{
 };
 
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, EXIT_REFUSED, refused, usage_error};
+use crate::exit::{EXIT_OK, EXIT_REFUSED, failed, refused, usage_error};
 use crate::prompt::confirm_write;
-use crate::report::{normalize_thrown_reason, print_json};
+use crate::report::{dry_run_notice, print_json};
 use crate::resolve::{CommonFlags, ResolvedRun, resolve_at, resolve_run};
 
 /// The resolved flags of `skillwright bump`.
@@ -101,13 +101,6 @@ fn write_row(ctx: &mut CommandContext<'_>, json: bool, row: &Row) -> Result<(), 
     }
 }
 
-fn bump_failed(err: &mut dyn std::io::Write, e: impl std::fmt::Display) -> i32 {
-    refused(
-        err,
-        &format!("bump failed: {}", normalize_thrown_reason(&e.to_string())),
-    )
-}
-
 /// The version a bump sets, or `None` for a current version that is not
 /// plain semver or has no room at `level`. `now` is the UTC time as
 /// `YYYYMMDDHHMMSS`, read only by [`PatchScheme::Timestamp`].
@@ -165,7 +158,7 @@ fn plan_bump(
     let VersionNote { path, rel } = note;
     let bytes = NativeVfs.read_file(&path).map_err(|e| e.to_string())?;
     let source = String::from_utf8(bytes).map_err(|e| format!("{rel} is not valid UTF-8: {e}"))?;
-    let found = read_version(&source).map_err(|e| e.to_string())?;
+    let found = read_version(&source).map_err(|e| e.reason())?;
     let versioned = found.is_some();
     // No version key in either shape is not a refusal — the core's stated
     // default is what a bump starts from.
@@ -182,7 +175,7 @@ fn plan_bump(
 }
 
 fn write_bump(planned: &Planned, new: &str) -> Result<(), String> {
-    let edited = set_version(&planned.source, new).map_err(|e| e.to_string())?;
+    let edited = set_version(&planned.source, new).map_err(|e| e.reason())?;
     NativeVfs
         .write_file(&planned.entry_path, edited.as_bytes())
         .map_err(|e| e.to_string())
@@ -204,10 +197,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(err) => {
             return refused(
                 ctx.err,
-                &format!(
-                    "the vault scan could not complete: {}",
-                    normalize_thrown_reason(&err.to_string())
-                ),
+                &format!("the vault scan could not complete: {}", err.reason()),
             );
         }
     };
@@ -315,7 +305,7 @@ fn run_one(
     let plugin = label;
     let planned = match plan_bump(note, flags.level, scheme, utc_now_stamp()) {
         Ok(planned) => planned,
-        Err(err) => return bump_failed(ctx.err, err),
+        Err(err) => return failed(ctx.err, "bump", &err),
     };
     let Some(new) = planned.new.clone() else {
         let reason = format!("non-semver: `version` reads `{}`", planned.current);
@@ -334,10 +324,7 @@ fn run_one(
             return code;
         }
         if !flags.quiet {
-            let _ = writeln!(
-                ctx.err,
-                "dry run — reporting the bump this run would make; nothing will be written"
-            );
+            dry_run_notice(ctx, "the bump this run would make");
         }
         return EXIT_OK;
     }
@@ -354,7 +341,7 @@ fn run_one(
     }
 
     if let Err(err) = write_bump(&planned, &new) {
-        return bump_failed(ctx.err, err);
+        return failed(ctx.err, "bump", &err);
     }
 
     let row = Row::bumped(plugin, planned, "written", new).single();
@@ -451,9 +438,9 @@ fn holds_a_plugin_manifest(dir: &Path, roots: &[&str]) -> bool {
 
 /// The one marketplace's report from a request for one, or what refused it.
 fn one_report(report: Result<VaultReport, CoreError>) -> Result<ExportReport, String> {
-    let mut report = report.map_err(|err| err.to_string())?;
+    let mut report = report.map_err(|err| err.reason())?;
     if let Some(refusal) = report.refused.pop() {
-        return Err(refusal.error);
+        return Err(refusal.reason());
     }
     report
         .marketplaces
@@ -491,7 +478,7 @@ fn run_changed(
         request.compare_with = Some(baseline.root(market));
         let mut roots: Vec<&str> = match owned_paths(&run.loaded.settings, &request.harnesses) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
-            Err(err) => return refused(ctx.err, normalize_thrown_reason(&err.to_string())),
+            Err(err) => return refused(ctx.err, &err.reason()),
         };
         roots.dedup();
         if let Baseline::Dir(dir) = &baseline
@@ -518,15 +505,7 @@ fn run_changed(
         }
         let report = match one_report(build_vault(&NativeVfs, &request)) {
             Ok(report) => report,
-            Err(err) => {
-                return refused(
-                    ctx.err,
-                    &format!(
-                        "comparing against `{since}` failed: {}",
-                        normalize_thrown_reason(&err)
-                    ),
-                );
-            }
+            Err(err) => return failed(ctx.err, &format!("comparing against `{since}`"), &err),
         };
 
         let mut verdicts: BTreeMap<&str, Verdict> = BTreeMap::new();
@@ -562,7 +541,7 @@ fn run_changed(
             };
             let planned = match plan_bump(plugin_version_note(note), flags.level, scheme, now) {
                 Ok(planned) => planned,
-                Err(err) => return bump_failed(ctx.err, err),
+                Err(err) => return failed(ctx.err, "bump", &err),
             };
             // A note with no version key has no version to have moved, so any
             // drift is a change.
@@ -624,10 +603,7 @@ fn run_changed(
             // written still reach the report.
             if let Err(err) = write_bump(planned, &new) {
                 row.status = "refused";
-                row.reason = Some(format!(
-                    "the write failed: {}",
-                    normalize_thrown_reason(&err)
-                ));
+                row.reason = Some(format!("the write failed: {err}"));
                 continue;
             }
             row.status = "written";
@@ -649,10 +625,7 @@ fn run_changed(
         }
     }
     if flags.dry_run && !flags.quiet {
-        let _ = writeln!(
-            ctx.err,
-            "dry run — reporting the bumps this run would make; nothing will be written"
-        );
+        dry_run_notice(ctx, "the bumps this run would make");
     }
     if !flags.quiet {
         let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
@@ -977,13 +950,7 @@ impl BuiltRef {
                 .vault_request(base_market, ExportMode::Build);
             request.harnesses.clone_from(harnesses);
             if let Err(err) = build_vault(&NativeVfs, &request) {
-                return fail(
-                    ctx,
-                    format!(
-                        "building it failed: {}",
-                        normalize_thrown_reason(&err.to_string())
-                    ),
-                );
+                return fail(ctx, format!("building it failed: {}", err.reason()));
             }
         }
         Ok(built)

@@ -47,7 +47,8 @@
 //! - **A `CoreError` becomes a thrown JS `Error`** whose `.name` is the variant,
 //!   mirroring what `yaml-splice-wasm` does for `EditError`. `Refused` is
 //!   a guard working, and a caller that wants to tell it from a genuine I/O
-//!   failure reads `.name` rather than pattern-matching on a message.
+//!   failure reads `.name` rather than pattern-matching on a message. A
+//!   refusal's `.token` is its reason token.
 //!
 //! A build refuses before anything is staged, so its refusals throw. A check
 //! lists each marketplace that refused in its report.
@@ -216,9 +217,14 @@ fn report_json<T: Serialize>(what: &str, report: &T) -> Result<String, JsValue> 
 
 // --- CoreError -> thrown JS Error ------------------------------------------
 
+/// A refusal also carries its token as `.token`.
 fn core_error_to_js(e: &CoreError) -> JsValue {
     let err = js_sys::Error::new(&e.to_string());
     err.set_name(e.variant_name());
+    if let Some(token) = e.token() {
+        // Setting a property on a fresh `Error` cannot fail.
+        let _ = js_sys::Reflect::set(&err, &"token".into(), &token.as_str().into());
+    }
     err.into()
 }
 

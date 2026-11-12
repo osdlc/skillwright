@@ -257,7 +257,7 @@ fn a_check_reports_every_marketplace_when_two_refuse() {
         .collect();
     assert_eq!(refused, ["acme", "zoo"]);
     for r in &report.refused {
-        assert!(r.error.starts_with("refused: "), "{}", r.error);
+        assert!(r.token.is_some(), "{r:?}");
     }
     assert!(!vfs.exists(Path::new("/v/dist")));
 }

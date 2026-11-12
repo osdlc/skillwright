@@ -121,7 +121,7 @@ pub fn read_vault_note(
         .filter(|d| !d.trim().is_empty())
         .or_else(|| kind.holds_components().then(String::new))
         .ok_or_else(|| {
-            CoreError::malformed(
+            CoreError::unreadable(
                 skill_path,
                 "not a skill: frontmatter carries no `description`",
             )
@@ -189,17 +189,17 @@ pub(crate) fn frontmatter_map(
         return Ok(Map::new());
     }
     let yaml: serde_yaml::Value = serde_yaml::from_str(frontmatter)
-        .map_err(|e| CoreError::malformed(path, format!("invalid frontmatter: {e}")))?;
+        .map_err(|e| CoreError::unreadable(path, format!("invalid frontmatter: {e}")))?;
     // YAML this crate cannot re-emit — non-string mapping keys, tagged values —
     // is refused here rather than quietly flattened, because carrying it
     // verbatim is the promise and a lossy conversion would break it.
     let json = serde_json::to_value(&yaml).map_err(|e| {
-        CoreError::malformed(path, format!("frontmatter is not representable: {e}"))
+        CoreError::unreadable(path, format!("frontmatter is not representable: {e}"))
     })?;
     match json {
         Value::Object(map) => Ok(map),
         Value::Null => Ok(Map::new()),
-        _ => Err(CoreError::malformed(path, "frontmatter is not a mapping")),
+        _ => Err(CoreError::unreadable(path, "frontmatter is not a mapping")),
     }
 }
 
