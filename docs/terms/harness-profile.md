@@ -6,7 +6,7 @@ One row of data per [harness](harness.md): paths, manifest locations, naming rul
 
 ## In code
 
-`HarnessProfile`, `PluginFormat` and `PROFILES` in `harness/profile.rs`; looked up by name with `profile_named`.
+`HarnessProfile`, `PluginPolicy` and `PluginFormat` in `harness/profile.rs`; `Harness::profile` and `Harness::format` give a harness's row.
 
 ## Not to be confused with
 

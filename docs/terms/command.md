@@ -6,4 +6,4 @@ A component a user invokes by name, written as `commands/<c>/<c>.md` in a plugin
 
 ## In code
 
-`project_command` in `projection.rs`; `PluginFormat::carries_commands` in `harness/profile.rs`.
+`project_command` in `projection.rs`; `PluginFormat::carries` in `harness/profile.rs`.

@@ -21,6 +21,8 @@
 - An unset identity field is absent instead of `null`: every component's `identity` in `discoverComponents`, so a skill's is `{}`. `parseRootFile` already left unset fields out. Test for `undefined`, not `null`. ([#75](https://github.com/osdlc/skillwright/issues/75))
 - `ContainerIdentity`'s fields are optional (`display_name?: string`, not `display_name: string | null`). The JSON stays flat: no `identity` key appears. ([#75](https://github.com/osdlc/skillwright/issues/75))
 
+- `Target` is renamed `Harness`. `ExportUnit`'s `root` is typed as `Harness`, not `string`, and `knownTargets()` is typed as `Harness[]` in `WasmResponses` too.
+
 ### Changed
 
 - A `Refused` `CoreError` carries its reason token as `token`. `MarketplaceRefusal` has `token` and `detail` in place of `error`.

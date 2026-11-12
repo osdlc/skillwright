@@ -19,6 +19,7 @@ API:
 
 - `build --json` and `check --json` over several marketplaces list each refusal with `token` and `detail` in place of `error`.
 - A note that is not UTF-8 or whose frontmatter does not parse is no longer reported as `reading <path>: <what>`. It is `<path>: <what>` in the list of skipped notes, and `unreadable-note: <path>: <what>` on its own.
+- A `build.harnesses` name that is not a harness is refused as `` `<name>` is not a harness `` and names the first such name only.
 
 ## [0.12.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.1...skillwright/v0.12.0) - 2026-11-12
 
