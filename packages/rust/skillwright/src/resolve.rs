@@ -7,6 +7,7 @@
 //! notes ([`tradecraft_core::load_vault`]); this module turns its errors into
 //! exit codes.
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
@@ -17,26 +18,35 @@ use tradecraft_core::{
 use crate::config::{print_warnings, resolve_against_cwd};
 use crate::exit::{no_config, refused};
 
-/// The globals every verb but `init` declares, as far as this module cares.
+/// The flags every verb but `init` reads, built once from the command line.
 #[derive(Debug, Clone, Default)]
-pub struct CommonFlags {
+pub struct RunFlags {
     /// `--vault`.
     pub vault: Option<String>,
+    /// `--json`: print the report as one JSON document.
+    pub json: bool,
+    /// `--quiet`: drop progress and the tally from stderr.
+    pub quiet: bool,
+    /// `--dry-run`: classify and report; write nothing.
+    pub dry_run: bool,
+    /// `--yes`: accept the plan without prompting.
+    pub yes: bool,
+    /// `--marketplace`: the one marketplace the run covers. Absent means
+    /// every one.
+    pub marketplace: Option<String>,
+    /// `--harness`: the harnesses to build. Empty means the root file's
+    /// `build.harnesses`.
+    pub harnesses: BTreeSet<String>,
 }
 
 /// Find the vault root and load it, writing any failure
-/// to `err` and handing back the exit code it earned. `marketplace` limits
+/// to `err` and handing back the exit code it earned. `--marketplace` limits
 /// the run's marketplaces to that one.
 ///
 /// No root at or above `cwd` is exit 4, nothing supplied. A `--vault` that is
 /// not a root, a layout error, a bad root file and an unknown marketplace are
 /// run-level blockers, exit 2.
-pub fn resolve_run(
-    flags: &CommonFlags,
-    marketplace: Option<&str>,
-    cwd: &Path,
-    err: &mut dyn Write,
-) -> Result<LoadedVault, i32> {
+pub fn resolve_run(flags: &RunFlags, cwd: &Path, err: &mut dyn Write) -> Result<LoadedVault, i32> {
     let vault = match &flags.vault {
         Some(flag) => {
             let dir = resolve_against_cwd(flag, cwd);
@@ -53,7 +63,7 @@ pub fn resolve_run(
             Err(refused) => return Err(no_config(err, &refused.to_string())),
         },
     };
-    resolve_at(&vault, marketplace, err)
+    resolve_at(&vault, flags.marketplace.as_deref(), err)
 }
 
 /// [`resolve_run`] for a root already found.
@@ -94,7 +104,7 @@ mod tests {
     fn a_folder_with_no_root_at_or_above_it_is_exit_4() {
         let dir = tempfile::tempdir().unwrap();
         let mut err: Vec<u8> = Vec::new();
-        let code = resolve_run(&CommonFlags::default(), None, dir.path(), &mut err).unwrap_err();
+        let code = resolve_run(&RunFlags::default(), dir.path(), &mut err).unwrap_err();
         assert_eq!(code, EXIT_NO_CONFIG);
         let message = String::from_utf8(err).unwrap();
         assert!(message.contains("refused: layout"), "{message}");
@@ -107,7 +117,7 @@ mod tests {
         vault(dir.path());
         let cwd = dir.path().join("marketplaces/acme/plugins/tools");
         let mut err: Vec<u8> = Vec::new();
-        let loaded = resolve_run(&CommonFlags::default(), None, &cwd, &mut err).unwrap();
+        let loaded = resolve_run(&RunFlags::default(), &cwd, &mut err).unwrap();
         assert_eq!(loaded.root, dir.path());
         let names: Vec<&str> = loaded
             .marketplaces
