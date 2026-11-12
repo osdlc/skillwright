@@ -1428,7 +1428,9 @@ impl<'a> Renderer<'a> {
 
     /// `relative` from the folder of `from_file`. It must stay inside the
     /// marketplace (containment rule 1) and name a file the layout read; a
-    /// wikilink's path may leave out `.md`.
+    /// wikilink's path may leave out `.md`. A path below a symlink in a
+    /// never-ship folder, which the layout does not follow, resolves to that
+    /// symlink, so the link is refused as one that never ships.
     fn resolve_path(
         &self,
         from_file: &Path,
@@ -1444,13 +1446,22 @@ impl<'a> Renderer<'a> {
                 .refuse(&self.relative_or_verbatim(from_file), written));
         }
         let with_md = PathBuf::from(format!("{}.md", joined.display()));
-        let mut candidates = vec![joined];
+        let mut candidates = vec![joined.clone()];
         if wiki {
             candidates.push(with_md);
         }
         candidates
             .into_iter()
             .find(|path| self.layout.file(path).is_some())
+            .or_else(|| {
+                self.layout
+                    .files_of(&self.market)
+                    .find(|file| {
+                        matches!(file.place, Place::NeverShip { .. })
+                            && joined.starts_with(&file.path)
+                    })
+                    .map(|file| file.path.clone())
+            })
             .ok_or_else(|| self.missing(from_file, written))
     }
 

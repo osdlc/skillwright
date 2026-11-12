@@ -285,6 +285,48 @@ fn a_symlink_into_the_components_docs_fails_as_a_link_spelling_its_target() {
     assert!(err.contains("rule 10"), "{err}");
 }
 
+/// A symlink inside a never-ship folder is not followed: nothing ships it,
+/// so one leading out of the vault, or nowhere, does not refuse the vault.
+#[cfg(unix)]
+#[test]
+fn a_symlink_in_a_never_ship_folder_is_not_followed() {
+    let tmp = disk(&[(AUTHOR, &skill("Body."))]);
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("x.md"), "x\n").unwrap();
+    let outside = outside.to_str().unwrap().to_owned();
+    let gone = tmp.path().join("gone").to_str().unwrap().to_owned();
+    symlink(&tmp, "src/lib", &outside);
+    symlink(&tmp, "tests/gone", &gone);
+    symlink(&tmp, "skills/author/docs/shared", &outside);
+    symlink(&tmp, "skills/author/fixtures/gone.md", &gone);
+
+    let vfs = tradecraft_core::NativeVfs;
+    let root = tmp.path().join("v");
+    let loaded = load_vault(&vfs, &root, None).unwrap();
+    let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
+    export_skills(&vfs, &request).unwrap();
+    let pack = root.join(CLAUDE);
+    assert!(pack.join("skills/author/SKILL.md").is_file());
+    assert!(!pack.join("src").exists());
+    assert!(!pack.join("skills/author/docs").exists());
+}
+
+/// A link from a shipped file into a symlinked never-ship folder is still
+/// refused as reaching a file that never ships (section 4 rule 10).
+#[cfg(unix)]
+#[test]
+fn a_link_into_a_symlinked_never_ship_folder_is_refused() {
+    let tmp = disk(&[(AUTHOR, &skill("See [x](../../src/lib/x.md)."))]);
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("x.md"), "x\n").unwrap();
+    symlink(&tmp, "src/lib", outside.to_str().unwrap());
+    let err = disk_refusal(&tmp);
+    assert!(err.contains("excluded-link"), "{err}");
+    assert!(err.contains("rule 10"), "{err}");
+}
+
 #[test]
 fn a_shared_reference_renders_from_the_pack_root() {
     let vfs = vault(&[

@@ -719,6 +719,12 @@ impl Walk<'_> {
     /// The entries of `dir`, sorted, less dot-named ones and `node_modules`.
     /// A symlink is checked by [`Self::linked`].
     fn list(&self, dir: &Path) -> Result<Vec<Entry>, CoreError> {
+        self.list_with(dir, true)
+    }
+
+    /// [`Self::list`], or with `follow` false, every symlink taken as a file
+    /// and neither followed nor checked.
+    fn list_with(&self, dir: &Path, follow: bool) -> Result<Vec<Entry>, CoreError> {
         let mut entries = self.vfs.read_dir(dir)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         let mut out = Vec::new();
@@ -727,10 +733,12 @@ impl Walk<'_> {
                 continue;
             }
             let path = dir.join(&entry.name);
-            let is_dir = if self.vfs.is_symlink(&path) {
+            let is_dir = if !self.vfs.is_symlink(&path) {
+                entry.is_dir
+            } else if follow {
                 self.linked(&path)?
             } else {
-                entry.is_dir
+                false
             };
             out.push(Entry {
                 name: entry.name,
@@ -819,9 +827,11 @@ impl Walk<'_> {
 
     /// Reports a structure folder met where none belongs, or descends into an
     /// ordinary one. Used inside shared and never-ship folders, where any
-    /// layout of plain folders is allowed.
+    /// layout of plain folders is allowed. A symlink in a never-ship folder
+    /// is recorded as a file and not followed: nothing ships it.
     fn free(&mut self, rel: &str, what: &Free) -> Result<(), CoreError> {
-        for entry in self.list(&self.root.join(rel))? {
+        let follow = matches!(what, Free::Shared { .. });
+        for entry in self.list_with(&self.root.join(rel), follow)? {
             let child = format!("{rel}/{}", entry.name);
             if !entry.is_dir {
                 let place = match what {
