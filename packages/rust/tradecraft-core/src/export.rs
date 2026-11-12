@@ -10,7 +10,7 @@
 //!
 //! `build` writes each marketplace into `<root>/dist/<m>/`
 //! ([`crate::paths::dist_dir`]); nothing moves it. Each harness gets its own
-//! top-level tree inside it (`HarnessProfile::tree`): `.claude-plugin/`,
+//! top-level tree inside it: `.claude-plugin/`,
 //! `.agents/`, `.cursor-plugin/` and `.pi/`. Each tree carries that harness's
 //! marketplace manifest (Pi has none), its pack manifests in its own dialect,
 //! and every skill, at `<packs>/<plugin>/skills/<name>/`.
@@ -22,7 +22,7 @@
 //! A plugin's commands render alongside its skills, at
 //! `<packs>/<plugin>/commands/<name>.<ext>`, on each harness whose plugin
 //! format has a place for them
-//! ([`crate::harness::PluginFormat::carries_commands`]). A command narrowed
+//! ([`crate::harness::PluginFormat::carries`]). A command narrowed
 //! out this way has no file and no manifest mention there, and the report
 //! names it as [`ExportUnit::NotCarried`] for that harness.
 //!
@@ -35,8 +35,8 @@
 //! # One model, one tree per harness
 //!
 //! The vault is loaded once into the marketplace model ([`crate::model`]) —
-//! every note read, every body resolved — and each harness's translator
-//! (`HarnessTranslator`) writes that model as its tree.
+//! every note read, every body resolved — and the translator writes that
+//! model as each harness's tree.
 //! What a note means is decided once, harness blocks included.
 //!
 //! # One render, two verbs
@@ -66,7 +66,7 @@
 //!
 //! # A build replaces only what it owns
 //!
-//! The swap unit is what [`HarnessProfile::owned_paths`] names: a harness's
+//! The swap unit is what [`owned_paths`] names: a harness's
 //! packs folder and its marketplace manifest. Those are generated output,
 //! replaced on every build. Anything inside them the render did not produce —
 //! a stale pack, a stray file, an empty directory — goes with the swap, and
@@ -103,10 +103,10 @@ use crate::error::CoreError;
 use crate::frontmatter::ContainerIdentity;
 use crate::harness::manifest::{is_os_file, overrides_for};
 use crate::harness::translator::GENERATED_MARKER;
-pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
-use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
+pub use crate::harness::{CliInvocation, SkillNaming};
+use crate::harness::{Harness, Translator};
 use crate::layout::Layout;
-use crate::model::load::{built_harnesses, kind_carried, load_for};
+use crate::model::load::{built_harnesses, load_for};
 use crate::model::{Component, Marketplace};
 use crate::paths::{VaultMarketplace, load_vault, read_root_file};
 use crate::refusal;
@@ -226,7 +226,7 @@ pub enum ExportUnit {
     /// One plugin directory in one root — its manifest and its skills.
     Plugin {
         /// The harness root the plugin sits in.
-        root: String,
+        root: Harness,
         /// The plugin's name.
         name: String,
         /// Member skills admitted to this root.
@@ -243,7 +243,7 @@ pub enum ExportUnit {
     /// One root's marketplace manifest.
     Manifest {
         /// The harness root the manifest sits in.
-        root: String,
+        root: Harness,
         /// Whether the manifest matches what is installed.
         status: UnitStatus,
     },
@@ -255,7 +255,7 @@ pub enum ExportUnit {
     /// infer from the path.
     Stale {
         /// The harness root the path sits in.
-        root: String,
+        root: Harness,
         /// The stale path, relative to the destination.
         path: String,
         /// What the stale path is.
@@ -265,7 +265,7 @@ pub enum ExportUnit {
     /// dropped.
     ///
     /// A pack has a place for skills, and for commands on a root whose
-    /// [`crate::harness::PluginFormat::carries_commands`] is `true`.
+    /// format carries them ([`crate::harness::PluginFormat::carries`]).
     /// Everything else is named here rather than dropped; what a build must
     /// not do is leave silently.
     ///
@@ -274,7 +274,7 @@ pub enum ExportUnit {
     /// so it is listed once.
     NotCarried {
         /// The root that cannot carry the component, or `None` when no root can.
-        root: Option<String>,
+        root: Option<Harness>,
         /// The component's path in the vault.
         path: String,
         /// The component's kind.
@@ -413,40 +413,33 @@ pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 pub fn owned_paths(
     root: &RootFile,
     harnesses: &BTreeSet<String>,
-) -> Result<Vec<(&'static str, &'static str)>, CoreError> {
+) -> Result<Vec<(Harness, &'static str)>, CoreError> {
     Ok(paths_of(&built_harnesses(root, harnesses)?))
 }
 
 /// Each of `roots` with every path it owns.
-fn paths_of(roots: &[&'static HarnessProfile]) -> Vec<(&'static str, &'static str)> {
+fn paths_of(roots: &[Harness]) -> Vec<(Harness, &'static str)> {
     roots
         .iter()
-        .flat_map(|spec| spec.owned_paths().into_iter().map(|path| (spec.name, path)))
+        .flat_map(|&root| root.owned_paths().into_iter().map(move |path| (root, path)))
         .collect()
 }
 
-/// Where `root`'s `marketplace.json` sits under a built marketplace, read
-/// from the harness profile. `None` for an unknown root or one that writes no manifest.
-pub fn marketplace_manifest_path(root: &str) -> Option<&'static str> {
-    with_plugin_format()
-        .find(|spec| spec.name == root)
-        .and_then(|spec| spec.format().marketplace_manifest)
-}
-
-/// `root`'s plugin manifest path, relative to a pack's directory. `None` for
-/// an unknown root.
-pub fn plugin_manifest_path(root: &str) -> Option<&'static str> {
-    with_plugin_format()
-        .find(|spec| spec.name == root)
-        .map(|spec| spec.format().plugin_manifest)
-}
-
-/// Where `root`'s packs sit under a built marketplace, one directory per
-/// plugin. `None` for an unknown root.
-pub fn packs_path(root: &str) -> Option<&'static str> {
-    with_plugin_format()
-        .find(|spec| spec.name == root)
-        .map(|spec| spec.format().packs)
+/// `<packs>/<name>/<tail>` for a harness's pack directory: the plugin and
+/// the rest, `tail` empty for the pack's own directory, `None` for a path
+/// naming no pack of the harness's.
+fn split_pack<'p>(packs: &str, relative: &'p str) -> Option<(&'p str, &'p str)> {
+    let rest = relative
+        .strip_prefix(packs)?
+        .strip_prefix('/')
+        .unwrap_or("");
+    if rest.is_empty() {
+        return None;
+    }
+    Some(match rest.split_once('/') {
+        Some((name, tail)) => (name, tail),
+        None => (rest, ""),
+    })
 }
 
 /// One marketplace rendered and compared with its output folder, with
@@ -454,7 +447,7 @@ pub fn packs_path(root: &str) -> Option<&'static str> {
 pub(crate) struct ExportPlan {
     out: PathBuf,
     report: ExportReport,
-    swapping: Vec<(&'static HarnessProfile, BTreeMap<String, PreviewWrite>)>,
+    swapping: Vec<(Harness, BTreeMap<String, PreviewWrite>)>,
 }
 
 /// A check's report under the write verbs: what matched is unchanged, what
@@ -742,12 +735,8 @@ fn plan_with(
     // destination paths. Both modes read this and nothing else; `build`
     // even writes from it.
     let mut rendered: Vec<BTreeMap<String, PreviewWrite>> = Vec::with_capacity(roots.len());
-    let mut translators: Vec<&dyn HarnessTranslator> = Vec::with_capacity(roots.len());
-    for spec in &roots {
-        let translator = translator_for(spec.name).expect("every harness translates");
-        let tree = translator.translate(&market)?;
-        rendered.push(tree.files);
-        translators.push(translator);
+    for &spec in &roots {
+        rendered.push(Translator(spec).translate(&market)?.files);
     }
 
     // The components no root could take, listed once rather than per root:
@@ -763,41 +752,10 @@ fn plan_with(
         })
         .collect();
     let mut to_swap: Vec<usize> = Vec::new();
-    for (index, spec) in roots.iter().enumerate() {
-        let admitted = admitted_plugins(translators[index], &market);
-        let diff = diff_root(vfs, &out, spec, &admitted, &rendered[index], &market.config)?;
-        // The swap replaces this root's owned paths. Holding work this build
-        // did not produce, they are far likelier to be a misconfiguration
-        // than an invitation. A rebuild is told from a stranger by the rule
-        // in [`DestTree::built_here`]. Refused on `check` too: it exists to
-        // say what a build would do.
-        if diff.foreign {
-            return Err(CoreError::refused(
-                refusal::FOREIGN_TREE,
-                format!(
-                    "{} already holds `{}`, and it holds files this build does not produce \
-                     (and none carries this tool's generated-file marker): rendering `{}` here \
-                     would replace it wholesale. Move it aside. Nothing was written",
-                    out.display(),
-                    spec.owned_paths().join("` and `"),
-                    spec.name,
-                ),
-            ));
-        }
-        units.extend(diff.units);
-        let mut uncarried: Vec<&Component> = market
-            .plugins
-            .values()
-            .flat_map(|plugin| &plugin.commands)
-            .filter(|c| !kind_carried(&c.discovered, spec))
-            .collect();
-        uncarried.sort_by(|a, b| a.path.cmp(&b.path));
-        units.extend(uncarried.into_iter().map(|c| ExportUnit::NotCarried {
-            root: Some(spec.name.to_owned()),
-            path: c.path.clone(),
-            kind: c.kind.as_str().to_owned(),
-        }));
-        if !diff.equal {
+    for (index, &spec) in roots.iter().enumerate() {
+        let (root_units, equal) = compare_root(vfs, &out, spec, &market, &rendered[index])?;
+        units.extend(root_units);
+        if !equal {
             to_swap.push(index);
         }
     }
@@ -821,6 +779,54 @@ fn plan_with(
         },
         swapping,
     })
+}
+
+/// One root's units against `out`, and whether what it owns there already
+/// equals `rendered`.
+///
+/// # Errors
+///
+/// `refused: foreign-tree` — output this vault did not build.
+fn compare_root(
+    vfs: &dyn Vfs,
+    out: &Path,
+    spec: Harness,
+    market: &Marketplace,
+    rendered: &BTreeMap<String, PreviewWrite>,
+) -> Result<(Vec<ExportUnit>, bool), CoreError> {
+    let admitted = admitted_plugins(Translator(spec), market);
+    let diff = diff_root(vfs, out, spec, &admitted, rendered, &market.config)?;
+    // The swap replaces this root's owned paths. Holding work this build
+    // did not produce, they are far likelier to be a misconfiguration than
+    // an invitation. A rebuild is told from a stranger by the rule in
+    // [`DestTree::built_here`]. Refused on `check` too: it exists to say what
+    // a build would do.
+    if diff.foreign {
+        return Err(CoreError::refused(
+            refusal::FOREIGN_TREE,
+            format!(
+                "{} already holds `{}`, and it holds files this build does not produce \
+                 (and none carries this tool's generated-file marker): rendering `{spec}` here \
+                 would replace it wholesale. Move it aside. Nothing was written",
+                out.display(),
+                spec.owned_paths().join("` and `"),
+            ),
+        ));
+    }
+    let mut units = diff.units;
+    let mut uncarried: Vec<&Component> = market
+        .plugins
+        .values()
+        .flat_map(|plugin| &plugin.commands)
+        .filter(|c| !spec.format().carries(c.kind))
+        .collect();
+    uncarried.sort_by(|a, b| a.path.cmp(&b.path));
+    units.extend(uncarried.into_iter().map(|c| ExportUnit::NotCarried {
+        root: Some(spec),
+        path: c.path.clone(),
+        kind: c.kind.as_str().to_owned(),
+    }));
+    Ok((units, diff.equal))
 }
 
 // --- Comparison --------------------------------------------------------------
@@ -852,11 +858,7 @@ struct DestState {
 /// Reads `base`, but only the paths this harness owns, never the whole
 /// directory: what the swap would replace is exactly what the report may call
 /// stale, and `dist/<m>/` may hold files of its own beside the packs.
-fn scan_destination(
-    vfs: &dyn Vfs,
-    base: &Path,
-    spec: &HarnessProfile,
-) -> Result<DestState, CoreError> {
+fn scan_destination(vfs: &dyn Vfs, base: &Path, spec: Harness) -> Result<DestState, CoreError> {
     let mut state = DestState::default();
     for owned in spec.owned_paths() {
         // A link or a file above an owned path is recorded and goes no
@@ -879,7 +881,7 @@ fn scan_destination(
             walk_destination(vfs, base, &path, &mut state)?;
         }
     }
-    let packs = base.join(spec.format().packs);
+    let packs = base.join(spec.format().policy.packs);
     if vfs.exists(&packs) {
         let mut entries = vfs.read_dir(&packs)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -952,7 +954,7 @@ struct DestTree<'v> {
 }
 
 impl<'v> DestTree<'v> {
-    fn scan(vfs: &'v dyn Vfs, base: PathBuf, spec: &HarnessProfile) -> Result<Self, CoreError> {
+    fn scan(vfs: &'v dyn Vfs, base: PathBuf, spec: Harness) -> Result<Self, CoreError> {
         let state = scan_destination(vfs, &base, spec)?;
         Ok(Self { vfs, base, state })
     }
@@ -1060,10 +1062,7 @@ struct PluginSlice<'a> {
 /// the same call, so the diff cannot admit a plugin the render left out. The
 /// count stays skills-only because that is what [`ExportUnit::Plugin`]'s
 /// `skills` reports.
-fn admitted_plugins<'m>(
-    translator: &dyn HarnessTranslator,
-    market: &'m Marketplace,
-) -> BTreeMap<&'m str, usize> {
+fn admitted_plugins(translator: Translator, market: &Marketplace) -> BTreeMap<&str, usize> {
     market
         .plugins
         .iter()
@@ -1088,13 +1087,13 @@ fn admitted_plugins<'m>(
 /// is a prefix query rather than a set membership.
 fn describe_root(
     dest: &DestTree<'_>,
-    spec: &HarnessProfile,
+    spec: Harness,
     admitted: &BTreeMap<&str, usize>,
     rendered: &BTreeMap<String, PreviewWrite>,
     sets: &FileSets,
     config: &MarketplaceConfig,
 ) -> Vec<ExportUnit> {
-    let packs = spec.format().packs;
+    let packs = spec.format().policy.packs;
     // A destination plugin directory this root no longer carries. It is one
     // unit, and its files are never reported on their own: the swap removes
     // the directory whole, and a line per file inside it would say the same
@@ -1107,54 +1106,15 @@ fn describe_root(
         .filter(|name| !admitted.contains_key(name))
         .collect();
 
-    // Bucket what carries a story by the plugin that owns it. Membership is
-    // decided against the two NAME sets, never by path shape alone: a
-    // symlinked plugin directory is absent from `plugin_dirs` and present
-    // among the files, so it is neither carried nor stale, and falls to the
-    // loose pile like any other stray.
-    let mut slices: BTreeMap<&str, PluginSlice> = BTreeMap::new();
-    let mut loose: Vec<&str> = Vec::new();
-    for relative in &sets.extra {
-        match HarnessProfile::split_pack(packs, relative) {
-            Some((name, tail)) if admitted.contains_key(name) && !tail.is_empty() => {
-                slices.entry(name).or_default().extra.push(relative);
-            }
-            Some((name, _)) if stale_plugins.contains(name) => {}
-            _ => loose.push(relative),
-        }
-    }
-    for relative in &sets.differs {
-        if let Some((name, tail)) = HarnessProfile::split_pack(packs, relative)
-            && !tail.is_empty()
-            && admitted.contains_key(name)
-        {
-            slices.entry(name).or_default().differs.push(relative);
-        }
-    }
-
-    // Empty directories, in the one order that keeps each to a single story:
-    // inside a carried plugin it drifts that plugin; inside a stale one that
-    // plugin's unit already speaks for it; where the render owns files
-    // beneath it the owning unit reports the gap; otherwise it is stale on
-    // its own.
-    let mut stale_paths: Vec<(String, StaleKind)> = Vec::new();
-    for dir in &dest.state.empty_dirs {
-        match HarnessProfile::split_pack(packs, dir) {
-            Some((name, tail)) if admitted.contains_key(name) && !tail.is_empty() => {
-                slices.entry(name).or_default().dirty = true;
-            }
-            Some((name, _)) if stale_plugins.contains(name) => {}
-            _ if rendered.keys().any(|k| k.starts_with(&format!("{dir}/"))) => {}
-            _ => stale_paths.push((dir.clone(), StaleKind::EmptyDir)),
-        }
-    }
+    let (slices, mut stale_paths) =
+        slices_of(dest, sets, packs, admitted, &stale_plugins, rendered);
 
     let mut units = Vec::new();
     for (plugin, skills) in admitted {
         let slice = slices.get(plugin);
         let ok = slice.is_none_or(|s| s.differs.is_empty() && s.extra.is_empty() && !s.dirty);
         units.push(ExportUnit::Plugin {
-            root: spec.name.to_owned(),
+            root: spec,
             name: (*plugin).to_owned(),
             skills: *skills,
             status: if ok {
@@ -1170,7 +1130,7 @@ fn describe_root(
 
     if let Some(manifest) = spec.format().marketplace_manifest {
         units.push(ExportUnit::Manifest {
-            root: spec.name.to_owned(),
+            root: spec,
             status: if sets.same.contains(manifest) {
                 UnitStatus::Ok
             } else {
@@ -1181,26 +1141,80 @@ fn describe_root(
 
     for name in &stale_plugins {
         units.push(ExportUnit::Stale {
-            root: spec.name.to_owned(),
+            root: spec,
             path: format!("{packs}/{name}"),
             kind: StaleKind::Plugin,
         });
+    }
+    stale_paths.sort_by(|a, b| a.0.cmp(&b.0));
+    stale_paths.dedup_by(|a, b| a.0 == b.0);
+    for (path, kind) in stale_paths {
+        units.push(ExportUnit::Stale {
+            root: spec,
+            path,
+            kind,
+        });
+    }
+    units
+}
+
+/// What `sets` and the empty directories in `dest` say about each carried
+/// plugin, and every stale path that is not a whole plugin.
+fn slices_of<'a>(
+    dest: &'a DestTree<'_>,
+    sets: &'a FileSets,
+    packs: &str,
+    admitted: &BTreeMap<&str, usize>,
+    stale_plugins: &BTreeSet<&str>,
+    rendered: &BTreeMap<String, PreviewWrite>,
+) -> (BTreeMap<&'a str, PluginSlice<'a>>, Vec<(String, StaleKind)>) {
+    // Bucket what carries a story by the plugin that owns it. Membership is
+    // decided against the two NAME sets, never by path shape alone: a
+    // symlinked plugin directory is absent from `plugin_dirs` and present
+    // among the files, so it is neither carried nor stale, and falls to the
+    // loose pile like any other stray.
+    let mut slices: BTreeMap<&str, PluginSlice> = BTreeMap::new();
+    let mut loose: Vec<&str> = Vec::new();
+    for relative in &sets.extra {
+        match split_pack(packs, relative) {
+            Some((name, tail)) if admitted.contains_key(name) && !tail.is_empty() => {
+                slices.entry(name).or_default().extra.push(relative);
+            }
+            Some((name, _)) if stale_plugins.contains(name) => {}
+            _ => loose.push(relative),
+        }
+    }
+    for relative in &sets.differs {
+        if let Some((name, tail)) = split_pack(packs, relative)
+            && !tail.is_empty()
+            && admitted.contains_key(name)
+        {
+            slices.entry(name).or_default().differs.push(relative);
+        }
+    }
+
+    // Empty directories, in the one order that keeps each to a single story:
+    // inside a carried plugin it drifts that plugin; inside a stale one that
+    // plugin's unit already speaks for it; where the render owns files
+    // beneath it the owning unit reports the gap; otherwise it is stale on
+    // its own.
+    let mut stale_paths: Vec<(String, StaleKind)> = Vec::new();
+    for dir in &dest.state.empty_dirs {
+        match split_pack(packs, dir) {
+            Some((name, tail)) if admitted.contains_key(name) && !tail.is_empty() => {
+                slices.entry(name).or_default().dirty = true;
+            }
+            Some((name, _)) if stale_plugins.contains(name) => {}
+            _ if rendered.keys().any(|k| k.starts_with(&format!("{dir}/"))) => {}
+            _ => stale_paths.push((dir.clone(), StaleKind::EmptyDir)),
+        }
     }
     stale_paths.extend(
         loose
             .into_iter()
             .map(|path| (path.to_owned(), StaleKind::File)),
     );
-    stale_paths.sort_by(|a, b| a.0.cmp(&b.0));
-    stale_paths.dedup_by(|a, b| a.0 == b.0);
-    for (path, kind) in stale_paths {
-        units.push(ExportUnit::Stale {
-            root: spec.name.to_owned(),
-            path,
-            kind,
-        });
-    }
-    units
+    (slices, stale_paths)
 }
 
 /// The version-bump signal for one plugin at one root: its MEMBER files
@@ -1214,7 +1228,7 @@ fn describe_root(
 /// manifest back, is [`crate::status::version_bump_if_unmoved`].
 fn plugin_version_bump(
     dest: &DestTree<'_>,
-    spec: &HarnessProfile,
+    spec: Harness,
     plugin: &str,
     rendered: &BTreeMap<String, PreviewWrite>,
     slice: Option<&PluginSlice<'_>>,
@@ -1223,7 +1237,7 @@ fn plugin_version_bump(
     let current_version = overrides_for(config, plugin).and_then(|o| o.identity.version.clone())?;
     let manifest_key = format!(
         "{}/{plugin}/{}",
-        spec.format().packs,
+        spec.format().policy.packs,
         spec.format().plugin_manifest
     );
     if !rendered.contains_key(&manifest_key) {
@@ -1249,7 +1263,7 @@ fn plugin_version_bump(
 fn diff_root(
     vfs: &dyn Vfs,
     out: &Path,
-    spec: &HarnessProfile,
+    spec: Harness,
     admitted: &BTreeMap<&str, usize>,
     rendered: &BTreeMap<String, PreviewWrite>,
     config: &MarketplaceConfig,
@@ -1599,11 +1613,11 @@ mod tests {
                     name,
                     status: UnitStatus::Drift | UnitStatus::Written,
                     ..
-                } => Some((root.clone(), name.clone())),
+                } => Some((root.to_string(), name.clone())),
                 ExportUnit::Manifest {
                     root,
                     status: UnitStatus::Drift | UnitStatus::Written,
-                } => Some((root.clone(), "marketplace.json".to_owned())),
+                } => Some((root.to_string(), "marketplace.json".to_owned())),
                 _ => None,
             })
             .collect()
@@ -1614,7 +1628,9 @@ mod tests {
             .units
             .iter()
             .filter_map(|unit| match unit {
-                ExportUnit::Stale { root, path, kind } => Some((root.clone(), path.clone(), *kind)),
+                ExportUnit::Stale { root, path, kind } => {
+                    Some((root.to_string(), path.clone(), *kind))
+                }
                 _ => None,
             })
             .collect()
@@ -1630,7 +1646,7 @@ mod tests {
                     name: n,
                     status,
                     ..
-                } if r == root && n == name => Some(*status),
+                } if r.as_str() == root && n == name => Some(*status),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no plugin unit for {root}/{name}: {report:?}"))
@@ -1650,7 +1666,7 @@ mod tests {
                     name: n,
                     version_bump_suggestion,
                     ..
-                } if r == root && n == name => Some(version_bump_suggestion.clone()),
+                } if r.as_str() == root && n == name => Some(version_bump_suggestion.clone()),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no plugin unit for {root}/{name}: {report:?}"))
@@ -1721,11 +1737,11 @@ mod tests {
         // Each root counts both of git-tools' skills.
         let git_claude = report.units.iter().any(|u| {
             matches!(u, ExportUnit::Plugin { root, name, skills, .. }
-                if root == "claude" && name == "git-tools" && *skills == 2)
+                if *root == Harness::Claude && name == "git-tools" && *skills == 2)
         });
         let git_codex = report.units.iter().any(|u| {
             matches!(u, ExportUnit::Plugin { root, name, skills, .. }
-                if root == "codex" && name == "git-tools" && *skills == 2)
+                if *root == Harness::Codex && name == "git-tools" && *skills == 2)
         });
         assert!(git_claude && git_codex, "{report:?}");
     }
@@ -2171,7 +2187,7 @@ mod tests {
         // No marketplace index, so no manifest unit either.
         assert!(!report.units.iter().any(|u| matches!(
             u,
-            ExportUnit::Manifest { root, .. } if root == "pi"
+            ExportUnit::Manifest { root, .. } if *root == Harness::Pi
         )));
         // A rebuild finds the tree its own, and unchanged.
         request.mode = ExportMode::Check;
@@ -4083,7 +4099,7 @@ mod tests {
         assert!(
             report.units.iter().any(|unit| matches!(
                 unit,
-                ExportUnit::Plugin { root, name, .. } if root == "claude" && name == "core"
+                ExportUnit::Plugin { root, name, .. } if *root == Harness::Claude && name == "core"
             )),
             "the build reports the plugin: {:?}",
             report.units
@@ -4291,18 +4307,18 @@ mod tests {
             changed: true,
             units: vec![
                 ExportUnit::Plugin {
-                    root: "claude".to_owned(),
+                    root: Harness::Claude,
                     name: "tools".to_owned(),
                     skills: 2,
                     status: UnitStatus::Drift,
                     version_bump_suggestion: None,
                 },
                 ExportUnit::Manifest {
-                    root: "codex".to_owned(),
+                    root: Harness::Codex,
                     status: UnitStatus::Ok,
                 },
                 ExportUnit::Stale {
-                    root: "claude".to_owned(),
+                    root: Harness::Claude,
                     path: "plugins/old".to_owned(),
                     kind: StaleKind::Plugin,
                 },
@@ -4389,7 +4405,7 @@ mod tests {
             .iter()
             .filter_map(|u| match u {
                 ExportUnit::NotCarried { root, path, kind } => {
-                    Some((root.as_deref(), path.as_str(), kind.as_str()))
+                    Some((root.map(Harness::as_str), path.as_str(), kind.as_str()))
                 }
                 _ => None,
             })

@@ -44,7 +44,7 @@ use serde_json::{Map, Value};
 
 use crate::error::CoreError;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
-use crate::harness::KNOWN_TARGETS;
+use crate::harness::Harness;
 use crate::refusal;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vault::frontmatter_map;
@@ -123,7 +123,7 @@ impl DiscoveredComponent {
 fn unknown_key_fate(kind: EntityKind, key: &str) -> &'static str {
     let in_a_block = key
         .split_once('.')
-        .is_some_and(|(block, _)| KNOWN_TARGETS.contains(&block));
+        .is_some_and(|(block, _)| Harness::parse(block).is_ok());
     match kind {
         EntityKind::Plugin | EntityKind::Marketplace => "ignored",
         _ if in_a_block => "ignored",
@@ -248,8 +248,9 @@ fn check_values(
 pub(crate) fn unknown_component_block_keys(blocks: &Map<String, Value>) -> Vec<String> {
     let mut unknown = Vec::new();
     for (declared, block) in blocks {
-        let Some(accepted) = crate::harness::profile_named(declared)
-            .and_then(|profile| profile.block_keys(EntityKind::Skill))
+        let Some(accepted) = Harness::parse(declared)
+            .ok()
+            .and_then(|harness| harness.block_keys(EntityKind::Skill))
         else {
             continue;
         };
@@ -273,8 +274,9 @@ pub(crate) fn unknown_container_block_keys(
 ) -> Vec<String> {
     let mut unknown = Vec::new();
     for (harness, block) in blocks {
-        let Some(accepted) =
-            crate::harness::profile_named(harness).and_then(|profile| profile.block_keys(kind))
+        let Some(accepted) = Harness::parse(harness)
+            .ok()
+            .and_then(|harness| harness.block_keys(kind))
         else {
             continue;
         };

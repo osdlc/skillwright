@@ -382,9 +382,9 @@ fn ts_name(model: &Model, rust_name: &str) -> Result<String, Error> {
 
 /// A response's element name, as `ts_name` for anything the model defines and
 /// as `ts_type`'s primitive spelling for anything it does not — a response
-/// resolved off a core constant (`knownTargets` -> `KNOWN_TARGETS: &[&str]`)
-/// names a Rust primitive rather than a struct or enum, and `ts_name` alone
-/// would hand that back unlowered (`String`, not `string`).
+/// resolved off a core constant may name a Rust primitive (`&[&str]`) rather
+/// than a struct or enum, and `ts_name` alone would hand that back unlowered
+/// (`String`, not `string`).
 fn ts_name_or_primitive(model: &Model, rust_name: &str) -> Result<String, Error> {
     Ok(match rust_name {
         "String" | "str" | "PathBuf" | "Path" => "string".to_string(),

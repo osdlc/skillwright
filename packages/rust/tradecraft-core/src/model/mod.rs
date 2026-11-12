@@ -2,9 +2,9 @@
 //! verb to translate (D-COMG).
 //!
 //! The vault is read into one object graph, marketplace → plugins → skills,
-//! commands, the hooks file and assets, and each harness's
-//! `HarnessTranslator` writes that graph out. What a note means is decided once; how a harness spells it is the
-//! translator's.
+//! commands, the hooks file and assets, and the translator writes that graph
+//! out for each harness. What a note means is decided once; how a harness
+//! spells it is the translator's.
 //!
 //! # Two passes, then validation
 //!
@@ -53,6 +53,7 @@ use crate::discover::{DiscoveredComponent, DiscoveryWarning};
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
+use crate::harness::Harness;
 use crate::refusal;
 
 pub use load::{LoadRequest, load, load_in, resolve_body};
@@ -99,7 +100,7 @@ pub struct Plugin {
     /// The harnesses that name this plugin's skills bare against their
     /// profile's default: `<harness>: {naming: bare}` where the default
     /// prefixes.
-    pub bare_on: Vec<String>,
+    pub bare_on: Vec<Harness>,
 }
 
 impl Plugin {
@@ -312,7 +313,7 @@ pub struct Call {
     pub skill: SkillId,
     /// The harnesses that name the skill bare against their profile's
     /// default, as its plugin's [`Plugin::bare_on`].
-    pub bare_on: Vec<String>,
+    pub bare_on: Vec<Harness>,
     /// The call's target as written, without `/[[` and `]]`, for a refusal.
     pub destination: String,
     /// The note the call is in, for a refusal.
