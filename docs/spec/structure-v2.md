@@ -1014,7 +1014,8 @@ pack folder from the table above.
     be executable in the source; the build does not set the bit.
 11. A pack holds no symlinks. Every shipped file is a copy.
 12. `build.harnesses` and `--harness` accept only `claude`, `codex`, `cursor`
-    and `pi`. Any other value is refused, and the error names the four.
+    and `pi`. Any other value is refused (for `--harness`, a usage error),
+    and the error names the four.
 
 ### Install keeps a pack whole
 
