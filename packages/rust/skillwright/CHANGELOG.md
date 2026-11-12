@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.1...skillwright/v0.12.0) - 2026-11-12
+
+0.11.1 shipped these changes by mistake under a patch version and was yanked.
+
 ### Breaking
 
 - Exit 1 means only that `check` found drift. Every refusal exits 2: a vault error, `init` over an existing file, a version `bump` refuses, a failed write and a declined prompt. `init` and `bump` used to exit 1 for these.
