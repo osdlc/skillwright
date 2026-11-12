@@ -68,6 +68,7 @@ use serde_json::{Map, Value};
 use crate::content::SkillContent;
 use crate::error::CoreError;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
+use crate::refusal;
 use crate::skill::{read_utf8, split_frontmatter};
 use crate::vfs::Vfs;
 
@@ -121,7 +122,8 @@ pub fn read_vault_note(
         .filter(|d| !d.trim().is_empty())
         .or_else(|| kind.holds_components().then(String::new))
         .ok_or_else(|| {
-            CoreError::unreadable(
+            CoreError::refused_at(
+                refusal::MISSING_DESCRIPTION,
                 skill_path,
                 "not a skill: frontmatter carries no `description`",
             )

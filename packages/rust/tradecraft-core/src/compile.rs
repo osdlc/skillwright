@@ -342,11 +342,8 @@ pub fn compile_note(
         let (bytes, _) = outputs
             .get_mut(output_path)
             .expect("each compiled resource has an output");
-        // Emitted markdown is always this pass's own composition, so it is
-        // UTF-8 by construction; the fallback only guards the invariant.
-        let text = std::str::from_utf8(bytes).map_err(|e| {
-            CoreError::unreadable(Path::new(output_path), format!("not UTF-8: {e}"))
-        })?;
+        // Emitted markdown is this pass's own composition: UTF-8 by construction.
+        let text = std::str::from_utf8(bytes).expect("emitted markdown is UTF-8");
         let split = frontmatter_lossless::split(text);
         let label = renderer.relative_or_verbatim(source_path);
         validate_no_obsidian_syntax(text, text.len() - split.body.len(), &label)?;

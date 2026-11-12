@@ -95,8 +95,8 @@ impl CoreError {
     }
 
     /// The error as a report line gives a reason: `<token>: <detail>`, or the
-    /// detail alone for an error with no token. A refusal's `refused` is the
-    /// line's status, said there.
+    /// detail alone for an error with no token. Leaves out the `refused:`
+    /// prefix of `Display`; a report line shows it as its status.
     pub fn reason(&self) -> String {
         reason(self.token().map(Token::as_str), &self.detail())
     }
@@ -110,8 +110,7 @@ impl CoreError {
         }
     }
 
-    /// A note that cannot be read as one: bytes that are not UTF-8, or
-    /// frontmatter that will not parse.
+    /// Refuses the note at `path` with [`refusal::UNREADABLE_NOTE`]:
     /// `refused: unreadable-note: <path>: <message>`.
     pub fn unreadable(path: impl AsRef<Path>, message: impl Into<String>) -> Self {
         Self::refused_at(refusal::UNREADABLE_NOTE, path, message)
