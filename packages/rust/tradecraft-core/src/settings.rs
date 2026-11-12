@@ -213,7 +213,8 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             detail,
         });
     }
-    let named = named_blocks_in(&map);
+    let blocks = harness_blocks_in(&map);
+    let named = crate::keys::named_blocks(&blocks);
     if !named.is_empty() {
         return Err(SettingsError {
             key: named.join("`, `"),
@@ -221,10 +222,10 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             detail: crate::keys::NAME_REFUSAL.to_owned(),
         });
     }
-    let blocks = refused_blocks_in(&map);
-    if !blocks.is_empty() {
+    let removed = crate::keys::refused_block_keys(&blocks);
+    if !removed.is_empty() {
         return Err(SettingsError {
-            key: blocks.join("`, `"),
+            key: removed.join("`, `"),
             what: "a key skillwright reads",
             detail: PACKS_REFUSAL.to_owned(),
         });
@@ -383,7 +384,7 @@ pub(crate) fn refused_root_file_keys(text: &str) -> (Vec<(String, String)>, Vec<
         .and_then(serde_yaml::Value::as_mapping)
         .map(refused_in)
         .unwrap_or_default();
-    removed.extend(refused_blocks_in(&map));
+    removed.extend(crate::keys::refused_block_keys(&harness_blocks_in(&map)));
     (refused_in_root(&map), removed)
 }
 
@@ -397,31 +398,15 @@ pub(crate) const TARGETS_REFUSAL: &str = "the harnesses built are picked per run
 /// What a refusal of `packs` in a harness block says.
 pub(crate) const PACKS_REFUSAL: &str = "each harness's packs folder is fixed; delete it";
 
-/// `<harness>.name` for each harness block in `map` that sets `name`.
-fn named_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
+/// A root file's harness blocks as JSON, for the block checks notes share
+/// ([`crate::keys::named_blocks`], [`crate::keys::refused_block_keys`]). A
+/// block with no JSON form is left out; [`field`] refuses it.
+fn harness_blocks_in(map: &serde_yaml::Mapping) -> serde_json::Map<String, serde_json::Value> {
     crate::keys::HARNESS_BLOCKS
         .iter()
-        .filter(|harness| {
-            map.get(**harness)
-                .and_then(serde_yaml::Value::as_mapping)
-                .is_some_and(|block| block.contains_key(crate::keys::NAME_KEY))
-        })
-        .map(|harness| format!("{harness}.{}", crate::keys::NAME_KEY))
-        .collect()
-}
-
-/// The removed keys in a root file's harness blocks, as `<harness>.<key>`.
-fn refused_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
-    let blocks = crate::keys::HARNESS_BLOCKS
-        .iter()
-        .filter_map(|harness| Some((*harness, map.get(*harness)?.as_mapping()?)));
-    blocks
-        .flat_map(|(harness, block)| {
-            block
-                .keys()
-                .filter_map(serde_yaml::Value::as_str)
-                .filter(|key| crate::keys::REFUSED_BLOCK_KEYS.contains(key))
-                .map(move |key| format!("{harness}.{key}"))
+        .filter_map(|harness| {
+            let block = serde_json::to_value(map.get(*harness)?).ok()?;
+            Some(((*harness).to_owned(), block))
         })
         .collect()
 }
