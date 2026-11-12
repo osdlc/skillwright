@@ -154,7 +154,7 @@ Some names the library writes are fixed:
 ## Generated output
 
 Each harness's packs folder and marketplace manifest are generated output,
-replaced on every build. `Harness::owned_paths` names them, for example
+replaced on every build. `owned_paths` names them, for example
 `.agents/packs/` and `.agents/plugins/marketplace.json`. A build leaves
 everything else in `.agents/`, `.pi/`, `.claude-plugin/` and `.cursor-plugin/`
 alone.

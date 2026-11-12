@@ -50,6 +50,20 @@ pub fn print_warnings(root: &RootFile, path: &Path, err: &mut dyn std::io::Write
 mod tests {
     use super::*;
 
+    /// A relative path joins the base with `.` and `..` collapsed, and a `..`
+    /// with nothing left to pop stays at the root.
+    #[test]
+    fn a_relative_path_collapses_dots_against_the_base() {
+        assert_eq!(
+            resolve_against_cwd("../v/./x", Path::new("/work/sub")),
+            PathBuf::from("/work/v/x")
+        );
+        assert_eq!(
+            resolve_against_cwd("../../..", Path::new("/work")),
+            PathBuf::from("/")
+        );
+    }
+
     /// Only `~` and `~/` name the home directory. `~alice/notes` and
     /// `~notes` are ordinary relative paths.
     #[test]
