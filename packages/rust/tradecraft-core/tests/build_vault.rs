@@ -101,7 +101,7 @@ fn the_root_files_harnesses_decide_with_no_filter() {
 }
 
 #[test]
-fn the_harness_filter_narrows_the_root_files_list() {
+fn the_requests_harnesses_can_narrow_the_root_files_list() {
     let vfs = vault("build:\n  harnesses: [claude, codex]\n", &["acme"]);
     let mut narrowed = request("acme");
     narrowed.harnesses = BTreeSet::from(["codex".to_owned()]);
@@ -111,16 +111,16 @@ fn the_harness_filter_narrows_the_root_files_list() {
 }
 
 #[test]
-fn the_harness_filter_never_widens_the_root_files_list() {
+fn the_requests_harnesses_replace_the_root_files_list() {
     let vfs = vault("build:\n  harnesses: [claude]\n", &["acme"]);
     let mut widened = request("acme");
-    widened.harnesses = BTreeSet::from(["claude".to_owned(), "pi".to_owned()]);
-    let err = export_skills(&vfs, &widened).unwrap_err().to_string();
-    assert!(err.contains("refused: harness-not-built"), "{err}");
-    assert!(err.contains("`pi`"), "{err}");
-    assert!(!vfs.exists(Path::new("/v/dist")));
+    widened.harnesses = BTreeSet::from(["codex".to_owned(), "pi".to_owned()]);
+    export_skills(&vfs, &widened).unwrap();
+    assert!(vfs.exists(Path::new("/v/dist/acme/.agents")));
+    assert!(vfs.exists(Path::new("/v/dist/acme/.pi")));
+    assert!(!vfs.exists(Path::new("/v/dist/acme/.claude-plugin")));
 
-    // With no list in the root file, every harness is built, so any narrows.
+    // With no list in the root file, the request still decides.
     let vfs = vault("", &["acme"]);
     let mut narrowed = request("acme");
     narrowed.harnesses = BTreeSet::from(["pi".to_owned()]);

@@ -23,7 +23,7 @@
 //!
 //! No request carries configuration. The core reads the root file's shared
 //! defaults and `build.harnesses` from `skillwright.md` through the host's
-//! vfs; a request's `harnesses` only narrows that list.
+//! vfs; a request's `harnesses` replaces that list.
 //!
 //! # Boundary choices
 //!

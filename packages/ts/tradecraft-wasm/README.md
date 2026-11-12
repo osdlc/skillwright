@@ -43,8 +43,9 @@ console.log(report.changed)
 several and none named, the call throws, naming them. The core reads the
 shared defaults and `build.harnesses` from `skillwright.md` itself, and
 everything else from the vault's notes; a request carries no configuration.
-`harnesses` narrows the root file's list to some of `'claude'`, `'codex'`,
-`'cursor'` and `'pi'`. A harness the root file does not build is refused.
+`harnesses` picks some of `'claude'`, `'codex'`, `'cursor'` and `'pi'`, and
+replaces the root file's list for that call. The root file's list is only
+the default.
 
 `buildVault(vfs, { vault_root })` builds every marketplace, and writes all of
 them or none.

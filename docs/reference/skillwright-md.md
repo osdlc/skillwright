@@ -69,7 +69,7 @@ any other note it is refused.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `harnesses` | list | Which harnesses to build: `claude`, `codex`, `cursor`, `pi`. Absent means all four. Any other name is refused. |
+| `harnesses` | list | Which harnesses to build by default: `claude`, `codex`, `cursor`, `pi`. Absent means all four. A core request's `harnesses` replaces it for that run. Any other name is refused. |
 | `bump` | `{patch}` | How `bump` writes the patch number. `increment`, the default, adds one: `1.2.3` becomes `1.2.4`. `timestamp` sets it to the UTC time as `YYYYMMDDHHMMSS`, or to one more than the current patch when that is larger: `1.2.3` becomes `1.2.20261110153000`. Any other value is refused. |
 
 Output is fixed at `<root>/dist/<m>/`. No key moves it.

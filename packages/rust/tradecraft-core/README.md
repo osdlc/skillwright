@@ -57,7 +57,7 @@ for (path, text) in [
 }
 
 // Only the vault is required. The other fields start empty; set any of them
-// on the value. `harnesses` narrows the root file's `build.harnesses`. A
+// on the value. `harnesses` replaces the root file's `build.harnesses`. A
 // build writes `dist/<m>/`. Everything else comes from `skillwright.md` and
 // the vault's notes.
 let mut request = ExportRequest::new("/vault");

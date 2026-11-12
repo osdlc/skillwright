@@ -945,7 +945,8 @@ flowchart LR
    ```
 
 3. Which packs contain a component is decided in two steps:
-   1. `build.harnesses` picks which harness trees are written.
+   1. The harnesses built (section 10 rule 7) pick which harness trees are
+      written.
    2. A component's `targets` picks which of those harnesses get it.
 
    A harness's pack contains a component only when both name the harness, and
@@ -1085,11 +1086,11 @@ does not say the command was removed.
 6. `build` and `bump` print what they will write and ask before they write.
    `--yes` skips the question. Without a terminal and without `--yes`, they
    stop with a usage error, exit 3, and write nothing.
-7. The core's build and check requests take a `harnesses` filter; the CLI
-   has no flag for it. The filter narrows the root file's `build.harnesses`
-   and never widens it. A harness the root file does not build is refused
-   (`harness-not-built`). With no list in the root file, every harness is
-   built, so any filter narrows.
+7. The core's build and check requests take a `harnesses` list; the CLI
+   has no flag for it. The harnesses built are that list when it is given,
+   else the root file's `build.harnesses`, else all four. A request's list
+   replaces the root file's for that run, and may name a harness the root
+   file leaves out. The root file's list is only the default.
 
 ## 11. A vault not in this layout
 

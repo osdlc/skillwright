@@ -350,12 +350,13 @@ export interface ExportRequest {
   marketplace?: string;
 
   /**
-   * Narrows the root file's `build.harnesses`, by name. Empty means every
-   * harness the root file builds.
+   * Which harnesses to build, by name. It replaces the root file's
+   * `build.harnesses` for this run; empty means that list, and with no
+   * list, every harness.
    *
-   * A name no harness answers to, or one the root file does not build, is
-   * refused rather than ignored: silently publishing other than was asked
-   * for is the failure this crate is built around.
+   * A name no harness answers to is refused rather than ignored: silently
+   * publishing other than was asked for is the failure this crate is
+   * built around.
    */
   harnesses?: string[];
 
@@ -520,8 +521,8 @@ export interface VaultRequest {
   marketplace?: string;
 
   /**
-   * Narrows the root file's `build.harnesses`, as
-   * [`ExportRequest::harnesses`] does.
+   * Which harnesses to build. It replaces the root file's
+   * `build.harnesses`, as [`ExportRequest::harnesses`] does.
    */
   harnesses?: string[];
 
@@ -575,9 +576,9 @@ export interface LoadRequest {
   marketplace?: string;
 
   /**
-   * Narrows the root file's `build.harnesses`, by canonical name. Empty
-   * means every harness the root file builds. A body no harness here
-   * admits is read but not resolved.
+   * Which harnesses to load for, by canonical name. It replaces the root
+   * file's `build.harnesses`; empty means that list. A body no harness
+   * here admits is read but not resolved.
    */
   harnesses?: string[];
 }

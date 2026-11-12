@@ -118,13 +118,8 @@ test("the core reads the root file's defaults and harnesses", () => {
   )
   expect(JSON.parse(readFileSync(manifest, 'utf8')).license).toBe('MIT')
 
-  let error: unknown
-  try {
-    exportSkills(createNodeVfs(), { vault_root: vault, harnesses: ['codex'] })
-  } catch (raw) {
-    error = raw
-  }
-  expect((error as CoreError).message).toContain('harness-not-built')
+  exportSkills(createNodeVfs(), { vault_root: vault, harnesses: ['codex'] })
+  expect(existsSync(path.join(vault, 'dist/acme/.agents'))).toBe(true)
 })
 
 test('a request that carries defaults is refused', () => {

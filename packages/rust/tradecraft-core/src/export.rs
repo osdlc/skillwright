@@ -130,12 +130,13 @@ pub struct ExportRequest {
     /// vault's only one; a vault holding more than one is refused.
     #[serde(default)]
     pub marketplace: Option<String>,
-    /// Narrows the root file's `build.harnesses`, by name. Empty means every
-    /// harness the root file builds.
+    /// Which harnesses to build, by name. It replaces the root file's
+    /// `build.harnesses` for this run; empty means that list, and with no
+    /// list, every harness.
     ///
-    /// A name no harness answers to, or one the root file does not build, is
-    /// refused rather than ignored: silently publishing other than was asked
-    /// for is the failure this crate is built around.
+    /// A name no harness answers to is refused rather than ignored: silently
+    /// publishing other than was asked for is the failure this crate is
+    /// built around.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
     /// Build, or check. Absent on the wire means [`ExportMode::Build`].
@@ -441,7 +442,7 @@ pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 ///
 /// # Errors
 ///
-/// `refused: unknown-harness` and `refused: harness-not-built`.
+/// `refused: unknown-harness`.
 pub fn owned_paths(
     root: &RootFile,
     request: &ExportRequest,
@@ -568,8 +569,8 @@ pub struct VaultRequest {
     /// Which marketplace to build, by folder. `None` builds every one.
     #[serde(default)]
     pub marketplace: Option<String>,
-    /// Narrows the root file's `build.harnesses`, as
-    /// [`ExportRequest::harnesses`] does.
+    /// Which harnesses to build. It replaces the root file's
+    /// `build.harnesses`, as [`ExportRequest::harnesses`] does.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
     /// Build, or check. Absent on the wire means [`ExportMode::Build`].
@@ -694,7 +695,7 @@ pub fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, Co
 }
 
 /// [`plan_vault`] for a vault already loaded with [`load_vault`]: plans each
-/// marketplace the load lists. `harnesses` narrows the root file's
+/// marketplace the load lists. `harnesses` replaces the root file's
 /// `build.harnesses`, as [`VaultRequest::harnesses`] does.
 pub fn plan_loaded(
     vfs: &dyn Vfs,

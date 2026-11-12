@@ -50,9 +50,9 @@ pub struct LoadRequest {
     /// one.
     #[serde(default)]
     pub marketplace: Option<String>,
-    /// Narrows the root file's `build.harnesses`, by canonical name. Empty
-    /// means every harness the root file builds. A body no harness here
-    /// admits is read but not resolved.
+    /// Which harnesses to load for, by canonical name. It replaces the root
+    /// file's `build.harnesses`; empty means that list. A body no harness
+    /// here admits is read but not resolved.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
 }
@@ -105,44 +105,22 @@ pub(crate) fn selected_harnesses(
         .collect())
 }
 
-/// The harnesses a build renders: the root file's `build.harnesses` (every
-/// harness when absent), narrowed by `filter` when it names any.
+/// The harnesses a build renders: those `chosen` names, else the root
+/// file's `build.harnesses`, else every harness. A choice replaces the root
+/// file's list; it may name a harness the list leaves out.
 ///
 /// # Errors
 ///
 /// * `refused: unknown-harness` — a name no harness answers to.
-/// * `refused: harness-not-built` — `filter` names a harness the root file's
-///   `build.harnesses` leaves out. A filter narrows; it never widens.
 pub(crate) fn built_harnesses(
     root: &RootFile,
-    filter: &BTreeSet<String>,
+    chosen: &BTreeSet<String>,
 ) -> Result<Vec<&'static HarnessProfile>, CoreError> {
-    let listed = selected_harnesses(&root.harness_set())?;
-    if filter.is_empty() {
-        return Ok(listed);
+    if chosen.is_empty() {
+        selected_harnesses(&root.harness_set())
+    } else {
+        selected_harnesses(chosen)
     }
-    let asked = selected_harnesses(filter)?;
-    let unlisted: Vec<String> = asked
-        .iter()
-        .filter(|spec| !listed.iter().any(|l| l.name == spec.name))
-        .map(|spec| format!("`{}`", spec.name))
-        .collect();
-    if !unlisted.is_empty() {
-        return Err(CoreError::refused(
-            "harness-not-built",
-            format!(
-                "the root file's `build.harnesses` builds {}, and the request asks for {} too: \
-                 a request narrows that list, it never widens it. Nothing was written",
-                listed
-                    .iter()
-                    .map(|spec| format!("`{}`", spec.name))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                unlisted.join(", ")
-            ),
-        ));
-    }
-    Ok(asked)
 }
 
 /// Loads the marketplace a build renders.
