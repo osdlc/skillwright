@@ -209,8 +209,8 @@ struct BumpArgs {
     )]
     plugin: Option<String>,
     /// Bump every plugin whose rendered members differ from this baseline:
-    /// a built marketplace directory, or a git ref built in a temporary
-    /// worktree.
+    /// a built marketplace directory, or a git ref checked out and built in
+    /// a temporary folder.
     #[arg(long, value_name = "ref|dir", conflicts_with = "plugin")]
     changed_since: Option<String>,
     /// The marketplace to work in. With no plugin named, bump the marketplace itself.
