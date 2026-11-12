@@ -50,7 +50,7 @@
 //! # What comes from the shared crates, and what stays here
 //!
 //! The links come from `markdown-link`: its scanner finds each `[[link]]` and
-//! `![[embed]]` (code by [`CodeRules::SkillExport`]; links in HTML comments
+//! `![[embed]]` (code by [`markdown_link::code::CodeRules::SkillExport`]; links in HTML comments
 //! skipped; `[[#Heading]]` a link to the note it is in), and its
 //! `escape_label` and URI encoders write them back out. `markdown-contract`'s
 //! `select` cuts a `#heading` or `#^block` out of an embedded note.
