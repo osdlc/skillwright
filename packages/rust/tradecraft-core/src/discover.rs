@@ -46,11 +46,9 @@ use crate::error::CoreError;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::Harness;
 use crate::layout::Position;
-use crate::note::frontmatter_map;
-use crate::note::{read_utf8, split_frontmatter};
+use crate::note::{frontmatter_map, read_utf8, split_frontmatter};
 use crate::refusal;
-use crate::vfs::Vfs;
-use crate::vfs::forward_slashed;
+use crate::vfs::{Vfs, forward_slashed};
 
 /// One component, as discovery hands it to the verbs.
 // No `Eq`: `identity` carries JSON for the two manifest fields
