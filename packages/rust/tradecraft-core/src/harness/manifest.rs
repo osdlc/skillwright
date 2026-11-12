@@ -100,8 +100,7 @@ pub(crate) fn check_container_blocks(
     let unknown = crate::discover::unknown_container_block_keys(blocks, kind);
     for (harness, block) in blocks {
         for (key, value) in block.as_object().into_iter().flatten() {
-            if let Some(ty) = Harness::parse(harness)
-                .ok()
+            if let Some(ty) = Harness::from_name(harness)
                 .and_then(|harness| crate::harness::field_types::container_type(harness, key))
                 && !unknown.contains(&format!("{harness}.{key}"))
                 && !ty.accepts(value)
