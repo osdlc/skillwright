@@ -357,9 +357,13 @@ marketplace (rule 8, decision D2).
 
      | Step | Matches |
      |---|---|
-     | 1 | a file at any depth in the linking file's component folder |
+     | 1 | a file at any depth in the linking file's component folder, outside its never-ship folders |
      | 2 | a file at any depth in the plugin's shared `references/`, `scripts/` and `assets/`, and another component by its name only |
 
+   - Neither step searches a never-ship folder, such as `docs/` (section 3 rule 15).
+     A name in both `references/` and `docs/` resolves to `references/`. A
+     name whose only match is in the component's or the plugin's own
+     never-ship folder is refused by rule 10.
    - A file inside another component's folder is never found by name. Link it
      with a path (rule 4), such as `[[../setup/references/notes.md]]`.
    - How a name matches a file name:

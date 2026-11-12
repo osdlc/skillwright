@@ -598,6 +598,38 @@ fn a_link_into_docs_is_refused_with_one_error_in_every_form() {
 }
 
 #[test]
+fn a_name_never_finds_a_file_in_docs_when_another_matches() {
+    for (other, link) in [
+        (
+            "skills/author/references/notes.md",
+            "[notes](references/notes.md)",
+        ),
+        ("references/notes.md", "[notes](../../references/notes.md)"),
+    ] {
+        for docs in ["skills/author/docs/notes.md", "docs/notes.md"] {
+            let vfs = vault(&[
+                (AUTHOR, &skill("See [[notes]].")),
+                (other, "Ships.\n"),
+                (docs, "For authors.\n"),
+            ]);
+            build(&vfs).unwrap_or_else(|err| panic!("{other} and {docs}: {err}"));
+            assert!(author(&vfs).contains(link), "{}", author(&vfs));
+        }
+    }
+}
+
+#[test]
+fn a_name_only_docs_holds_is_refused_as_a_link_into_docs() {
+    for docs in ["skills/author/docs/notes.md", "docs/notes.md"] {
+        let vfs = vault(&[(AUTHOR, &skill("See [[notes]].")), (docs, "For authors.\n")]);
+        let err = refusal(&vfs);
+        names(&err, AUTHOR, "[[notes]]", "section 4 rule 10");
+        assert!(err.contains(&format!("{PLUGIN}/{docs}")), "{err}");
+        assert!(err.contains("never ships"), "{err}");
+    }
+}
+
+#[test]
 fn a_link_out_of_the_marketplace_is_refused() {
     let vfs = vault(&[(AUTHOR, &skill("See [t](../../../../../../x.md)."))]);
     put(&vfs, "x.md", "Outside.\n");

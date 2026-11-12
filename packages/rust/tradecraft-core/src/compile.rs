@@ -1513,11 +1513,13 @@ impl<'a> Renderer<'a> {
                 .map(|found| found.to_string_lossy().to_lowercase())
                 .is_some_and(|found| found == wanted || wanted_md.as_ref() == Some(&found))
         };
-        if let Some(folder) = self.component_folder(from_file) {
+        let folder = self.component_folder(from_file);
+        let never_ship = |file: &LayoutFile| matches!(file.place, Place::NeverShip { .. });
+        if let Some(folder) = &folder {
             let hits: Vec<&LayoutFile> = self
                 .layout
                 .files_of(&self.market)
-                .filter(|file| file.path.starts_with(&folder) && named(file))
+                .filter(|file| file.path.starts_with(folder) && !never_ship(file) && named(file))
                 .collect();
             if let Some(found) = self.one_match(&hits, from_file, written)? {
                 return Ok(found);
@@ -1533,7 +1535,30 @@ impl<'a> Renderer<'a> {
                 _ => false,
             })
             .collect();
-        self.one_match(&hits, from_file, written)?
+        if let Some(found) = self.one_match(&hits, from_file, written)? {
+            return Ok(found);
+        }
+        // Neither step searches a never-ship folder. A name only the
+        // component's or the plugin's own such folder holds returns that
+        // file, which rule 10 then refuses.
+        let plugin_rel = format!(
+            "{MARKETPLACES_DIR}/{}/{PLUGINS_DIR}/{}",
+            self.market,
+            self.plugin.as_deref().unwrap_or_default()
+        );
+        self.layout
+            .files_of(&self.market)
+            .filter(|file| file.plugin == self.plugin && named(file))
+            .find(|file| match &file.place {
+                Place::NeverShip { folder: dir } => {
+                    folder
+                        .as_ref()
+                        .is_some_and(|folder| file.path.starts_with(folder))
+                        || Path::new(dir).parent() == Some(Path::new(&plugin_rel))
+                }
+                _ => false,
+            })
+            .map(|file| file.path.clone())
             .ok_or_else(|| self.missing(from_file, written))
     }
 
