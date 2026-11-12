@@ -417,7 +417,6 @@ pub fn resolve_body(
         content,
         body,
         resources,
-        closures: compiled.closures,
     })
 }
 

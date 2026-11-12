@@ -1,8 +1,8 @@
 //! What `loadMarketplace` hands back: a narrow view of the core's model.
 //!
 //! The core's `Marketplace` is what the translators read, so it carries their
-//! working state: each body as segments, the agent-adapt content, the
-//! closures. A host that shows a vault's structure needs none of it, and
+//! working state: each body as segments and the agent-adapt content. A host
+//! that shows a vault's structure needs none of it, and
 //! every field that crosses is one the package has to keep stable. So the
 //! export converts the model into these types and serializes them instead.
 //!

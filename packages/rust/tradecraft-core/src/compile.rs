@@ -62,7 +62,7 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
@@ -224,32 +224,8 @@ pub struct CompiledNote {
     /// connect without an adapter. Markdown resources are compiled; binaries
     /// are verbatim.
     pub resources: Vec<(String, Vec<u8>, bool)>,
-    /// Per emitted file, what fed it. Keyed by the same relative path the
-    /// resources use, with the entry's own output under `SKILL.md`.
-    ///
-    /// The bytes of an emitted file can change because an embedded note
-    /// changed, without the owning note moving at all, so the owner alone
-    /// does not say what fed it.
-    pub closures: BTreeMap<String, Closure>,
     /// What the marks in the body and the Markdown resources stand for.
     pub recorded: Recorded,
-}
-
-/// What one emitted file was built from.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Closure {
-    /// Vault-relative paths of every note whose bytes this file consumed:
-    /// the note that owns it, plus everything transitively embedded into it.
-    /// Sorted, and never empty — the owner is always a member.
-    pub contributing_notes: Vec<String>,
-    /// The vault-relative path of the note this file was rendered from: the
-    /// entry note for `SKILL.md`, and the resource's own source otherwise.
-    /// One of `contributing_notes`, not necessarily the first, since they are
-    /// sorted.
-    pub owner: String,
-    /// Skills this file calls, as `plugin:name`, sorted. Nothing
-    /// of a called skill is copied, so its identity is what can go stale.
-    pub calls: Vec<String>,
 }
 
 /// Compiles one note body against its vault.
@@ -337,14 +313,12 @@ pub fn compile_note(
         outputs.insert(output_path.clone(), (bytes, executable));
     }
 
-    let closures = renderer.closures()?;
     Ok(CompiledNote {
         body: compiled_body,
         resources: outputs
             .into_iter()
             .map(|(path, (bytes, executable))| (path, bytes, executable))
             .collect(),
-        closures,
         recorded: renderer.record,
     })
 }
@@ -387,39 +361,6 @@ impl Renderer<'_> {
         Ok(outputs)
     }
 
-    /// Each emitted file's closure. It contains the file that owns it, so a
-    /// closure is never empty and a resource with no embeds still hashes over
-    /// something. `SKILL.md` is owned by the entry note; every other output
-    /// is owned by the vault file it was rendered from.
-    fn closures(&self) -> Result<BTreeMap<String, Closure>, CoreError> {
-        let entry = ("SKILL.md".to_owned(), &self.entry_path);
-        let owners = std::iter::once(entry).chain(
-            self.markdown_resources
-                .iter()
-                .chain(&self.binary_resources)
-                .map(|(source, output)| (output.clone(), source)),
-        );
-        let mut closures = BTreeMap::new();
-        for (output_path, source_path) in owners {
-            let mut members = self
-                .contributing
-                .get(&output_path)
-                .cloned()
-                .unwrap_or_default();
-            let owner = self.vault_relative(source_path)?;
-            members.insert(owner.clone());
-            let calls = self.calls.get(&output_path).cloned().unwrap_or_default();
-            closures.insert(
-                output_path,
-                Closure {
-                    contributing_notes: members.into_iter().collect(),
-                    owner,
-                    calls: calls.into_iter().collect(),
-                },
-            );
-        }
-        Ok(closures)
-    }
 }
 
 // --- Extension vocabularies -------------------------------------------------
@@ -621,12 +562,7 @@ struct Renderer<'a> {
     entry_pack: String,
     /// `skills/<s>`, where a skill's own files land.
     skill_base: Option<String>,
-    /// Per emitted file, the notes it consumed. Accumulated as the walk
-    /// runs; the walk is the only place that knows it.
-    contributing: BTreeMap<String, BTreeSet<String>>,
     call_context: &'a CallContext<'a>,
-    /// Per emitted file, the [`SkillId::call_id`]s it calls.
-    calls: BTreeMap<String, BTreeSet<String>>,
     /// Hand-written calls found in any text this compile builds, each as
     /// the refusal names it, refused together once every file is built.
     literal_calls: Vec<String>,
@@ -682,9 +618,7 @@ impl<'a> Renderer<'a> {
             plugin,
             entry_pack,
             skill_base,
-            contributing: BTreeMap::new(),
             call_context: source.calls,
-            calls: BTreeMap::new(),
             literal_calls: Vec::new(),
             markdown_resources: BTreeMap::new(),
             binary_resources: BTreeMap::new(),
@@ -836,7 +770,7 @@ impl<'a> Renderer<'a> {
                 return Ok(format!("{}{ESCAPED}", &raw[1..raw.len() - 2]));
             }
             TokenKind::Call => {
-                return self.replace_call(token, source_path, output_path);
+                return self.replace_call(token, source_path);
             }
             TokenKind::MarkdownLink => {
                 return self.replace_markdown_link(
@@ -879,13 +813,6 @@ impl<'a> Renderer<'a> {
             let text = read_utf8(self.vfs, &resolved)?;
             let note_body = self.embedded_body(&text, &resolved, raw, source_path)?;
             let label = self.vault_relative(&resolved)?;
-            // The closure grows here and nowhere else: a *linked* file has
-            // its own emitted file. Only embedding folds one note's bytes
-            // into another's output.
-            self.contributing
-                .entry(output_path.to_owned())
-                .or_default()
-                .insert(label.clone());
             let selected = select_fragment(note_body, fragment.as_deref(), &label)?;
             stack.push(hop);
             let expanded = self.transform_body(&selected, &resolved, output_path, stack)?;
@@ -904,7 +831,7 @@ impl<'a> Renderer<'a> {
             ));
         }
         if embed && !image {
-            return self.inline_file(&resolved, raw, line, source_path, output_path);
+            return self.inline_file(&resolved, raw, line, source_path);
         }
         let suffix = fragment
             .as_deref()
@@ -973,7 +900,6 @@ impl<'a> Renderer<'a> {
         written: &str,
         line: Line<'_>,
         source_path: &Path,
-        output_path: &str,
     ) -> Result<String, CoreError> {
         let bytes = self.vfs.read_file(file)?;
         let Ok(content) = String::from_utf8(bytes) else {
@@ -987,10 +913,6 @@ impl<'a> Renderer<'a> {
         };
         let label = self.vault_relative(file)?;
         refuse_marks(&content, &label)?;
-        self.contributing
-            .entry(output_path.to_owned())
-            .or_default()
-            .insert(label);
         let block = fenced_block(&content, extension_of_path(file).as_deref(), line);
         self.record.literals.push(block);
         Ok(mark('v', self.record.literals.len() - 1))
@@ -1138,9 +1060,8 @@ impl<'a> Renderer<'a> {
         &mut self,
         token: &WikiToken<'_>,
         source_path: &Path,
-        output_path: &str,
     ) -> Result<String, CoreError> {
-        let call = self.record_call(token, source_path, output_path)?;
+        let call = self.record_call(token, source_path)?;
         Ok(match text_alias(token.alias.as_deref()) {
             Some(words) => format!("{words} (`{call}`)"),
             None => format!("`{call}`"),
@@ -1153,7 +1074,6 @@ impl<'a> Renderer<'a> {
         &mut self,
         token: &WikiToken<'_>,
         source_path: &Path,
-        output_path: &str,
     ) -> Result<String, CoreError> {
         let written = format!("/[[{}]]", token.destination);
         if token.fragment.is_some() {
@@ -1203,10 +1123,6 @@ impl<'a> Renderer<'a> {
                 format!("names agent `{}`, and no pack contains agents", skill.name),
             ));
         }
-        self.calls
-            .entry(output_path.to_owned())
-            .or_default()
-            .insert(skill.call_id());
         self.record.calls.push(CallSite {
             skill: skill.clone(),
             destination: token.destination.to_owned(),
@@ -2485,105 +2401,6 @@ mod tests {
             .collect()
     }
 
-    // --- The closure ---------------------------------------------------------
-
-    #[test]
-    fn an_embedded_note_joins_the_closure_of_the_file_it_lands_in() {
-        let vfs = demo_vault();
-        let compiled = compile(&vfs, "# Demo\n\n![[Shared]]\n").unwrap();
-
-        assert_eq!(
-            compiled.closures["SKILL.md"].contributing_notes,
-            vec![
-                "marketplaces/m/plugins/p/references/Shared.md".to_owned(),
-                "marketplaces/m/plugins/p/skills/demo/demo.md".to_owned()
-            ]
-        );
-    }
-
-    // The asymmetry that makes the closure worth computing at all. An embed
-    // folds another note's bytes into this file, so it has to be hashed here.
-    // A link produces its own file with its own entry, so its edits are caught
-    // by that file's own comparison and it is not a member here.
-    #[test]
-    fn a_linked_note_gets_its_own_closure_rather_than_joining_the_skills() {
-        let vfs = demo_vault();
-        let compiled = compile(
-            &vfs,
-            "# Demo\n\nRead [[references/local|Local reference]].\n",
-        )
-        .unwrap();
-
-        let skill = &compiled.closures["SKILL.md"].contributing_notes;
-        assert_eq!(
-            skill,
-            &vec!["marketplaces/m/plugins/p/skills/demo/demo.md".to_owned()]
-        );
-        assert!(
-            !skill.contains(&"marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned()),
-            "a linked note must not join the linking file's closure: {skill:?}"
-        );
-
-        // …and the linked file's own closure carries what *it* embeds.
-        let local = &compiled.closures["references/local.md"].contributing_notes;
-        assert_eq!(
-            local,
-            &vec![
-                "marketplaces/m/plugins/p/references/Shared.md".to_owned(),
-                "marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned()
-            ]
-        );
-    }
-
-    #[test]
-    fn embedding_is_transitive_through_the_closure() {
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/marketplaces/m/plugins/p/references/Deep.md",
-            b"Deepest.\n",
-        );
-        write(
-            &vfs,
-            "/vault/marketplaces/m/plugins/p/references/Middle.md",
-            b"Middle.\n\n![[Deep]]\n",
-        );
-
-        let compiled = compile(&vfs, "# Demo\n\n![[Middle]]\n").unwrap();
-
-        assert_eq!(
-            compiled.closures["SKILL.md"].contributing_notes,
-            vec![
-                "marketplaces/m/plugins/p/references/Deep.md".to_owned(),
-                "marketplaces/m/plugins/p/references/Middle.md".to_owned(),
-                "marketplaces/m/plugins/p/skills/demo/demo.md".to_owned()
-            ]
-        );
-    }
-
-    // A closure is never empty, even for a peer resource, whose closure is
-    // itself.
-    #[test]
-    fn every_emitted_file_has_a_closure_holding_at_least_its_own_owner() {
-        let vfs = demo_vault();
-        let compiled = compile(&vfs, DEMO_BODY).unwrap();
-
-        for (path, _, _) in &compiled.resources {
-            let closure = compiled
-                .closures
-                .get(path)
-                .unwrap_or_else(|| panic!("no closure for {path}"));
-            assert!(
-                !closure.contributing_notes.is_empty(),
-                "{path} has an empty closure"
-            );
-        }
-        assert_eq!(
-            compiled.closures["scripts/tool.sh"].contributing_notes,
-            vec!["marketplaces/m/plugins/p/skills/demo/scripts/tool.sh".to_owned()]
-        );
-    }
-
     #[test]
     fn a_demo_skill_compiles_end_to_end() {
         let vfs = demo_vault();
@@ -3022,8 +2839,8 @@ mod tests {
             let compiled = compile_with_calls(&vfs, &call_index("called"), body);
             assert_eq!(compiled.body, shipped);
             assert_eq!(paths(&compiled), SEEDED, "{body:?}");
-            let closure = &compiled.closures["SKILL.md"];
-            assert!(closure.calls.is_empty(), "{body:?}: {closure:?}");
+            let calls = &compiled.recorded.calls;
+            assert!(calls.is_empty(), "{body:?}: {calls:?}");
         }
 
         // markdown-link gives up on the first `[[` at the `[` after it and
@@ -3504,7 +3321,7 @@ mod tests {
             "Esc /[[called]] here, `\\/[[called|alias]]` there.\n"
         );
         assert_eq!(paths(&compiled), SEEDED);
-        assert!(compiled.closures["SKILL.md"].calls.is_empty());
+        assert!(compiled.recorded.calls.is_empty());
         assert!(warnings.is_empty(), "{warnings:?}");
     }
 
@@ -3542,7 +3359,7 @@ mod tests {
     }
 
     #[test]
-    fn a_closure_records_the_skills_it_calls() {
+    fn a_compile_records_the_skills_it_calls() {
         let vfs = demo_vault();
         write(
             &vfs,
@@ -3555,8 +3372,12 @@ mod tests {
         let after = compile_with_calls(&vfs, &call_index("renamed"), "Run /[[renamed]].\n");
 
         assert_eq!(before.body, "Run `/tools:called`.\n");
-        assert_eq!(before.closures["SKILL.md"].calls, vec!["tools:called"]);
-        assert_eq!(after.closures["SKILL.md"].calls, vec!["tools:renamed"]);
+        let called = |compiled: &CompiledNote| -> Vec<String> {
+            let calls = &compiled.recorded.calls;
+            calls.iter().map(|call| call.skill.call_id()).collect()
+        };
+        assert_eq!(called(&before), vec!["tools:called"]);
+        assert_eq!(called(&after), vec!["tools:renamed"]);
     }
 
     /// Each harness's form for `called` of plugin `tools`.

@@ -36,8 +36,7 @@
 //! # Embeds are expanded on load
 //!
 //! An embed's bytes become the body's text, the same for every harness, so
-//! the model keeps the expanded text and records what it consumed in the
-//! node's closures rather than as a segment.
+//! the model keeps the expanded text, not a segment.
 
 pub mod cascade;
 pub mod load;
@@ -47,7 +46,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::compile::{Closure, MARK_CLOSE, MARK_OPEN, Recorded};
+use crate::compile::{MARK_CLOSE, MARK_OPEN, Recorded};
 use crate::content::SkillContent;
 use crate::discover::{DiscoveredComponent, DiscoveryWarning};
 use crate::error::CoreError;
@@ -161,8 +160,6 @@ pub struct Resolved {
     pub body: Body,
     /// Every file that travels with it, by output path.
     pub resources: Vec<Resource>,
-    /// Per emitted file, what fed it — the manifest's staleness record.
-    pub closures: BTreeMap<String, Closure>,
 }
 
 /// One file a component carries.
@@ -389,7 +386,7 @@ impl SkillId {
         }
     }
 
-    /// `plugin:name`, the closure's spelling.
+    /// `plugin:name`.
     pub fn call_id(&self) -> String {
         format!("{}:{}", self.plugin, self.name)
     }

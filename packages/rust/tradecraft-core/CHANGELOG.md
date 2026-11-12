@@ -33,6 +33,7 @@ API:
 - `compile::IndexedSkill` is removed: `SkillIndex` and `CallSite` hold `SkillId`, which `SkillId::of` builds from a `DiscoveredComponent`.
 - `plan(vfs, &loaded, &options)` is added. It returns a `VaultPlan`, with `outcomes()`, `report()` and `commit(vfs)`; `build_vault` calls all three. `BuildOptions` and `VaultPlan` are exported at the root.
 - `UnitStatus` is `Same` or `Differs` in place of `Ok`, `Drift`, `Written` and `Unchanged`, and `UnitStatus::as_str` is removed. `ExportUnit::NotCarried`'s `kind` is an `EntityKind`.
+- `compile::Closure`, `CompiledNote::closures` and `model::Resolved::closures` are removed. Nothing read them.
 
 ### Changed
 
