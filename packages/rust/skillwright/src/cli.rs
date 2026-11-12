@@ -14,9 +14,9 @@ use std::path::PathBuf;
 use clap::builder::PossibleValuesParser;
 use clap::error::ErrorKind;
 use clap::{Args, Parser, Subcommand};
-use tradecraft_core::{BumpLevel, Harness};
+use tradecraft_core::Harness;
 
-use crate::commands::bump::{BumpFlags, run_bump};
+use crate::commands::bump::{BumpFlags, BumpLevel, run_bump};
 use crate::commands::init::{InitFlags, run_init};
 use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
 use crate::ctx::CommandContext;

@@ -11,10 +11,12 @@
 //! and `marketplaces/`.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
-//! rather than guessed at ([`tradecraft_core::next_version`]); an absent
+//! rather than guessed at (`semver::next_version`); an absent
 //! `version` starts from the core's own default, `0.1.0` — so a note that
 //! has never carried the key is bumped, not refused. The root file's
 //! `build.bump.patch` picks how the patch number is written ([`PatchScheme`]).
+
+mod semver;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -23,10 +25,9 @@ use serde::Serialize;
 use tradecraft_core::discover::discover_in;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
-    BumpLevel, CoreError, DiscoveredComponent, EntityKind, ExportMode, ExportReport, ExportUnit,
-    Harness, LoadedVault, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest,
-    Vfs, build_vault, dist_dir, is_vault_root, next_version, owned_paths, parse_semver,
-    read_version, refusal, set_version,
+    CoreError, DiscoveredComponent, EntityKind, ExportMode, ExportReport, ExportUnit, Harness,
+    LoadedVault, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest, Vfs,
+    build_vault, dist_dir, is_vault_root, owned_paths, read_version, refusal, set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -34,6 +35,8 @@ use crate::exit::{EXIT_OK, EXIT_REFUSED, failed, refused, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::{dry_run_notice, print_json};
 use crate::resolve::{CommonFlags, resolve_at, resolve_run};
+pub use semver::BumpLevel;
+use semver::{next_version, parse_semver};
 
 /// The resolved flags of `skillwright bump`.
 pub struct BumpFlags {
