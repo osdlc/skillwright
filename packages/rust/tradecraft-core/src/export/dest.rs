@@ -36,10 +36,43 @@ struct DestState {
     empty_dirs: Vec<String>,
 }
 
+/// What `base` holds under `paths`: [`DestState`], and each file's size,
+/// modification time and execute bit.
+#[derive(PartialEq, Eq)]
+pub(super) struct Snapshot {
+    pub(super) paths: Vec<&'static str>,
+    state: DestState,
+    stamps: Vec<Option<(u64, Option<i64>, bool)>>,
+}
+
+impl Snapshot {
+    pub(super) fn take(
+        vfs: &dyn Vfs,
+        base: &Path,
+        paths: Vec<&'static str>,
+    ) -> Result<Self, CoreError> {
+        let state = scan_output(vfs, base, &paths)?;
+        let stamps = state
+            .files
+            .keys()
+            .map(|relative| {
+                let path = base.join(relative);
+                let meta = vfs.metadata(&path).ok()?;
+                Some((meta.len, meta.modified_ns, vfs.is_executable(&path)))
+            })
+            .collect();
+        Ok(Self {
+            paths,
+            state,
+            stamps,
+        })
+    }
+}
+
 /// Reads `base`, but only the `owned` paths, never the whole directory: what
 /// the swap would replace is exactly what the report may call stale, and
 /// `dist/<m>/` may hold files of its own beside the packs.
-fn scan_destination(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestState, CoreError> {
+fn scan_output(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestState, CoreError> {
     let mut state = DestState::default();
     for &owned in owned {
         // A link or a file above an owned path is recorded and goes no
@@ -141,7 +174,7 @@ struct DestTree<'v> {
 
 impl<'v> DestTree<'v> {
     fn scan(vfs: &'v dyn Vfs, base: PathBuf, owned: &[&str]) -> Result<Self, CoreError> {
-        let state = scan_destination(vfs, &base, owned)?;
+        let state = scan_output(vfs, &base, owned)?;
         Ok(Self { vfs, base, state })
     }
 
