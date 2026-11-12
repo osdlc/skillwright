@@ -949,7 +949,11 @@ fn a_root_file_that_is_a_symlink_at_the_ref_builds_as_it_did() {
     // The link resolves, so the ref's root file is found; its vault is
     // then refused for the link.
     let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
-    assert_symlink_refused(&result, "unsafe-path", "vault/skillwright.md: a symlink ");
+    assert_symlink_refused(
+        &result,
+        "unsafe-path",
+        "vault/skillwright.md: `skillwright.md` may not be a symlink",
+    );
 }
 
 /// The ref's vault was refused with `token`, the message naming the symlink

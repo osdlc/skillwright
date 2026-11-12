@@ -112,12 +112,14 @@ pub fn is_vault_root(vfs: &dyn Vfs, dir: &Path) -> bool {
 }
 
 /// Whether `dir` holds the root file, and whether it holds `marketplaces/`.
-/// A missing path is `false`; any other host error is returned.
+/// A missing path is `false`; any other host error is returned. A symlink
+/// counts as there, so [`check_vault_root`] can refuse it by name.
 fn root_parts(vfs: &dyn Vfs, dir: &Path) -> Result<(bool, bool), CoreError> {
-    Ok((
-        is_kind(vfs, &dir.join(ROOT_FILE), false)?,
-        is_kind(vfs, &dir.join(MARKETPLACES_DIR), true)?,
-    ))
+    let there = |name: &str, folder: bool| {
+        let path = dir.join(name);
+        Ok::<_, CoreError>(vfs.is_symlink(&path) || is_kind(vfs, &path, folder)?)
+    };
+    Ok((there(ROOT_FILE, false)?, there(MARKETPLACES_DIR, true)?))
 }
 
 /// The vault root at or above `start`: the first folder that holds both
@@ -158,9 +160,24 @@ pub fn find_vault_root(vfs: &dyn Vfs, start: &Path) -> Result<PathBuf, CoreError
 /// # Errors
 ///
 /// * `refused: layout`, naming what `dir` lacks.
+/// * `refused: unsafe-path` — `skillwright.md`, `marketplaces/` or `dist/` is
+///   a symlink (spec section 3): a linked `dist/` would write outside the
+///   vault.
 /// * [`CoreError::Io`] — a path the host cannot stat for a reason other than
 ///   it being missing.
 pub fn check_vault_root(vfs: &dyn Vfs, dir: &Path) -> Result<(), CoreError> {
+    for name in [ROOT_FILE, MARKETPLACES_DIR, DIST_DIR] {
+        let path = dir.join(name);
+        if vfs.is_symlink(&path) {
+            return Err(CoreError::refused(
+                "unsafe-path",
+                format!(
+                    "{}: `{name}` may not be a symlink. Replace it with the real file or folder",
+                    path.display()
+                ),
+            ));
+        }
+    }
     let (file, folder) = root_parts(vfs, dir)?;
     let mut missing = Vec::new();
     if !file {
@@ -606,9 +623,10 @@ fn layout_error(message: String) -> CoreError {
 ///   outside its marketplace folder, in another plugin, in a never-ship
 ///   folder (spec section 4, containment rule 2). The refusal is the one a
 ///   link spelling that target gets, naming the symlink and its target.
-/// * `refused: unsafe-path` — a symlink to a folder the walk is inside, one
-///   whose target cannot be read, or one outside `marketplaces/<m>/`; or a
-///   file whose real path the host cannot tell.
+/// * `refused: unsafe-path` — a symlinked `skillwright.md`, `marketplaces/`
+///   or `dist/` ([`check_vault_root`]); a symlink to a folder the walk is inside, one whose target
+///   cannot be read, or one outside `marketplaces/<m>/`; or a file whose real
+///   path the host cannot tell.
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
     let root = &crate::vfs::normalize(root);
@@ -621,15 +639,14 @@ pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
         marketplace: None,
         plugin: None,
     };
-    // Root entries the vault does not use are left alone and not read (spec
-    // section 3), so a symlink among them is not checked: only its name and
-    // kind matter.
+    // `check_vault_root` has refused a symlinked `skillwright.md`,
+    // `marketplaces/` or `dist/`. Root entries the vault does not use are
+    // left alone and not read (spec section 3), so a symlink among them is
+    // not checked: only its name and kind matter.
     for entry in vfs.read_dir(root)? {
         let path = root.join(&entry.name);
         let is_dir = if !vfs.is_symlink(&path) {
             entry.is_dir
-        } else if [ROOT_FILE, MARKETPLACES_DIR, DIST_DIR].contains(&entry.name.as_str()) {
-            walk.linked(&path)?
         } else {
             vfs.canonicalize(&path)
                 .is_ok_and(|target| vfs.metadata(&target).is_ok_and(|m| m.is_dir))

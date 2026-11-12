@@ -212,7 +212,7 @@ Some entries are skipped everywhere, and one is an error:
 
 | Folder | May hold |
 |---|---|
-| The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone and not read, except the refused names of section 11 case 4. |
+| The root | `skillwright.md`, `marketplaces/`, `dist/`. These three may not be symlinks. Anything else is left alone and not read, except the refused names of section 11 case 4. |
 | `marketplaces/` | Marketplace folders only. |
 | `marketplaces/<m>/` | `<m>.md`, `plugins/`. |
 | `plugins/` | Plugin folders only. |

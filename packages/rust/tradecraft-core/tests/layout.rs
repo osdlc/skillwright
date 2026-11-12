@@ -860,6 +860,42 @@ fn a_symlink_at_the_vault_root_is_left_alone() {
     );
 }
 
+/// `skillwright.md`, `marketplaces/` and `dist/` may not be symlinks (spec
+/// section 3), wherever the link leads, and the refusal says so.
+#[cfg(unix)]
+#[test]
+fn a_symlinked_root_file_marketplaces_or_dist_is_refused() {
+    for name in ["skillwright.md", "marketplaces", "dist"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("v");
+        let shared = tmp.path().join("shared");
+        // The linked entry is written under `shared/`, the rest in the vault.
+        let at = |rel: &str| {
+            let top = rel.split('/').next().unwrap();
+            let path = if top == name { &shared } else { &root }.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            path
+        };
+        let tools = "marketplaces/acme/plugins/tools";
+        std::fs::write(at("skillwright.md"), ROOT).unwrap();
+        std::fs::write(at("marketplaces/acme/acme.md"), NOTE).unwrap();
+        std::fs::write(at(&format!("{tools}/tools.md")), NOTE).unwrap();
+        std::fs::write(at(&format!("{tools}/skills/review/review.md")), SKILL).unwrap();
+        std::fs::create_dir_all(at("dist/x").parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(shared.join(name), root.join(name)).unwrap();
+
+        let err = read_layout(&tradecraft_core::NativeVfs, &root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refused: unsafe-path: "), "{name}: {err}");
+        assert!(
+            err.contains(&format!("`{name}` may not be a symlink")),
+            "{name}: {err}"
+        );
+        assert!(!err.contains("marketplace folder (`"), "{name}: {err}");
+    }
+}
+
 /// A symlinked folder inside a skill that the layout walk accepts builds,
 /// and its files ship under the skill.
 #[cfg(unix)]
