@@ -1,12 +1,90 @@
 {
   "schema": 1,
   "pr": 162,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "987611675c5313adf779469c7f09369874e6e7a3",
+  "base": "0859a8ea6be4e581382b24426f680b4252916607",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7m2pz",
     "at": "2026-11-12T09:11:38.740Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/marketplace.rs",
+      "line": 138,
+      "title": "Commit after the prompt acts on a destination scan made before it; foreign-tree guard and stale report no longer cover the wait",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 603,
+      "title": "Shared failure copied into every marketplace entry (err.duplicate) has no test",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-typegen/src/emit.rs",
+      "line": 362,
+      "title": "wire_type reads only serde from, which governs deserialization; output types follow into",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "docs/terms/drift.md:9 still names UnitStatus::Drift",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "marketplace.rs:7-8 module doc says the file's whole contribution is the mode on the request",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 662,
+      "title": "plan_with recomputes dist_dir that VaultMarketplace.dist already holds",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/model/load.rs",
+      "line": 168,
+      "title": "name fallback is dead now that Cascade::over always sets config.name",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
