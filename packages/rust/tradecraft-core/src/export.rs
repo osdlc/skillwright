@@ -627,7 +627,11 @@ impl VaultPlan {
 /// Each marketplace's own refusal is in its entry.
 fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreError> {
     if request.mode == ExportMode::Build && request.compare_with.is_some() {
-        return Err(compare_with_on_build());
+        return Err(CoreError::refused(
+            "compare-with",
+            "a build always writes `dist/<m>/`; `compare_with` is for a check. Nothing was \
+             written",
+        ));
     }
     let loaded = load_vault(vfs, &request.vault_root, request.marketplace.as_deref())?;
     if request.compare_with.is_some() && loaded.marketplaces.len() > 1 {
@@ -693,35 +697,17 @@ pub fn build_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultReport,
 ///   vault holds several and none was named), `unknown-marketplace` and
 ///   `path-collision`.
 /// * `refused: unknown-harness` — a harness name no harness answers to.
-/// * `refused: compare-with` — a build that names
-///   [`ExportRequest::compare_with`].
 /// * `refused: foreign-tree` — output this vault did not build.
 pub(crate) fn plan_in(
     vfs: &dyn Vfs,
     layout: &Layout,
     request: &ExportRequest,
 ) -> Result<ExportPlan, CoreError> {
-    refuse_compare_with_on_build(request)?;
     let root = read_root_file(vfs, &layout.root)?;
     // Which harnesses this build renders, before the notes are read.
     built_harnesses(&root, &request.harnesses)?;
     let scan = crate::discover::discover_in(vfs, layout)?;
     plan_with(vfs, layout, &root, &scan, request)
-}
-
-/// A build always writes `dist/<m>/`.
-fn refuse_compare_with_on_build(request: &ExportRequest) -> Result<(), CoreError> {
-    if request.mode == ExportMode::Build && request.compare_with.is_some() {
-        return Err(compare_with_on_build());
-    }
-    Ok(())
-}
-
-fn compare_with_on_build() -> CoreError {
-    CoreError::refused(
-        "compare-with",
-        "a build always writes `dist/<m>/`; `compare_with` is for a check. Nothing was written",
-    )
 }
 
 /// [`plan_in`] with the root file read and pass 1 done: `scan` is
@@ -733,7 +719,6 @@ fn plan_with(
     scan: &DiscoveryReport,
     request: &ExportRequest,
 ) -> Result<ExportPlan, CoreError> {
-    refuse_compare_with_on_build(request)?;
     let roots = built_harnesses(root, &request.harnesses)?;
 
     // Load once, for every harness this build renders: the marketplace
@@ -1874,28 +1859,6 @@ mod tests {
         .unwrap();
         assert!(!again.changed, "{:?}", again.units);
         assert_eq!(again.checked, 3);
-    }
-
-    /// A check can compare with another built folder, as `bump
-    /// --changed-since` does; a build cannot be pointed anywhere.
-    #[test]
-    fn a_check_compares_with_another_folder_and_a_build_refuses_one() {
-        let vfs = example_vault();
-        build(&vfs);
-        vfs.rename(Path::new("/vault/dist/house"), Path::new("/baseline"))
-            .unwrap();
-        let mut check = request(ExportMode::Check);
-        check.compare_with = Some(PathBuf::from("/baseline"));
-        assert!(!export_skills(&vfs, &check).unwrap().changed);
-        // Without it, the check compares with the missing `dist/house/`.
-        check.compare_with = None;
-        assert!(export_skills(&vfs, &check).unwrap().changed);
-
-        let mut build = request(ExportMode::Build);
-        build.compare_with = Some(PathBuf::from("/baseline"));
-        let message = export_skills(&vfs, &build).unwrap_err().to_string();
-        assert!(message.contains("compare-with"), "{message}");
-        assert!(!vfs.exists(Path::new("/vault/dist/house")));
     }
 
     /// `<plugin>-<skill>` is not injective: plugin `a` skill `b-c` and plugin
