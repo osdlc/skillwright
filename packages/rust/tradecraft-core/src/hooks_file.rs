@@ -332,10 +332,9 @@ pub fn localize(mut hook: Hook, harness: &str, plugin_root_var: Option<&str>) ->
     };
     if let Some(var) = plugin_root_var {
         let with = format!("${{{var}}}");
-        command = crate::text::replace_bounded(&command, CANONICAL_ROOT, &with, |c| {
+        command = replace_bounded(&command, CANONICAL_ROOT, &with, |c| {
             c.is_alphanumeric() || c == '_'
-        })
-        .0;
+        });
     }
     for (name, value) in PLACEHOLDERS.iter().zip([harness, hook.event.as_str()]) {
         command = command.replace(&format!("{{{{{name}}}}}"), value);
@@ -352,6 +351,31 @@ pub fn carried_hooks(hooks: &[Hook], runtime: RuntimeId) -> Vec<Hook> {
         .filter(|hook| agent_adapt::render::hook_refusal(hook, runtime).is_none())
         .cloned()
         .collect()
+}
+
+/// Replaces each `needle` in `text` with `with`, except where the next
+/// character `continues` it into a longer token.
+fn replace_bounded(
+    text: &str,
+    needle: &str,
+    with: &str,
+    continues: impl Fn(char) -> bool,
+) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(offset) = rest.find(needle) {
+        let (head, tail) = rest.split_at(offset);
+        let after = &tail[needle.len()..];
+        out.push_str(head);
+        if after.chars().next().is_some_and(&continues) {
+            out.push_str(needle);
+        } else {
+            out.push_str(with);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 #[cfg(test)]

@@ -46,10 +46,11 @@ use crate::error::CoreError;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::Harness;
 use crate::layout::Position;
+use crate::note::frontmatter_map;
+use crate::note::{read_utf8, split_frontmatter};
 use crate::refusal;
-use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
-use crate::vault::frontmatter_map;
 use crate::vfs::Vfs;
+use crate::vfs::forward_slashed;
 
 /// One component, as discovery hands it to the verbs.
 // No `Eq`: `identity` carries JSON for the two manifest fields
@@ -216,7 +217,7 @@ fn check_values(
     kind: EntityKind,
     folder: &str,
 ) -> Result<(), CoreError> {
-    crate::vault::check_spec_kinds(fields, path, kind)?;
+    crate::note::check_spec_kinds(fields, path, kind)?;
     match kind {
         EntityKind::Skill | EntityKind::Command => {
             crate::model::cascade::fold_harness_blocks(ours, path, kind)?;
@@ -560,7 +561,7 @@ fn read_source(
     let kind = position.kind();
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, kind)?;
     let unknown_keys = unknown_keys(&ours, kind);
-    crate::vault::check_spec_kinds(&mut fields, entry_path, kind)?;
+    crate::note::check_spec_kinds(&mut fields, entry_path, kind)?;
     let description = trimmed_string(&fields, "description").unwrap_or_default();
 
     // The value checks a build makes on this note, so the scan refuses what a
@@ -622,7 +623,7 @@ fn owned_resources(
 
 /// A field as discovery reads it: a non-empty string, trimmed. Any other
 /// shape is absence, consistent with
-/// [`crate::vault`]'s rule that a wrong-shaped modeled key falls back rather
+/// [`crate::note`]'s rule that a wrong-shaped modeled key falls back rather
 /// than being consumed.
 fn trimmed_string(fields: &Map<String, Value>, key: &str) -> Option<String> {
     fields

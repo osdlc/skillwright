@@ -5,15 +5,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::report::{ExportUnit, StaleKind, UnitStatus};
+use super::report::{ExportUnit, StaleKind, UnitStatus, VersionBumpSuggestion};
 use crate::error::CoreError;
 use crate::harness::manifest::{is_os_file, overrides_for};
 use crate::harness::translator::GENERATED_MARKER;
 use crate::harness::{Harness, Translator};
 use crate::model::Marketplace;
 use crate::model::config::MarketplaceConfig;
-use crate::skill::forward_slashed;
-use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
+use crate::vfs::forward_slashed;
 use crate::vfs::{PreviewWrite, Vfs};
 
 /// One root's comparison: equality across what it owns (the swap's grain) and
@@ -414,7 +413,7 @@ fn slices_of<'a>(
 /// among its members actually changed — the pack manifest can drift on its
 /// own (a description, an author) without a member having moved, and that is
 /// not this rule. The tail of the rule, the one that reads the installed
-/// manifest back, is [`crate::status::version_bump_if_unmoved`].
+/// manifest back, is [`version_bump_if_unmoved`].
 fn plugin_version_bump(
     dest: &DestTree<'_>,
     spec: Harness,
@@ -487,4 +486,52 @@ fn split_pack<'p>(packs: &str, relative: &'p str) -> Option<(&'p str, &'p str)> 
         Some((name, tail)) => (name, tail),
         None => (rest, ""),
     })
+}
+
+/// The version-bump rule's tail: given that a plugin's members moved, does
+/// the installed pack manifest still carry the version the vault currently
+/// declares?
+///
+/// `None` for an unreadable or unparseable manifest, and for one whose
+/// version has already moved: a bump that has happened is not a bump to
+/// suggest.
+fn version_bump_if_unmoved(
+    installed_manifest: Option<&[u8]>,
+    current_version: String,
+) -> Option<VersionBumpSuggestion> {
+    let published_version = serde_json::from_slice::<serde_json::Value>(installed_manifest?)
+        .ok()?
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)?;
+    (published_version == current_version).then_some(VersionBumpSuggestion {
+        current_version,
+        published_version,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unmoved_version_is_a_suggestion_and_a_moved_one_is_not() {
+        let manifest = br#"{"name":"p","version":"1.0.0"}"#;
+        assert_eq!(
+            version_bump_if_unmoved(Some(manifest), "1.0.0".to_owned()),
+            Some(VersionBumpSuggestion {
+                current_version: "1.0.0".to_owned(),
+                published_version: "1.0.0".to_owned(),
+            })
+        );
+        assert_eq!(
+            version_bump_if_unmoved(Some(manifest), "1.0.1".to_owned()),
+            None
+        );
+        assert_eq!(
+            version_bump_if_unmoved(Some(b"not json"), "1.0.0".to_owned()),
+            None
+        );
+        assert_eq!(version_bump_if_unmoved(None, "1.0.0".to_owned()), None);
+    }
 }

@@ -6,4 +6,4 @@ A difference between what `build` would write and what is in `dist/<m>/`. A miss
 
 ## In code
 
-`UnitStatus::Drift` in `export.rs`.
+`UnitStatus::Differs` in `export/report.rs`.

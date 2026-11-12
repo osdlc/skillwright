@@ -492,7 +492,7 @@ fn check_real_paths(vfs: &dyn Vfs, layout: &Layout) -> Result<(), CoreError> {
             format!(
                 "{MARKETPLACES_DIR}/{}/{}",
                 file.marketplace,
-                crate::skill::forward_slashed(inside)
+                crate::vfs::forward_slashed(inside)
             )
         });
         let target = real_rel
@@ -516,7 +516,7 @@ fn check_real_paths(vfs: &dyn Vfs, layout: &Layout) -> Result<(), CoreError> {
                 |to| to.display().to_string(),
             );
             let rel = link.strip_prefix(&layout.root).unwrap_or(link);
-            return Err(why.refuse(&crate::skill::forward_slashed(rel), &written));
+            return Err(why.refuse(&crate::vfs::forward_slashed(rel), &written));
         }
     }
     Ok(())
@@ -798,7 +798,7 @@ impl Walk<'_> {
             let written = self.vfs.read_link(path).unwrap_or_else(|_| target.clone());
             let rel = path.strip_prefix(self.root).unwrap_or(path);
             return Err(Unreachable::outside(market).refuse(
-                &crate::skill::forward_slashed(rel),
+                &crate::vfs::forward_slashed(rel),
                 &written.display().to_string(),
             ));
         }

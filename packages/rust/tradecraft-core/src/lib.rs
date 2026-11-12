@@ -9,21 +9,19 @@
 //! |---|---|
 //! | [`layout`] | The vault layout: find the root, check every folder, place a path |
 //! | [`discover`] | Read every note of a vault by its position and vet it |
-//! | [`skill`] | The frontmatter split and the small readers every note path shares |
 //! | [`keys`] | The closed key table: every frontmatter key, per kind |
 //! | [`frontmatter`] | skillwright's keys read out of a note, typed |
-//! | [`vault`] | The *vault* skill: `<name>/<name>.md` and the folder it owns |
+//! | [`note`] | One note read as the vault stores it, and the frontmatter split every note path shares |
 //! | [`content`] | The skill shape projection renders, and its peer resources |
 //! | [`compile`] | Embeds expanded, links rewritten, references collected |
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | The [`Harness`] names, each harness's row of data, and the translator |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
-//! | [`paths`] | Load a vault: its root file and its marketplaces ([`load_vault`]) |
+//! | [`paths`] | Lexical path helpers for a host |
 //! | [`field_edit`] | Read and set a note's `version`, keeping every other byte |
-//! | [`status`] | The version-bump rule a build and `bump` share |
 //! | [`guard`] | Containment resolved through links |
 //! | [`vfs`] | The filesystem seam every I/O-touching function takes |
-//! | [`model`] | The marketplace model: a vault loaded once, every body resolved |
+//! | [`model`] | The marketplace model: a vault loaded once ([`load_vault`]), every body resolved |
 //! | [`hooks_file`] | A plugin's `hooks/hooks.json`, parsed and localized per harness |
 //! | [`error`] | The crate's error type |
 //! | [`refusal`] | Every refusal token |
@@ -39,10 +37,10 @@
 //!
 //! | Name | Rule set | Where |
 //! |---|---|---|
-//! | vault spec | A skill is a folder `<s>/` holding its note `<s>.md` and the files it ships | [`vault`], [`export`] |
+//! | vault spec | A skill is a folder `<s>/` holding its note `<s>.md` and the files it ships | [`note`], [`export`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
 //! | CLI spec | Exit codes, stdout versus stderr, `--dry-run`, confirmation before writes | the `skillwright` crate |
-//! | Agent Skills spec | The public Agent Skills standard: `SKILL.md` frontmatter fields, name rules, and length caps on `description` and `compatibility` | [`skill`], [`discover`] |
+//! | Agent Skills spec | The public Agent Skills standard: `SKILL.md` frontmatter fields, name rules, and length caps on `description` and `compatibility` | [`note`], [`discover`] |
 //!
 //! # No `std::fs` above [`vfs`]
 //!
@@ -69,15 +67,12 @@ pub mod hooks_file;
 pub mod keys;
 pub mod layout;
 pub mod model;
+pub mod note;
 pub mod paths;
 pub(crate) mod projection;
 pub mod refusal;
 pub mod semver;
 pub mod settings;
-pub mod skill;
-pub mod status;
-mod text;
-pub mod vault;
 pub mod vfs;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
@@ -100,13 +95,14 @@ pub use layout::{
     KIND_DIRS, Layout, LayoutFile, MARKETPLACES_DIR, Place, Position, RESERVED_NAMES, SharedDir,
     check_vault_root, find_vault_root, is_vault_root, name_problem, read_layout,
 };
-pub use paths::{
-    BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file, resolve_path,
+pub use model::vault::{
+    BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file,
 };
+pub use note::{VaultNote, read_vault_note};
+pub use paths::resolve_path;
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
     BuildSettings, BumpSettings, PatchScheme, ROOT_FILE, RootFile, SettingsError, SharedDefaults,
     compose_root_file, parse_root_file,
 };
-pub use vault::{VaultNote, read_vault_note};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PreviewWrite, Vfs};

@@ -22,7 +22,7 @@
 //! Code is literal: nothing in a code span or fenced block is a link, an
 //! embed or a call, and it ships as written.
 //!
-//! [`crate::vault::read_vault_note`] still reads the body verbatim — the
+//! [`crate::note::read_vault_note`] still reads the body verbatim — the
 //! vault's bytes are canonical and a read must not rewrite them. Compilation
 //! is a separate pass between the read and the projection:
 //! [`compile_note`] takes the body the read produced and returns it compiled,
@@ -74,7 +74,7 @@ use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::layout::Layout;
 use crate::model::{PluginRootPath, ResolvedRef, SkillId};
-use crate::skill::read_utf8;
+use crate::note::read_utf8;
 use crate::vfs::{Vfs, normalize};
 use render::Renderer;
 
@@ -316,7 +316,7 @@ impl Renderer<'_> {
             // The strict split, not the lenient one: its yaml/shape recompose
             // the file byte-for-byte, so a resource's own frontmatter travels
             // verbatim and only the body changes. Carrying the author's bytes
-            // is this core's rule (see `crate::vault`), and it keeps a
+            // is this core's rule (see `crate::note`), and it keeps a
             // resource with no links byte-identical to its source.
             let split = frontmatter_lossless::split(&raw);
             let mut stack = vec![(source_path.clone(), None)];
@@ -544,7 +544,7 @@ mod tests {
         let layout = crate::layout::read_layout(&vfs, &root).unwrap();
 
         let raw = read_utf8(&vfs, &entry).unwrap();
-        let (_, body) = crate::skill::split_frontmatter(&raw);
+        let (_, body) = crate::note::split_frontmatter(&raw);
         let skills = SkillIndex::default();
         let calls = test_calls(&skills);
         let compile_source = CompileSource::new(&layout, &entry, "workflow-checklist", &calls);

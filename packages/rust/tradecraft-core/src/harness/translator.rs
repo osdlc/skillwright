@@ -58,7 +58,7 @@ impl FileTree {
     /// written in decides, the same as writes landing on one directory.
     pub fn insert(&mut self, path: &str, bytes: Vec<u8>, executable: bool) {
         self.files.insert(
-            crate::skill::forward_slashed(Path::new(path)),
+            crate::vfs::forward_slashed(Path::new(path)),
             PreviewWrite { bytes, executable },
         );
     }

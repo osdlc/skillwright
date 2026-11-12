@@ -6,7 +6,7 @@ One markdown file in the vault. Every note is `<name>.md` in a folder of the sam
 
 ## In code
 
-`VaultNote` in `vault.rs`.
+`VaultNote` in `note.rs`.
 
 ## Not to be confused with
 
