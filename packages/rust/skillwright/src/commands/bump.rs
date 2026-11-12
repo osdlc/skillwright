@@ -24,9 +24,9 @@ use tradecraft_core::discover::discover_in;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
     BumpLevel, CoreError, DiscoveredComponent, EntityKind, ExportMode, ExportReport, ExportUnit,
-    NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest, Vfs, build_vault,
-    dist_dir, is_vault_root, next_version, owned_paths, packs_path, parse_semver,
-    plugin_manifest_path, read_version, set_version,
+    Harness, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest, Vfs,
+    build_vault, dist_dir, is_vault_root, next_version, owned_paths, parse_semver, read_version,
+    set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -356,13 +356,13 @@ fn run_one(
 
 /// What the comparison against the baseline says about one plugin.
 #[derive(Debug, Default)]
-struct Verdict<'a> {
+struct Verdict {
     /// Its members differ and its version has not moved, in some root.
     bump: bool,
     /// Anything of it differs, in some root.
     drift: bool,
     /// The harness roots the render holds it in.
-    roots: Vec<&'a str>,
+    roots: Vec<Harness>,
 }
 
 /// Why a drifted, versioned plugin is not bumped: the `reason` token of a
@@ -396,13 +396,11 @@ impl Skip {
 
     /// Read the baseline's own manifests of `plugin` in `roots` to tell the
     /// three causes apart.
-    fn of(baseline: &Path, roots: &[&str], plugin: &str, current: &str) -> Skip {
+    fn of(baseline: &Path, roots: &[Harness], plugin: &str, current: &str) -> Skip {
         let mut held = false;
         for root in roots {
-            let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root))
-            else {
-                continue;
-            };
+            let format = root.format();
+            let (packs, manifest) = (format.policy.packs, format.plugin_manifest);
             let Ok(bytes) = std::fs::read(baseline.join(packs).join(plugin).join(manifest)) else {
                 continue;
             };
@@ -423,11 +421,10 @@ impl Skip {
 }
 
 /// Whether `dir` holds a plugin manifest for any of `roots`.
-fn holds_a_plugin_manifest(dir: &Path, roots: &[&str]) -> bool {
+fn holds_a_plugin_manifest(dir: &Path, roots: &[Harness]) -> bool {
     roots.iter().any(|root| {
-        let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root)) else {
-            return false;
-        };
+        let format = root.format();
+        let (packs, manifest) = (format.policy.packs, format.plugin_manifest);
         std::fs::read_dir(dir.join(packs)).is_ok_and(|entries| {
             entries
                 .flatten()
@@ -476,7 +473,7 @@ fn run_changed(
     let mut rows: Vec<Row> = Vec::new();
     for (market, mut request) in requests {
         request.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<&str> = match owned_paths(&run.loaded.settings, &request.harnesses) {
+        let mut roots: Vec<Harness> = match owned_paths(&run.loaded.settings, &request.harnesses) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return refused(ctx.err, &err.reason()),
         };
@@ -486,12 +483,12 @@ fn run_changed(
         {
             let expected: Vec<String> = roots
                 .iter()
-                .filter_map(|root| {
-                    Some(format!(
+                .map(|root| {
+                    let format = root.format();
+                    format!(
                         "{}/<plugin>/{}",
-                        packs_path(root)?,
-                        plugin_manifest_path(root)?
-                    ))
+                        format.policy.packs, format.plugin_manifest
+                    )
                 })
                 .collect();
             return refused(
@@ -521,7 +518,7 @@ fn run_changed(
                 let verdict = verdicts.entry(name.as_str()).or_default();
                 verdict.bump |= version_bump_suggestion.is_some();
                 verdict.drift |= *status == UnitStatus::Drift;
-                verdict.roots.push(root.as_str());
+                verdict.roots.push(*root);
             }
         }
 

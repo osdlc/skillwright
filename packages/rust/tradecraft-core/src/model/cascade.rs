@@ -47,6 +47,7 @@ use crate::discover::DiscoveredComponent;
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
+use crate::harness::Harness;
 use crate::harness::manifest::{plugin_block, plugin_identity};
 use crate::keys;
 use crate::settings::SharedDefaults;
@@ -117,14 +118,11 @@ impl Cascade {
             note.content.license = plugin_identity(&self.config, plugin).license;
         }
         let own_metadata = crate::projection::skill_metadata(&note.content);
-        for harness in keys::HARNESS_BLOCKS
-            .iter()
-            .filter(|harness| keys::inherits(kind, harness))
+        for harness in Harness::ALL
+            .into_iter()
+            .filter(|harness| keys::inherits(kind, harness.as_str()))
         {
-            let Some(profile) = crate::harness::profile_named(harness) else {
-                continue;
-            };
-            let reaching = profile.member_block_keys(kind);
+            let reaching = harness.member_block_keys(kind);
             for (key, value) in plugin_block(&self.config, plugin, harness) {
                 let merges = key == "metadata" && value.is_object();
                 if !reaching.contains(&key) || (!merges && note.frontmatter.own_keys.contains(&key))
@@ -134,7 +132,7 @@ impl Cascade {
                 let block = note
                     .frontmatter
                     .blocks
-                    .entry((*harness).to_owned())
+                    .entry(harness.to_string())
                     .or_insert_with(|| Value::Object(Map::new()));
                 let Some(block) = block.as_object_mut() else {
                     continue;
@@ -269,9 +267,9 @@ pub fn fold_harness_blocks(
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
     for (harness, block) in &note.blocks {
-        // `VaultFrontmatter::take_from` keeps only the harness blocks
-        // ([`crate::keys::HARNESS_BLOCKS`]), each a mapping.
-        debug_assert!(crate::harness::KNOWN_TARGETS.contains(&harness.as_str()));
+        // `VaultFrontmatter::take_from` keeps only the harness blocks, each a
+        // mapping.
+        debug_assert!(Harness::parse(harness).is_ok());
         let block = block.as_object().cloned().unwrap_or_default();
         folded.insert(harness.clone(), block);
     }
@@ -280,7 +278,9 @@ pub fn fold_harness_blocks(
     // never refused. A key it reads takes the form every harness reads: a
     // flag such as `yes` becomes a real boolean, a list hint its text.
     for (canonical, block) in &mut folded {
-        let accepted = accepted_override_keys(canonical);
+        let accepted = Harness::parse(canonical)
+            .map(Harness::accepted_override_keys)
+            .unwrap_or_default();
         // Not `Map::retain`: the serde_json floor predates it.
         *block = std::mem::take(block)
             .into_iter()
@@ -309,15 +309,4 @@ pub fn fold_harness_blocks(
         }
     }
     Ok(folded)
-}
-
-/// Every key one harness reads in an override block, from that runtime's
-/// own capability declaration.
-///
-/// Empty for a name this build maps to no runtime, which is what makes every
-/// key under such a target a refusal rather than an unchecked write.
-fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String> {
-    crate::harness::profile_named(canonical)
-        .map(|p| p.accepted_override_keys())
-        .unwrap_or_default()
 }

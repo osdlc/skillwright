@@ -115,8 +115,6 @@ pub const UNKNOWN_HOOK_PLACEHOLDER: Token = Token("unknown-hook-placeholder");
 pub const UNKNOWN_MARKETPLACE: Token = Token("unknown-marketplace");
 /// A plugin's `naming` is not `bare` or `prefixed`.
 pub const UNKNOWN_NAMING: Token = Token("unknown-naming");
-/// A target name the wasm binding does not know.
-pub const UNKNOWN_TARGET: Token = Token("unknown-target");
 /// A note that cannot be read: not UTF-8, frontmatter that will not parse, or
 /// a value the Agent Skills spec does not admit.
 pub const UNREADABLE_NOTE: Token = Token("unreadable-note");

@@ -21,6 +21,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::frontmatter::EntityKind;
+use crate::harness::Harness;
 use crate::keys::{KEYS, Shape};
 use crate::skill::split_frontmatter;
 
@@ -244,29 +245,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
                 check_shape(shared, &value)?;
                 defaults.insert(serde_yaml::Value::String(key), value);
             }
-            harness if crate::keys::HARNESS_BLOCKS.contains(&harness) => {
-                let block: Option<serde_json::Map<String, serde_json::Value>> =
-                    field(&key, &value, "a mapping of that harness's own keys")?;
-                if let Some(block) = block {
-                    let known = serde_json::Map::from_iter([(
-                        key.clone(),
-                        serde_json::Value::Object(block.clone()),
-                    )]);
-                    let unknown = crate::discover::unknown_container_block_keys(
-                        &known,
-                        EntityKind::Marketplace,
-                    );
-                    for unknown in &unknown {
-                        root.warnings.push(format!(
-                            "`{unknown}` reaches no file that harness reads; it is ignored"
-                        ));
-                    }
-                    let block = crate::harness::field_types::with_author_shorthand(
-                        crate::harness::field_types::without_unset(&key, block, &unknown),
-                    );
-                    root.defaults.blocks.insert(key, block);
-                }
-            }
+            harness if Harness::parse(harness).is_ok() => harness_block(key, &value, &mut root)?,
             _ => root.warnings.push(format!(
                 "`{key}` is not a key skillwright reads in {ROOT_FILE}; it is ignored"
             )),
@@ -293,25 +272,43 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
     Ok(root)
 }
 
-/// Refuses a name in `names` that is not in [`crate::harness::KNOWN_TARGETS`].
-fn check_harness_names(key: &str, names: Option<&[String]>) -> Result<(), SettingsError> {
-    let unknown: Vec<&str> = names
-        .into_iter()
-        .flatten()
-        .map(String::as_str)
-        .filter(|name| !crate::harness::KNOWN_TARGETS.contains(name))
-        .collect();
-    if unknown.is_empty() {
+/// A root file's harness block `key` into `root`'s defaults, its unknown keys
+/// warned about and dropped.
+fn harness_block(
+    key: String,
+    value: &serde_yaml::Value,
+    root: &mut RootFile,
+) -> Result<(), SettingsError> {
+    let block: Option<serde_json::Map<String, serde_json::Value>> =
+        field(&key, value, "a mapping of that harness's own keys")?;
+    let Some(block) = block else {
         return Ok(());
+    };
+    let known =
+        serde_json::Map::from_iter([(key.clone(), serde_json::Value::Object(block.clone()))]);
+    let unknown = crate::discover::unknown_container_block_keys(&known, EntityKind::Marketplace);
+    for unknown in &unknown {
+        root.warnings.push(format!(
+            "`{unknown}` reaches no file that harness reads; it is ignored"
+        ));
     }
-    Err(SettingsError {
-        key: key.to_owned(),
-        what: "a list of harnesses",
-        detail: format!(
-            "it {}",
-            crate::harness::profile::unknown_targets_detail(&unknown)
-        ),
-    })
+    let block = crate::harness::field_types::with_author_shorthand(
+        crate::harness::field_types::without_unset(&key, block, &unknown),
+    );
+    root.defaults.blocks.insert(key, block);
+    Ok(())
+}
+
+/// Refuses a name in `names` that is not a [`Harness`].
+fn check_harness_names(key: &str, names: Option<&[String]>) -> Result<(), SettingsError> {
+    for name in names.into_iter().flatten() {
+        Harness::parse(name).map_err(|err| SettingsError {
+            key: key.to_owned(),
+            what: "a list of harnesses",
+            detail: err.detail(),
+        })?;
+    }
+    Ok(())
 }
 
 /// Why the root file refuses the top-level `key`, or `None` when it reads or
@@ -402,11 +399,11 @@ pub(crate) const PACKS_REFUSAL: &str = "each harness's packs folder is fixed; de
 /// ([`crate::keys::named_blocks`], [`crate::keys::refused_block_keys`]). A
 /// block with no JSON form is left out; [`field`] refuses it.
 fn harness_blocks_in(map: &serde_yaml::Mapping) -> serde_json::Map<String, serde_json::Value> {
-    crate::keys::HARNESS_BLOCKS
+    Harness::ALL
         .iter()
         .filter_map(|harness| {
-            let block = serde_json::to_value(map.get(*harness)?).ok()?;
-            Some(((*harness).to_owned(), block))
+            let block = serde_json::to_value(map.get(harness.as_str())?).ok()?;
+            Some((harness.to_string(), block))
         })
         .collect()
 }

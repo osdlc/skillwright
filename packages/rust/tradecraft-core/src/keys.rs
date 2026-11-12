@@ -22,7 +22,7 @@
 use serde_json::Value;
 
 use crate::frontmatter::EntityKind;
-use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
+use crate::harness::Harness;
 
 /// Who a key belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,11 +213,6 @@ const CONTAINERS: &[EntityKind] = &[Marketplace, Plugin];
 const COMPONENTS: &[EntityKind] = &[Skill, Agent, Command];
 const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
 
-/// The harnesses that take a block of their own keys: every harness row. A
-/// test holds this list to [`crate::harness::with_plugin_format`] and to the
-/// [`Shape::HarnessBlock`] rows of [`KEYS`].
-pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.name];
-
 /// The key no note sets, at the top level or in a harness block: the folder
 /// gives the name.
 pub const NAME_KEY: &str = "name";
@@ -231,11 +226,11 @@ pub const REFUSED_BLOCK_KEYS: &[&str] = &["packs"];
 
 /// `<harness>.name` for each harness block in `fields` that sets `name`.
 pub(crate) fn named_blocks(fields: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
-    HARNESS_BLOCKS
+    Harness::ALL
         .iter()
         .filter(|harness| {
             fields
-                .get(**harness)
+                .get(harness.as_str())
                 .and_then(serde_json::Value::as_object)
                 .is_some_and(|block| block.contains_key(NAME_KEY))
         })
@@ -251,7 +246,7 @@ pub(crate) fn refused_block_keys(
 ) -> Vec<String> {
     fields
         .iter()
-        .filter(|(harness, _)| HARNESS_BLOCKS.contains(&harness.as_str()))
+        .filter(|(harness, _)| Harness::parse(harness).is_ok())
         .flat_map(|(harness, block)| {
             let keys = block.as_object().into_iter().flat_map(|block| block.keys());
             keys.filter(|key| REFUSED_BLOCK_KEYS.contains(&key.as_str()))
@@ -460,7 +455,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "An agent's sampling temperature.",
     },
     KeySpec {
-        key: CLAUDE.name,
+        key: Harness::Claude.as_str(),
         kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -468,7 +463,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Claude Code reads, in its own key names, merged over what skillwright generates.",
     },
     KeySpec {
-        key: CODEX.name,
+        key: Harness::Codex.as_str(),
         kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -476,7 +471,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`.",
     },
     KeySpec {
-        key: CURSOR.name,
+        key: Harness::Cursor.as_str(),
         kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -484,7 +479,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Cursor reads, in its own key names.",
     },
     KeySpec {
-        key: PI.name,
+        key: Harness::Pi.as_str(),
         kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -583,6 +578,14 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
             ));
         }
     }
+    push_harness_blocks(&mut out);
+    out
+}
+
+/// The field reference's harness-block section: what each harness's block
+/// accepts, by kind.
+#[cfg(test)]
+fn push_harness_blocks(out: &mut String) {
     out.push_str(
         r#"
 ## Harness blocks
@@ -604,14 +607,14 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
         let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
         keys.join(", ")
     };
-    for profile in crate::harness::with_plugin_format() {
-        out.push_str(&format!("\n### `{}:`\n\n", profile.name));
+    for harness in Harness::ALL {
+        out.push_str(&format!("\n### `{harness}:`\n\n"));
         for (kind, label) in [
             (Skill, "Skill and command"),
             (Plugin, "Plugin"),
             (Marketplace, "Marketplace"),
         ] {
-            let keys = profile
+            let keys = harness
                 .block_keys(kind)
                 .expect("a plugin row checks these kinds' blocks");
             out.push_str(&format!("- {label}: {}\n", list(keys)));
@@ -620,14 +623,13 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
                     out.push_str("- Agent: not checked.\n");
                     continue;
                 }
-                Plugin => ("skills and commands", profile.member_block_keys(Skill)),
-                _ => ("plugins", profile.passed_down_keys()),
+                Plugin => ("skills and commands", harness.member_block_keys(Skill)),
+                _ => ("plugins", harness.passed_down_keys()),
             };
             let kept = keys.difference(passed).cloned().collect();
             out.push_str(&format!("- {label}, kept from {member}: {}\n", list(&kept)));
         }
     }
-    out
 }
 
 /// The table's entry for `key` on a note of `kind`, if it lists one.
@@ -697,7 +699,7 @@ mod tests {
             .map(|spec| spec.key)
             .collect();
         let mut decided = vec!["author", "license", "repository", "homepage"];
-        decided.extend(HARNESS_BLOCKS);
+        decided.extend(Harness::ALL.map(Harness::as_str));
         assert_eq!(listed, decided.into_iter().collect());
         assert!(inherits(Skill, "license"));
         assert!(!inherits(Agent, "license"));
@@ -713,9 +715,9 @@ mod tests {
 
     #[test]
     fn every_harness_block_is_in_the_table() {
-        for block in HARNESS_BLOCKS {
+        for block in Harness::ALL {
             for kind in PUBLISHED {
-                assert!(is_owned(*kind, block), "{block} on {kind:?}");
+                assert!(is_owned(*kind, block.as_str()), "{block} on {kind:?}");
             }
         }
     }
@@ -856,8 +858,7 @@ mod tests {
     fn the_field_reference_lists_exactly_the_keys_check_accepts() {
         use serde_json::{Map, Value, json};
         let reference = field_reference();
-        for profile in crate::harness::with_plugin_format() {
-            let harness = profile.name;
+        for harness in Harness::ALL {
             assert!(
                 reference.contains(&format!("### `{harness}:`\n\n- Skill and command: ")),
                 "{harness}"
@@ -868,15 +869,15 @@ mod tests {
                 (Plugin, "Plugin"),
                 (Marketplace, "Marketplace"),
             ] {
-                let keys = listed(&reference, harness, label);
+                let keys = listed(&reference, harness.as_str(), label);
                 assert_eq!(
                     &keys,
-                    profile.block_keys(kind).unwrap(),
+                    harness.block_keys(kind).unwrap(),
                     "{harness} {label}"
                 );
                 let unknown = |key: &str| {
                     let block: Map<String, Value> = Map::from_iter([(key.to_owned(), json!(1))]);
-                    let blocks = Map::from_iter([(harness.to_owned(), Value::Object(block))]);
+                    let blocks = Map::from_iter([(harness.to_string(), Value::Object(block))]);
                     if kind == Skill {
                         crate::discover::unknown_component_block_keys(&blocks)
                     } else {
@@ -892,12 +893,12 @@ mod tests {
                 }
                 // Every key another harness lists here, and this one does
                 // not, warns.
-                let others: std::collections::BTreeSet<&String> =
-                    crate::harness::with_plugin_format()
-                        .filter_map(|other| other.block_keys(kind))
-                        .flatten()
-                        .filter(|key| !keys.contains(*key))
-                        .collect();
+                let others: std::collections::BTreeSet<&String> = Harness::ALL
+                    .into_iter()
+                    .filter_map(|other| other.block_keys(kind))
+                    .flatten()
+                    .filter(|key| !keys.contains(*key))
+                    .collect();
                 assert!(!others.is_empty(), "{harness} {label}");
                 for key in others {
                     assert_eq!(

@@ -15,9 +15,8 @@
 //! | [`vault`] | The *vault* skill: `<name>/<name>.md` and the folder it owns |
 //! | [`content`] | The skill shape projection renders, and its peer resources |
 //! | [`compile`] | Embeds expanded, links rewritten, references collected |
-//! | [`projection`] | One skill to one target's files, via `agent-adapt` |
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
-//! | [`harness`] | Each harness as a profile row (data) and a translator (code), and the target names |
+//! | [`harness`] | The [`Harness`] names, each harness's row of data, and the translator |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
 //! | [`paths`] | Load a vault: its root file and its marketplaces ([`load_vault`]) |
 //! | [`field_edit`] | Read and set a note's `version`, keeping every other byte |
@@ -71,7 +70,7 @@ pub mod keys;
 pub mod layout;
 pub mod model;
 pub mod paths;
-pub mod projection;
+pub(crate) mod projection;
 pub mod refusal;
 pub mod semver;
 pub mod settings;
@@ -93,13 +92,13 @@ pub use discover::{
 pub use error::*;
 pub use export::{
     ExportMode, ExportReport, ExportUnit, MarketplaceRefusal, MarketplaceReport, SkillNaming,
-    StaleKind, UnitStatus, VaultReport, VaultRequest, build_vault, marketplace_manifest_path,
-    owned_paths, packs_path, plugin_manifest_path, published_skill_name, rendered_skill_call,
+    StaleKind, UnitStatus, VaultReport, VaultRequest, build_vault, owned_paths,
+    published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
-pub use harness::KNOWN_TARGETS;
-pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
+pub use harness::{Harness, KNOWN_TARGETS};
+pub use keys::{KEYS, KeySpec, Owner, Shape};
 pub use layout::{
     KIND_DIRS, Layout, LayoutFile, MARKETPLACES_DIR, Place, Position, RESERVED_NAMES, SharedDir,
     check_vault_root, find_vault_root, is_vault_root, name_problem, read_layout,

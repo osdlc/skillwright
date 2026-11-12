@@ -15,7 +15,7 @@
 use serde_json::Value;
 
 use crate::frontmatter::EntityKind;
-use crate::harness::{HarnessProfile, PluginDialect};
+use crate::harness::Harness;
 use crate::keys::Shape;
 
 /// One kind of JSON value.
@@ -291,13 +291,13 @@ const PI: &[(&str, FieldType)] = &[
     ("pi", OBJECT),
 ];
 
-/// The container key types of the harness whose manifests take `dialect`.
-pub(crate) fn facts_for(dialect: PluginDialect) -> &'static [(&'static str, FieldType)] {
-    match dialect {
-        PluginDialect::Claude => CLAUDE,
-        PluginDialect::Codex => CODEX,
-        PluginDialect::Cursor => CURSOR,
-        PluginDialect::Pi => PI,
+/// The container key types of `harness`'s manifests.
+pub(crate) fn facts_for(harness: Harness) -> &'static [(&'static str, FieldType)] {
+    match harness {
+        Harness::Claude => CLAUDE,
+        Harness::Codex => CODEX,
+        Harness::Cursor => CURSOR,
+        Harness::Pi => PI,
     }
 }
 
@@ -327,16 +327,16 @@ impl Shape {
     }
 }
 
-/// The type of `key` in a marketplace's or plugin's block for `profile`: the
+/// The type of `key` in a marketplace's or plugin's block for `harness`: the
 /// facts' type, or for a key that passes to members, [`component_type`].
 /// `None` for a key neither gives a type.
-pub(crate) fn container_type(profile: &HarnessProfile, key: &str) -> Option<FieldType> {
-    facts_for(profile.format().dialect)
+pub(crate) fn container_type(harness: Harness, key: &str) -> Option<FieldType> {
+    facts_for(harness)
         .iter()
         .find(|(name, _)| *name == key)
         .map(|(_, ty)| *ty)
         .or_else(|| {
-            profile
+            harness
                 .member_block_keys(EntityKind::Skill)
                 .contains(key)
                 .then(|| component_type(EntityKind::Skill, key))
@@ -351,30 +351,29 @@ mod tests {
 
     /// Container keys a harness reads that no fact gives a type for, by harness.
     /// They are not checked. `naming` has its own check.
-    const UNTYPED: &[(&str, &[&str])] = &[(
-        "pi",
+    const UNTYPED: &[(Harness, &[&str])] = &[(
+        Harness::Pi,
         &["description", "author", "license", "repository", "homepage"],
     )];
 
     /// Every key a container block accepts has a type, or is named untyped.
     #[test]
     fn every_container_key_is_typed_or_named() {
-        for profile in crate::harness::with_plugin_format() {
-            let format = profile.format();
+        for harness in Harness::ALL {
+            let policy = harness.format().policy;
             let untyped: &[&str] = UNTYPED
                 .iter()
-                .find(|(harness, _)| *harness == profile.name)
+                .find(|(untyped, _)| *untyped == harness)
                 .map_or(&[], |(_, keys)| keys);
-            let keys = format
+            let keys = policy
                 .manifest_fields
                 .iter()
-                .chain(format.entry_fields)
-                .chain(format.marketplace_fields);
+                .chain(policy.entry_fields)
+                .chain(policy.marketplace_fields);
             for key in keys {
                 assert!(
-                    container_type(profile, key).is_some() != untyped.contains(key),
-                    "{}.{key}",
-                    profile.name
+                    container_type(harness, key).is_some() != untyped.contains(key),
+                    "{harness}.{key}"
                 );
             }
         }
@@ -409,10 +408,9 @@ mod tests {
             component_type(EntityKind::Skill, "tools"),
             Some(STRING_OR_STRINGS)
         );
-        let profile = |name| crate::harness::profile_named(name).unwrap();
-        assert_eq!(container_type(profile("codex"), "policy"), Some(OBJECT));
-        assert_eq!(container_type(profile("claude"), "model"), Some(STRING));
-        assert_eq!(container_type(profile("pi"), "author"), None);
+        assert_eq!(container_type(Harness::Codex, "policy"), Some(OBJECT));
+        assert_eq!(container_type(Harness::Claude, "model"), Some(STRING));
+        assert_eq!(container_type(Harness::Pi, "author"), None);
     }
 
     #[test]

@@ -1,11 +1,11 @@
 //! The report's format gate. A format change in `src/report.rs` that is not also made here must fail.
 
 use skillwright::report::{render_export_tally, render_unit_line};
-use tradecraft_core::{ExportMode, ExportUnit, StaleKind, UnitStatus};
+use tradecraft_core::{ExportMode, ExportUnit, Harness, StaleKind, UnitStatus};
 
 fn plugin(status: UnitStatus) -> ExportUnit {
     ExportUnit::Plugin {
-        root: "claude".to_string(),
+        root: Harness::Claude,
         name: "tools".to_string(),
         skills: 2,
         status,
@@ -15,14 +15,14 @@ fn plugin(status: UnitStatus) -> ExportUnit {
 
 fn manifest(status: UnitStatus) -> ExportUnit {
     ExportUnit::Manifest {
-        root: "claude".to_string(),
+        root: Harness::Claude,
         status,
     }
 }
 
 fn stale() -> ExportUnit {
     ExportUnit::Stale {
-        root: "claude".to_string(),
+        root: Harness::Claude,
         path: ".claude-plugin/packs/gone".to_string(),
         kind: StaleKind::Plugin,
     }
@@ -30,7 +30,7 @@ fn stale() -> ExportUnit {
 
 fn stale_file() -> ExportUnit {
     ExportUnit::Stale {
-        root: "claude".to_string(),
+        root: Harness::Claude,
         path: ".claude-plugin/README.md".to_string(),
         kind: StaleKind::File,
     }
@@ -60,7 +60,7 @@ mod render_unit_line_tests {
     #[test]
     fn a_member_one_root_cannot_carry_names_that_root() {
         let unit = ExportUnit::NotCarried {
-            root: Some("codex".to_string()),
+            root: Some(Harness::Codex),
             path: "marketplaces/house/plugins/tools/commands/ship.md".to_string(),
             kind: "command".to_string(),
         };
