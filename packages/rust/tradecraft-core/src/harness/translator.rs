@@ -405,7 +405,7 @@ impl Translator {
         let mut projection = projection_of(skill, |body| self.render_body(plugin, body))?;
         projection.content.name = published.clone();
         mark_generated(&mut projection, &skill.path);
-        let files = project_skill(&projection, self.0)?;
+        let files = project_skill(&projection, self.0.profile().runtime, self.0.as_str())?;
         let strip = format!("{}/{published}/", format.skills_dir);
         for file in files {
             let relative = file.relative_path.strip_prefix(&strip).ok_or_else(|| {
@@ -443,7 +443,7 @@ impl Translator {
         mark_generated(&mut projection, &command.path);
         // A command projects to exactly one file, so the file's own name is
         // all that travels onto `commands/`.
-        let files = project_command(&projection, self.0)?;
+        let files = project_command(&projection, self.0.profile().runtime, self.0.as_str())?;
         for file in files {
             let filename = Path::new(&file.relative_path).file_name().ok_or_else(|| {
                 CoreError::Projection(format!(

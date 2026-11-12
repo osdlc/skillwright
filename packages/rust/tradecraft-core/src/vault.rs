@@ -514,7 +514,8 @@ mod tests {
                 content: note.content,
                 resources: Vec::new(),
             },
-            crate::harness::Harness::Pi,
+            crate::harness::Harness::Pi.profile().runtime,
+            "pi",
         )
         .unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
