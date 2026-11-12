@@ -1,17 +1,17 @@
 //! The CLI's `build` verb and a request built the way another host builds
 //! it must render byte-identical trees for the same vault.
 //!
-//! Both sides reach the same `tradecraft_core::export_skills`. The host side
+//! Both sides reach the same `tradecraft_core::build_vault`. The host side
 //! is not reachable from here, so this calls that function directly with a
-//! request shaped the way a host that embeds the core shapes it: name,
-//! display_name, owner and author absent, `plugins` empty. What it proves:
+//! request shaped the way a host that embeds the core shapes it: the vault
+//! root and the marketplace's name, nothing else. What it proves:
 //! the CLI's own flag-to-request resolution in `commands/marketplace.rs` and
 //! a host's request-building do not disagree about what an equivalent build
 //! means.
 //!
-//! The vault is `freeform-vault`, the shared parity fixture: two
-//! marketplaces, so `--marketplace acme` is required on both sides or the
-//! render refuses `ambiguous-marketplace`.
+//! The vault is `freeform-vault`, the shared parity fixture, with two
+//! marketplaces. The CLI builds a copy of it with `--marketplace acme` into
+//! the copy's `dist/acme/`; the host names `acme` on its request.
 
 mod common;
 
@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
-use tradecraft_core::{ExportRequest, Namespace, NativeVfs, RootFile, export_skills};
+use tradecraft_core::{NativeVfs, VaultRequest, build_vault};
 
 fn fixture_vault() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -60,49 +60,53 @@ fn is_executable(_path: &Path) -> bool {
     false
 }
 
+/// A recursive copy. `fs::copy` keeps each file's permissions.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
 #[test]
 fn the_cli_and_a_host_request_render_identical_trees() {
     let vault = fixture_vault();
     let dir = tempfile::tempdir().unwrap();
-    let cli_out = dir.path().join("cli");
-    let host_out = dir.path().join("host");
+    let copy = dir.path().join("freeform-vault");
+    copy_tree(&vault, &copy);
+    let cli_out = copy.join("dist/acme");
+    // The host builds its own copy: a build always writes `<root>/dist/<m>/`.
+    let host_copy = dir.path().join("host/freeform-vault");
+    copy_tree(&vault, &host_copy);
+    let host_out = host_copy.join("dist/acme");
 
-    let argv: Vec<String> = [
-        "build",
-        "--vault",
-        &vault.display().to_string(),
-        "--out",
-        &cli_out.display().to_string(),
-        "--marketplace",
-        "acme",
-        "--yes",
-    ]
-    .iter()
-    .map(|s| (*s).to_string())
-    .collect();
+    let argv: Vec<String> = ["build", "--marketplace", "acme", "--yes"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
 
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
     let code = {
-        let mut ctx = CommandContext::new(dir.path(), &mut out, &mut err);
+        let mut ctx = CommandContext::new(&copy, &mut out, &mut err);
         run_with(&argv, &mut ctx)
     };
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
     assert!(cli_out.is_dir());
+    assert!(!copy.join("dist/labs").exists());
 
-    export_skills(
-        &NativeVfs,
-        &{
-            // The vault has no root file, so the CLI reads it with every
-            // default; the host asks the core for the same defaults.
-            let config =
-                RootFile::default().to_config(&vault.file_name().unwrap().to_string_lossy());
-            let mut request = ExportRequest::new(vault.clone(), host_out.clone(), config);
-            request.marketplace = Some("acme".to_string());
-            request
-        },
-        &Namespace::default(),
-    )
+    build_vault(&NativeVfs, &{
+        // The core reads the root file itself, as the CLI's build does.
+        let mut request = VaultRequest::new(host_copy.clone());
+        request.marketplace = Some("acme".to_string());
+        request
+    })
     .unwrap();
     assert!(host_out.is_dir());
 
@@ -121,34 +125,4 @@ fn the_cli_and_a_host_request_render_identical_trees() {
         // dropped it would not be the identical tree this test requires.
         assert_eq!(is_executable(&a), is_executable(&b), "{rel:?}");
     }
-}
-
-#[test]
-fn a_vault_holding_two_marketplaces_refuses_a_build_that_names_neither() {
-    let vault = fixture_vault();
-    let dir = tempfile::tempdir().unwrap();
-    let argv: Vec<String> = [
-        "build",
-        "--vault",
-        &vault.display().to_string(),
-        "--out",
-        &dir.path().join("out").display().to_string(),
-        "--yes",
-    ]
-    .iter()
-    .map(|s| (*s).to_string())
-    .collect();
-
-    let mut out: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let code = {
-        let mut ctx = CommandContext::new(dir.path(), &mut out, &mut err);
-        run_with(&argv, &mut ctx)
-    };
-    // A run-level blocker: nothing was staged, so there is no report to
-    // print — and the core's own token leads the reason.
-    assert_eq!(code, 2);
-    let message = String::from_utf8(err).unwrap();
-    assert!(message.starts_with("build failed: "), "{message}");
-    assert!(message.contains("marketplace"), "{message}");
 }

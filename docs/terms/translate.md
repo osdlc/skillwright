@@ -6,4 +6,4 @@ The third stage: turn the validated [marketplace-model](marketplace-model.md) in
 
 ## In code
 
-`HarnessTranslator::translate` (whole marketplace) and `translate_component` / `translate_pack` (publish) in `harness/translator.rs`.
+`HarnessTranslator::translate` in `harness/translator.rs`.

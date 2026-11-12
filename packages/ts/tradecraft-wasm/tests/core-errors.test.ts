@@ -3,25 +3,20 @@
  * its message names.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import {
-  adoptSkills,
-  CoreError,
-  discoverComponents,
-  exportSkills,
-  InvalidNamespaceError,
-  publishSkill,
-  statusOf,
-} from '../src/core.ts'
+import { CoreError, discoverComponents } from '../src/core.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
 let tmp: string
 
 beforeEach(() => {
   tmp = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'tradecraft-core-errors-')))
+  // A vault root, so the scan gets past the root check to the folder reads.
+  writeFileSync(path.join(tmp, 'skillwright.md'), '---\n---\n')
+  mkdirSync(path.join(tmp, 'marketplaces'))
 })
 
 afterEach(() => {
@@ -56,63 +51,6 @@ describe('a host filesystem that throws a value with no message', () => {
       expect(raw).toBeInstanceOf(CoreError)
       expect((raw as CoreError).coreName).toBe('Io')
       expect((raw as CoreError).message).toContain(tmp)
-    })
-  }
-})
-
-describe('a bad namespace on a JSON export', () => {
-  const namespace = 'Bad Stem!'
-  const calls: Array<[string, (vfs: Vfs) => unknown]> = [
-    [
-      'publishSkill',
-      (vfs) =>
-        publishSkill(vfs, {
-          skill_path: path.join(tmp, 'note.md'),
-          destination_root: path.join(tmp, 'out'),
-          target: 'claude',
-          namespace,
-        }),
-    ],
-    ['discoverComponents', (vfs) => discoverComponents(vfs, { vault_root: tmp, namespace })],
-    [
-      'exportSkills',
-      (vfs) =>
-        exportSkills(vfs, {
-          vault_root: tmp,
-          out_root: path.join(tmp, 'out'),
-          mode: 'check',
-          config: { name: 'core' },
-          namespace,
-        }),
-    ],
-    [
-      'adoptSkills',
-      (vfs) =>
-        adoptSkills(vfs, {
-          source: path.join(tmp, 'in'),
-          vault_root: tmp,
-          adopted_at: '2026-01-01T00:00:00Z',
-          namespace,
-        }),
-    ],
-    [
-      'statusOf',
-      (vfs) =>
-        statusOf(vfs, {
-          skill_path: path.join(tmp, 'note.md'),
-          destination_root: path.join(tmp, 'out'),
-          target: 'claude',
-          namespace,
-        }),
-    ],
-  ]
-
-  for (const [name, call] of calls) {
-    test(`${name} throws InvalidNamespaceError`, () => {
-      const raw = thrownBy(() => call(createNodeVfs()))
-
-      expect(raw).toBeInstanceOf(InvalidNamespaceError)
-      expect((raw as Error).message).toContain(namespace)
     })
   }
 })

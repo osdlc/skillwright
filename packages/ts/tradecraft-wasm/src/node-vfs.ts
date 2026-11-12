@@ -8,7 +8,7 @@
  * passes in is converted to the host's spelling before an `fs` call, and each
  * path an `fs` call answers with is converted back (see `host-path.ts`).
  *
- * Synchronous by design: the core (`tradecraft-core::publish_skill`) is
+ * Synchronous by design: the core (`tradecraft-core`) is
  * synchronous end to end, so every host bridge is too — see
  * `packages/rust/tradecraft-wasm/src/js_vfs.rs`.
  */
@@ -53,7 +53,7 @@ export interface BaseVfs {
    * a rendered root beside the live one and swaps the two by rename. They are
    * optional on a host, which fails only when something actually renames or
    * removes — see
-   * `packages/rust/tradecraft-wasm/src/js_vfs.rs` — but `exportSkills` renames,
+   * `packages/rust/tradecraft-wasm/src/js_vfs.rs` — but `buildVault` renames,
    * so this host implements both.
    *
    * Deliberately narrower than `fs.renameSync`: `to` must NOT exist. POSIX
@@ -75,9 +75,9 @@ export interface BaseVfs {
 
 /**
  * The link questions. With all three the core can see symlinks, so it runs its
- * symlink-aware checks and the narrowed rails that rely on them (an export
+ * symlink-aware checks and the narrowed ones that rely on them (an export
  * whose out root holds the vault, for one). A host without real filesystem
- * access leaves them out and gets the strict rails. The throws are part of the
+ * access leaves them out and gets the strict checks. The throws are part of the
  * contract — see `packages/rust/tradecraft-wasm/src/js_vfs.rs`.
  */
 export interface LinkMethods {

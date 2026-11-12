@@ -1,23 +1,36 @@
-//! A canonical hooks file, built into every pack: the per-harness hooks files
-//! and the gap report against fixtures under `tests/fixtures/hooks-file/`.
+//! A plugin's `hooks/hooks.json`, built into the packs whose harness carries
+//! hooks, against fixtures under `tests/fixtures/hooks-file/` (spec section 4
+//! rule 23).
 //!
 //! `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test hooks_file`
 //! rewrites the expected files from the current output.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
-use tradecraft_core::{
-    ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig, MemVfs, Namespace, Vfs,
-    export_skills,
-};
+use tradecraft_core::{ExportMode, ExportReport, MemVfs, VaultRequest, Vfs};
+
+/// `build_vault` over the one marketplace a request covers: its report.
+fn export(
+    vfs: &dyn tradecraft_core::Vfs,
+    request: &tradecraft_core::VaultRequest,
+) -> Result<tradecraft_core::ExportReport, tradecraft_core::CoreError> {
+    let mut report = tradecraft_core::build_vault(vfs, request)?;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    Ok(report.marketplaces.remove(0).report)
+}
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hooks-file");
 
+const PLUGIN: &str = "/vault/marketplaces/house/plugins/core";
+
+const HOOKS_REL: &str = "marketplaces/house/plugins/core/hooks/hooks.json";
+
 const PACKS: [(&str, &str); 4] = [
-    ("claude", "/market/.claude-plugin/packs/core"),
-    ("codex", "/market/.agents/packs/core"),
-    ("cursor", "/market/.cursor-plugin/packs/core"),
-    ("pi", "/market/.pi/packs/core"),
+    ("claude", "/vault/dist/house/.claude-plugin/packs/core"),
+    ("codex", "/vault/dist/house/.agents/packs/core"),
+    ("cursor", "/vault/dist/house/.cursor-plugin/packs/core"),
+    ("pi", "/vault/dist/house/.pi/packs/core"),
 ];
 
 fn write(vfs: &dyn Vfs, path: &str, content: &str) {
@@ -30,28 +43,32 @@ fn text_at(vfs: &dyn Vfs, path: &str) -> String {
     String::from_utf8(vfs.read_file(Path::new(path)).unwrap()).unwrap()
 }
 
+/// A vault of marketplace `house` and plugin `core` with a `review` skill,
+/// `scripts/tool`, and `hooks` as the plugin's `hooks/hooks.json`.
 fn vault(hooks: &str) -> MemVfs {
-    let vfs = MemVfs::new();
-    write(
-        &vfs,
-        "/vault/plugins/core/skills/review.md",
-        "---\nname: review\ndescription: Use review.\n---\n\n# review\n",
-    );
-    write(&vfs, "/project/plugin/hooks.json", hooks);
+    let vfs = without_hooks();
+    write(&vfs, &format!("{PLUGIN}/hooks/hooks.json"), hooks);
     vfs
 }
 
-fn request(mode: ExportMode) -> ExportRequest {
-    let mut config = MarketplaceConfig::default();
-    // Members outside `plugins/` land in the plugin named after the
-    // marketplace.
-    config.name = Some("core".to_owned());
-    let mut request = ExportRequest::new("/vault", "/market", config);
+/// [`vault`] with no hooks file.
+fn without_hooks() -> MemVfs {
+    let vfs = MemVfs::new();
+    write(&vfs, "/vault/skillwright.md", "---\n---\n");
+    write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
+    write(&vfs, &format!("{PLUGIN}/core.md"), "---\n---\n");
+    write(
+        &vfs,
+        &format!("{PLUGIN}/skills/review/review.md"),
+        "---\ndescription: Use review.\n---\n\n# review\n",
+    );
+    write(&vfs, &format!("{PLUGIN}/scripts/tool"), "#!/bin/sh\n");
+    vfs
+}
+
+fn request(mode: ExportMode) -> VaultRequest {
+    let mut request = VaultRequest::new("/vault");
     request.mode = mode;
-    request.hooks = vec![HookFileSpec::new(
-        "/project/plugin/hooks.json",
-        "plugin/hooks.json",
-    )];
     request
 }
 
@@ -61,8 +78,13 @@ fn canonical() -> String {
 
 fn built() -> MemVfs {
     let vfs = vault(&canonical());
-    export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw()).unwrap();
+    export(&vfs, &request(ExportMode::Build)).unwrap();
     vfs
+}
+
+/// One `Stop` hook running `command`.
+fn one_hook(command: &str) -> String {
+    format!(r#"{{"hooks": {{"Stop": [{{"hooks": [{{"command": "{command}"}}]}}]}}}}"#)
 }
 
 /// The rendered text against `expected/<name>`, or a rewrite of it when
@@ -77,6 +99,16 @@ fn assert_fixture(name: &str, actual: &str) {
     assert_eq!(actual, expected, "{name} differs from its fixture");
 }
 
+/// The `cursor-hooks-left-out` warnings of a build.
+fn cursor_warnings(report: &ExportReport) -> Vec<String> {
+    report
+        .warnings
+        .iter()
+        .filter(|w| w.reason == "cursor-hooks-left-out")
+        .map(|w| w.path.clone())
+        .collect()
+}
+
 #[test]
 fn claude_and_codex_packs_match_their_fixtures() {
     let vfs = built();
@@ -86,216 +118,222 @@ fn claude_and_codex_packs_match_their_fixtures() {
     }
 }
 
+/// The translation table of the plan's commit 4: one hook, per harness.
 #[test]
-fn the_cursor_pack_carries_its_own_shape_and_names_it() {
-    let vfs = built();
-    let pack = PACKS[2].1;
-    let hooks = text_at(&vfs, &format!("{pack}/hooks/hooks.json"));
-    assert_fixture("cursor-hooks.json", &hooks);
-    assert!(hooks.contains("\"beforeSubmitPrompt\""), "{hooks}");
-    assert!(hooks.contains("\"stop\""), "{hooks}");
-    let manifest = text_at(&vfs, &format!("{pack}/.cursor-plugin/plugin.json"));
-    assert!(
-        manifest.contains("\"hooks\": \"./hooks/hooks.json\""),
-        "{manifest}"
-    );
+fn each_harness_writes_its_own_plugin_root_or_no_hooks() {
+    let vfs = vault(&one_hook("${PLUGIN_ROOT}/scripts/hook.sh"));
+    write(&vfs, &format!("{PLUGIN}/scripts/hook.sh"), "#!/bin/sh\n");
+    let report = export(&vfs, &request(ExportMode::Build)).unwrap();
+    let command = |pack: &str| -> String {
+        let hooks: serde_json::Value =
+            serde_json::from_str(&text_at(&vfs, &format!("{pack}/hooks/hooks.json"))).unwrap();
+        hooks["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    assert_eq!(command(PACKS[0].1), "${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh");
+    assert_eq!(command(PACKS[1].1), "${PLUGIN_ROOT}/scripts/hook.sh");
+
+    let cursor = PACKS[2].1;
+    assert!(!vfs.exists(Path::new(&format!("{cursor}/hooks/hooks.json"))));
+    let manifest = text_at(&vfs, &format!("{cursor}/.cursor-plugin/plugin.json"));
+    assert!(!manifest.contains("\"hooks\""), "{manifest}");
+    assert_eq!(cursor_warnings(&report), [HOOKS_REL]);
+    let warning = report
+        .warnings
+        .iter()
+        .find(|w| w.reason == "cursor-hooks-left-out")
+        .unwrap();
+    assert!(warning.detail.contains("hooks/hooks.json"), "{warning:?}");
+
+    let pi = PACKS[3].1;
+    assert!(!vfs.exists(Path::new(&format!("{pi}/hooks/hooks.json"))));
 }
 
-/// Cursor keys its hooks by its own event name (`stop`); the others use the
-/// file's (`Stop`).
 #[test]
 fn each_pack_names_its_own_plugin_root_and_fills_the_placeholders() {
     let vfs = built();
-    for ((harness, pack), var) in
-        PACKS[..3]
-            .iter()
-            .zip(["CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT", "CURSOR_PLUGIN_ROOT"])
-    {
+    for ((harness, pack), var) in PACKS[..2].iter().zip(["CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"]) {
         let hooks: serde_json::Value =
             serde_json::from_str(&text_at(&vfs, &format!("{pack}/hooks/hooks.json"))).unwrap();
-        let stop = if *harness == "cursor" {
-            &hooks["hooks"]["stop"][0]["command"]
-        } else {
-            &hooks["hooks"]["Stop"][0]["hooks"][0]["command"]
-        };
         assert_eq!(
-            stop.as_str().unwrap(),
-            format!("${{{var}}}/bin/tool session stop --harness {harness} --event Stop"),
+            hooks["hooks"]["Stop"][0]["hooks"][0]["command"]
+                .as_str()
+                .unwrap(),
+            format!("${{{var}}}/scripts/tool session stop --harness {harness} --event Stop"),
             "{harness}"
         );
     }
+}
+
+/// A plugin with no skill, command or other source still ships its hooks.
+#[test]
+fn a_plugin_with_only_a_hooks_file_ships_its_hooks() {
+    let vfs = MemVfs::new();
+    write(&vfs, "/vault/skillwright.md", "---\n---\n");
+    write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
+    write(&vfs, &format!("{PLUGIN}/core.md"), "---\n---\n");
+    write(
+        &vfs,
+        &format!("{PLUGIN}/hooks/hooks.json"),
+        &one_hook("${PLUGIN_ROOT}"),
+    );
+    export(&vfs, &request(ExportMode::Build)).unwrap();
+    let hooks = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[0].1));
+    assert!(hooks.contains("${CLAUDE_PLUGIN_ROOT}"), "{hooks}");
+}
+
+#[test]
+fn claude_plugin_root_in_a_hooks_file_is_refused() {
+    let vfs = vault(&one_hook("${CLAUDE_PLUGIN_ROOT}/scripts/tool"));
+    let err = export(&vfs, &request(ExportMode::Build))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains(HOOKS_REL), "{err}");
+    assert!(err.contains("write `${PLUGIN_ROOT}`"), "{err}");
+    assert!(!vfs.exists(Path::new("/vault/dist/house/.claude-plugin")));
+}
+
+#[test]
+fn the_cursor_warning_needs_cursor_in_the_build() {
+    let vfs = vault(&canonical());
+    let mut request = request(ExportMode::Build);
+    request.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
+    let report = export(&vfs, &request).unwrap();
+    assert!(cursor_warnings(&report).is_empty(), "{:?}", report.warnings);
+}
+
+#[test]
+fn the_cursor_warning_needs_a_hooks_file() {
+    let vfs = without_hooks();
+    let report = export(&vfs, &request(ExportMode::Build)).unwrap();
+    assert!(cursor_warnings(&report).is_empty(), "{:?}", report.warnings);
+}
+
+/// Once per plugin, however many skills and hooks it has.
+#[test]
+fn the_cursor_warning_fires_once_per_plugin() {
+    let vfs = vault(&canonical());
+    write(
+        &vfs,
+        &format!("{PLUGIN}/skills/lint/lint.md"),
+        "---\ndescription: Use lint.\n---\n\n# lint\n",
+    );
+    let other = "/vault/marketplaces/house/plugins/extra";
+    write(&vfs, &format!("{other}/extra.md"), "---\n---\n");
+    write(&vfs, &format!("{other}/hooks/hooks.json"), &canonical());
+    write(&vfs, &format!("{other}/scripts/tool"), "#!/bin/sh\n");
+    let report = export(&vfs, &request(ExportMode::Build)).unwrap();
+    assert_eq!(
+        cursor_warnings(&report),
+        [
+            HOOKS_REL,
+            "marketplaces/house/plugins/extra/hooks/hooks.json"
+        ]
+    );
 }
 
 #[test]
 fn an_unknown_placeholder_fails_the_build() {
-    let vfs = vault(r#"{"hooks": {"Stop": [{"hooks": [{"command": "x {{foo}}"}]}]}}"#);
-    let err = export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw())
+    let vfs = vault(&one_hook("x {{foo}}"));
+    let err = export(&vfs, &request(ExportMode::Build))
         .unwrap_err()
         .to_string();
-    assert!(err.contains("plugin/hooks.json"), "{err}");
+    assert!(err.contains(HOOKS_REL), "{err}");
     assert!(err.contains("hooks.Stop[0].hooks[0]"), "{err}");
     assert!(err.contains("{{foo}}"), "{err}");
-    assert!(!vfs.exists(Path::new("/market/.claude-plugin")));
+    assert!(!vfs.exists(Path::new("/vault/dist/house/.claude-plugin")));
 }
 
+/// No pack ships a gap report: spec section 9 "What a pack holds" lists
+/// none. Cursor ships no hooks file and Pi no `hooks/` folder at all.
 #[test]
-fn the_pi_pack_has_no_hooks_file() {
+fn no_pack_ships_a_gap_report_and_pi_has_no_hooks_folder() {
     let vfs = built();
-    let pack = PACKS[3].1;
-    assert!(!vfs.exists(Path::new(&format!("{pack}/hooks/hooks.json"))));
-    assert!(vfs.exists(Path::new(&format!("{pack}/hooks/gap-report.json"))));
-}
-
-/// The gap report is identical in every pack and across builds.
-#[test]
-fn every_pack_carries_the_same_gap_report() {
-    let first = built();
-    let second = built();
-    let reports: Vec<String> = PACKS
-        .iter()
-        .map(|(_, pack)| text_at(&first, &format!("{pack}/hooks/gap-report.json")))
-        .collect();
-    for report in &reports {
-        assert_eq!(report, &reports[0], "every pack's report is the same bytes");
-    }
-    assert_eq!(
-        reports[0],
-        text_at(&second, &format!("{}/hooks/gap-report.json", PACKS[0].1)),
-        "two builds give the same bytes"
-    );
-    assert_fixture("gap-report.json", &reports[0]);
-
-    let report: serde_json::Value = serde_json::from_str(&reports[0]).unwrap();
-    let harnesses = &report["harnesses"];
-    for harness in ["claude", "codex", "cursor"] {
-        assert_eq!(harnesses[harness]["delivery"], "plugin", "{harness}");
-        assert_eq!(harnesses[harness]["file"], "hooks/hooks.json", "{harness}");
-    }
-    assert_eq!(harnesses["pi"]["delivery"], "none");
-    assert_eq!(harnesses["pi"]["file"], serde_json::Value::Null);
-    assert_eq!(harnesses["pi"]["plugin_root_var"], serde_json::Value::Null);
-    assert_eq!(harnesses["codex"]["plugin_root_var"], "PLUGIN_ROOT");
-    assert_eq!(harnesses["cursor"]["plugin_root_var"], "CURSOR_PLUGIN_ROOT");
-    for event in [
-        "SessionStart",
-        "UserPromptSubmit",
-        "Stop",
-        "Notification",
-        "SessionEnd",
-    ] {
-        assert_eq!(
-            harnesses["pi"]["events"][event]["support"], "rejected",
-            "{event}"
-        );
-    }
-}
-
-/// An event a harness does not carry is left out of its file and named in
-/// the report, and the build goes on.
-#[test]
-fn an_uncarried_event_is_left_out_and_reported() {
-    let vfs = built();
-    let report: serde_json::Value = serde_json::from_str(&text_at(
-        &vfs,
-        &format!("{}/hooks/gap-report.json", PACKS[0].1),
-    ))
-    .unwrap();
-    for (harness, pack) in &PACKS[..3] {
-        let left_out: Vec<&str> = report["harnesses"][harness]["left_out"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["hook"].as_str().unwrap())
-            .collect();
-        let hooks = text_at(&vfs, &format!("{pack}/hooks/hooks.json"));
-        let carried = !left_out.contains(&"hooks.Notification[0].hooks[0]");
-        assert_eq!(hooks.contains("session notify"), carried, "{harness}");
-    }
-    assert_eq!(
-        report["harnesses"]["claude"]["left_out"],
-        serde_json::json!([]),
-        "claude carries every event in the fixture"
-    );
-}
-
-/// A hook whose shape Cursor's file cannot hold is left out of the Cursor
-/// pack alone, and the report says why.
-#[test]
-fn a_shape_cursor_cannot_hold_is_left_out_of_cursor_only() {
-    let vfs =
-        vault(r#"{"hooks": {"Stop": [{"hooks": [{"command": "just stop", "async": true}]}]}}"#);
-    export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw()).unwrap();
-    assert!(text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[0].1)).contains("just stop"));
-    let cursor = PACKS[2].1;
-    assert!(!vfs.exists(Path::new(&format!("{cursor}/hooks/hooks.json"))));
-    let report: serde_json::Value =
-        serde_json::from_str(&text_at(&vfs, &format!("{cursor}/hooks/gap-report.json"))).unwrap();
-    let cursor = &report["harnesses"]["cursor"];
-    assert_eq!(cursor["delivery"], "none");
-    assert_eq!(cursor["file"], serde_json::Value::Null);
-    let reason = cursor["left_out"][0]["reason"].as_str().unwrap();
-    assert!(reason.contains("async"), "{reason}");
-}
-
-/// A hook on an event only Codex documents gives every other harness `none`.
-#[test]
-fn an_event_only_codex_carries_means_no_delivery_elsewhere() {
-    let vfs = vault(r#"{"hooks": {"Interrupt": [{"hooks": [{"command": "x"}]}]}}"#);
-    export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw()).unwrap();
-    let report: serde_json::Value = serde_json::from_str(&text_at(
-        &vfs,
-        &format!("{}/hooks/gap-report.json", PACKS[0].1),
-    ))
-    .unwrap();
-    for (harness, pack) in PACKS.iter().filter(|(harness, _)| *harness != "codex") {
-        assert_eq!(
-            report["harnesses"][harness]["delivery"], "none",
+    for (harness, pack) in &PACKS {
+        assert!(
+            !vfs.exists(Path::new(&format!("{pack}/hooks/gap-report.json"))),
             "{harness}"
         );
-        assert!(!vfs.exists(Path::new(&format!("{pack}/hooks/hooks.json"))));
     }
-    assert_ne!(report["harnesses"]["codex"]["delivery"], "none");
+    let cursor = PACKS[2].1;
+    assert!(!vfs.exists(Path::new(&format!("{cursor}/hooks/hooks.json"))));
+    let pi = PACKS[3].1;
+    assert!(!vfs.exists(Path::new(&format!("{pi}/hooks"))));
+}
+
+/// An event a harness does not carry is left out of its file, and the build
+/// goes on: Claude Code carries `Notification`, Codex does not.
+#[test]
+fn an_uncarried_event_is_left_out() {
+    let vfs = built();
+    let claude = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[0].1));
+    let codex = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[1].1));
+    assert!(claude.contains("session notify"), "{claude}");
+    assert!(!codex.contains("session notify"), "{codex}");
+}
+
+/// A hook on an event only Codex documents gives no other pack a hooks file.
+#[test]
+fn an_event_only_codex_carries_gives_only_codex_a_hooks_file() {
+    let vfs = vault(r#"{"hooks": {"Interrupt": [{"hooks": [{"command": "x"}]}]}}"#);
+    export(&vfs, &request(ExportMode::Build)).unwrap();
+    for (harness, pack) in &PACKS {
+        let path = format!("{pack}/hooks/hooks.json");
+        assert_eq!(
+            vfs.exists(Path::new(&path)),
+            *harness == "codex",
+            "{harness}"
+        );
+    }
 }
 
 #[test]
-fn a_hand_edited_gap_report_is_drift() {
+fn a_hand_edited_hooks_file_is_drift() {
     let vfs = built();
-    let path = format!("{}/hooks/gap-report.json", PACKS[2].1);
-    let edited = text_at(&vfs, &path).replace("\"plugin\"", "\"none\"");
+    let path = format!("{}/hooks/hooks.json", PACKS[1].1);
+    let edited = text_at(&vfs, &path).replace("session stop", "session halt");
     write(&vfs, &path, &edited);
-    let report = export_skills(&vfs, &request(ExportMode::Check), &Namespace::sw()).unwrap();
+    let report = export(&vfs, &request(ExportMode::Check)).unwrap();
     assert!(report.changed, "the edit is reported as drift");
 }
 
 #[test]
 fn an_unknown_event_fails_the_build() {
     let vfs = vault(r#"{"hooks": {"OnBoot": [{"hooks": [{"command": "x"}]}]}}"#);
-    let err = export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw())
+    let err = export(&vfs, &request(ExportMode::Build))
         .unwrap_err()
         .to_string();
-    assert!(err.contains("plugin/hooks.json"), "{err}");
+    assert!(err.contains(HOOKS_REL), "{err}");
     assert!(err.contains("OnBoot"), "{err}");
-    assert!(!vfs.exists(Path::new("/market/.claude-plugin")));
+    assert!(!vfs.exists(Path::new("/vault/dist/house/.claude-plugin")));
 }
 
+/// A hook a harness that carries hooks cannot carry is left out of its pack
+/// with one warning per hook, naming the harness and the event.
 #[test]
-fn two_hooks_files_for_one_plugin_are_refused() {
-    let vfs = vault(&canonical());
+fn each_hook_a_harness_cannot_carry_is_a_warning() {
+    let vfs = vault(
+        r#"{"hooks": {
+            "Stop": [{"hooks": [{"command": "stop"}]}],
+            "Notification": [{"hooks": [{"command": "a"}, {"command": "b"}]}]
+        }}"#,
+    );
     let mut request = request(ExportMode::Build);
-    request.hooks.push(request.hooks[0].clone());
-    let err = export_skills(&vfs, &request, &Namespace::sw())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("duplicate-hooks-file"), "{err}");
-}
-
-#[test]
-fn a_hooks_file_for_a_plugin_the_build_does_not_hold_is_refused() {
-    let vfs = vault(&canonical());
-    let mut request = request(ExportMode::Build);
-    request.hooks[0].plugin = Some("ghost".to_owned());
-    let err = export_skills(&vfs, &request, &Namespace::sw())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("unknown-hooks-plugin"), "{err}");
+    request.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
+    let report = export(&vfs, &request).unwrap();
+    let left_out: Vec<_> = report
+        .warnings
+        .iter()
+        .filter(|w| w.reason == "hook-left-out")
+        .collect();
+    assert_eq!(left_out.len(), 2, "{:?}", report.warnings);
+    for warning in &left_out {
+        assert_eq!(warning.path, HOOKS_REL);
+        assert!(warning.detail.contains("Codex"), "{warning:?}");
+        assert!(warning.detail.contains("Notification"), "{warning:?}");
+    }
+    let codex = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[1].1));
+    assert!(!codex.contains("Notification"), "{codex}");
 }

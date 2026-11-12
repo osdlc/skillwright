@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { discoverComponents, exportSkills, publishSkill } from '../src/core.ts'
+import { buildVault, discoverComponents } from '../src/core.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
 let tmp: string
@@ -69,53 +77,35 @@ describe('stat', () => {
   })
 })
 
-/** A repository holding its vault at `src/`, the out root being the repository. */
+/** A repository holding its vault at `src/`. */
 function repoWithVault(name: string): { repo: string; vault: string } {
   const repo = path.join(tmp, name)
   const vault = path.join(repo, 'src')
   const skill = path.join(vault, 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(skill, { recursive: true })
+  writeFileSync(path.join(vault, 'skillwright.md'), '---\n---\n')
   writeFileSync(
-    path.join(vault, 'marketplaces/house/skillwright.md'),
-    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
+    path.join(vault, 'marketplaces/house/house.md'),
+    '---\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
+  writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
   writeFileSync(
     path.join(skill, 'review.md'),
-    '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n',
+    '---\ndescription: Reviews a diff.\n---\n\n# Review\n',
   )
   return { repo, vault }
 }
 
-function build(vfs: Vfs, repo: string, vault: string) {
-  return exportSkills(vfs, {
-    vault_root: vault,
-    out_root: repo,
-    mode: 'build',
-    config: { name: 'core' },
-  })
+/** The one marketplace's report from a build of `vault`. */
+function build(vfs: Vfs, vault: string) {
+  return buildVault(vfs, { vault_root: vault, mode: 'build' }).marketplaces[0]?.report
 }
 
-describe('export at a repository root that holds its vault', () => {
-  test('builds when the host can see links', () => {
-    const { repo, vault } = repoWithVault('repo')
-    expect(build(createNodeVfs(), repo, vault).changed).toBe(true)
-  })
-
-  test('is refused when a tree it replaces is a link into the vault', () => {
-    const { repo, vault } = repoWithVault('linked')
-    mkdirSync(path.join(vault, 'skills'))
-    symlinkSync(path.join(vault, 'skills'), path.join(repo, '.claude-plugin'))
-
-    // The narrowed rail's own refusal, which names the write: the strict rail
-    // would refuse this out root as an ancestor of the vault instead.
-    expect(() => build(createNodeVfs(), repo, vault)).toThrow(/would write .* inside the vault/)
-  })
-
-  test('is refused when the host has no link methods', () => {
-    const { repo, vault } = repoWithVault('blind')
-    const { realpath: _r, readLink: _l, isSymlink: _s, ...blind } = createNodeVfs()
-
-    expect(() => build(blind, repo, vault)).toThrow(/unsafe-root/)
+describe('export', () => {
+  test("builds into the vault's dist/<m>/ when the host can see links", () => {
+    const { vault } = repoWithVault('repo')
+    expect(build(createNodeVfs(), vault)?.changed).toBe(true)
+    expect(existsSync(path.join(vault, 'dist/house/.claude-plugin/marketplace.json'))).toBe(true)
   })
 })
 
@@ -144,47 +134,32 @@ describe('a host whose link answers fail', () => {
   const failure = (code: string) => Object.assign(new Error(`host failed: ${code}`), { code })
 
   test('a realpath error other than a missing path refuses the check', () => {
-    const { repo, vault } = repoWithVault('denied')
+    const { vault } = repoWithVault('denied')
     const base = createNodeVfs()
     const denied: Vfs = {
       ...base,
       realpath: (p: string) => {
-        if (p.includes('locked')) throw failure('EACCES')
+        if (p.endsWith('review.md')) throw failure('EACCES')
         return base.realpath(p)
       },
     }
-    const result = publishSkill(denied, {
-      skill_path: path.join(vault, 'marketplaces/house/plugins/tools/skills/review/review.md'),
-      destination_root: path.join(repo, 'locked'),
-      target: 'claude',
-      skills_root: vault,
-    })
-    expect(result.files.map((f) => f.status)).toEqual(['refused'])
-    expect(result.files[0]?.reason?.detail).toMatch(/cannot tell where this path leads/)
+    expect(() => build(denied, vault)).toThrow(/cannot tell where this path leads/)
   })
 
   test('a realpath answer that is not absolute refuses the check', () => {
-    const { repo, vault } = repoWithVault('relative')
-    mkdirSync(path.join(repo, 'elsewhere'))
+    const { vault } = repoWithVault('relative')
     const base = createNodeVfs()
     const relative: Vfs = {
       ...base,
       realpath: (p: string) => {
         const answer = base.realpath(p)
-        return p.includes('elsewhere') ? path.relative('/', answer) : answer
+        return p.endsWith('review.md') ? path.relative('/', answer) : answer
       },
     }
-    const result = publishSkill(relative, {
-      skill_path: path.join(vault, 'marketplaces/house/plugins/tools/skills/review/review.md'),
-      destination_root: path.join(repo, 'elsewhere'),
-      target: 'claude',
-      skills_root: vault,
-    })
-    expect(result.files.map((f) => f.status)).toEqual(['refused'])
-    expect(result.files[0]?.reason?.detail).toMatch(/realpath must return an absolute path/)
+    expect(() => build(relative, vault)).toThrow(/realpath must return an absolute path/)
   })
 
-  test('isSymlink that throws counts as a link, so discovery refuses the note', () => {
+  test('isSymlink that throws counts as a link, checked by its real path', () => {
     const { vault } = repoWithVault('unsure')
     const base = createNodeVfs()
     const unsure: Vfs = {
@@ -194,9 +169,17 @@ describe('a host whose link answers fail', () => {
         return base.isSymlink(p)
       },
     }
-    expect(discoverComponents(base, { vault_root: vault }).components.length).toBeGreaterThan(0)
-    expect(() => discoverComponents(unsure, { vault_root: vault })).toThrow(
-      /a symlink in a skills source/,
+    // Its real path stays in the marketplace, so the note is read.
+    expect(discoverComponents(unsure, { vault_root: vault }).components.length).toBeGreaterThan(0)
+    const unresolved: Vfs = {
+      ...unsure,
+      realpath: (p: string) => {
+        if (p.endsWith('review.md')) throw failure('EIO')
+        return base.realpath(p)
+      },
+    }
+    expect(() => discoverComponents(unresolved, { vault_root: vault })).toThrow(
+      /a symlink whose real target cannot be read/,
     )
   })
 })

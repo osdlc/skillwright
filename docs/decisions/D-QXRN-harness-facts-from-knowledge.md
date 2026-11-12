@@ -12,15 +12,14 @@ compiled from the `harness-reference` claims corpus and embedded in
 
 - **Facts move:** the user skills folder, the pack manifest path, the
   marketplace manifest path, the plugin-root variable and the naming rule.
-- **Policy stays in code:** the packs folder, the dialect, Pi's prefixed
-  naming, the override lists, runtime mappings, and the config overrides of
+- **Policy stays in code:** the packs folder, the dialect, Cursor's and Pi's
+  prefixed naming, the override lists, runtime mappings, and the config overrides of
   [D-WNTQ](D-WNTQ-harness-profile-values-from-config.md). The translator trait
   is unchanged. The profile's shape changes in one place, a breaking change to
-  `tradecraft-core`: `HarnessProfile::plugin` is an `Option<PluginPolicy>`
-  (the row as written, with each fact a `Source`) instead of an
-  `Option<PluginFormat>`. `format()` still returns the resolved `PluginFormat`,
-  and `plugin_format()` returns it as an `Option`; code that read
-  `profile.plugin` should call one of them.
+  `tradecraft-core`: `HarnessProfile::plugin` is a `PluginPolicy` (the row
+  as written, with each fact a `Source`) instead of a `PluginFormat`.
+  `format()` returns the resolved `PluginFormat`; code that read
+  `profile.plugin` should call it.
 - **A fact stays a constant** with a comment saying why, when the file has no
   value in a usable shape, only a weak or disputed one, or a value that
   disagrees with the row. Each constant in `profile.rs` says which of these it

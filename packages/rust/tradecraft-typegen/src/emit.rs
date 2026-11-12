@@ -8,11 +8,13 @@
 //! # Direction decides optionality
 //!
 //! A request is DESERIALIZED, so a field serde can default is one the caller
-//! may omit — `mode?: PublishMode`. A response is SERIALIZED, so an
+//! may omit — `mode?: ExportMode`. A response is SERIALIZED, so an
 //! `Option<T>` is on the wire as `null` unless the field carries
-//! `skip_serializing_if` — `reason: string | null`, but `not_published?:
-//! string`. A type reached in both directions would need two spellings, so it
-//! is refused rather than emitted under one of them.
+//! `skip_serializing_if`, which makes it optional. A struct reached in both
+//! directions is emitted once when it spells the same both ways, such as
+//! `SharedDefaults`, whose every field serde defaults and skips when empty.
+//! One that would need two spellings is refused rather than emitted under one
+//! of them.
 
 use std::collections::BTreeMap;
 
@@ -45,6 +47,7 @@ pub fn emit(model: &Model) -> Result<String, Error> {
         model,
         order: Vec::new(),
         seen: BTreeMap::new(),
+        both: std::collections::BTreeSet::new(),
     };
 
     for export in &model.exports {
@@ -105,20 +108,34 @@ struct Walk<'a> {
     /// Emission order: the type, then everything it reaches.
     order: Vec<(String, Direction)>,
     seen: BTreeMap<String, Direction>,
+    /// The structs reached in both directions, each spelled the same both
+    /// ways.
+    both: std::collections::BTreeSet<String>,
 }
 
 impl Walk<'_> {
     fn visit(&mut self, rust_name: &str, direction: Direction) -> Result<(), Error> {
-        if let Some(previous) = self.seen.get(rust_name) {
-            let def = &self.model.types[rust_name];
-            if *previous != direction && matches!(def, TypeDef::Struct(_)) {
+        if let Some(&previous) = self.seen.get(rust_name) {
+            let TypeDef::Struct(s) = &self.model.types[rust_name] else {
+                return Ok(());
+            };
+            if previous == direction || !self.both.insert(rust_name.to_string()) {
+                return Ok(());
+            }
+            if emit_struct(self.model, s, previous)? != emit_struct(self.model, s, direction)? {
                 return Err(format!(
-                    "`{rust_name}` is reached as {} and as {}. Optionality differs by \
-                     direction, so one TypeScript interface cannot describe both. Split \
+                    "`{rust_name}` is reached as {} and as {}, and its optionality differs \
+                     by direction, so one TypeScript interface cannot describe both. Split \
                      the Rust type, or give the two uses separate types.",
                     previous.label(),
                     direction.label()
                 ));
+            }
+            // What it reaches must hold in this direction too.
+            let mut deps = Vec::new();
+            self.struct_deps(s, &mut deps)?;
+            for dep in deps {
+                self.visit(&dep, direction)?;
             }
             return Ok(());
         }
@@ -329,12 +346,11 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
 
 /// The TypeScript name of a Rust type.
 ///
-/// A wire wrapper (`Wire…`) is named for the struct it flattens —
-/// `WireExportRequest` splices `ExportRequest` and one extra key, and the wire
-/// it describes IS an export request. A wrapper that flattens nothing loses
-/// its leading `Wire`. Both rules are mechanical, so a new export needs no
-/// entry anywhere. Any other struct keeps its own name, whatever it flattens:
-/// `MarketplaceConfig` splices `ContainerIdentity` and is still a config.
+/// A wire wrapper (`Wire…`) is named for the struct it flattens — a
+/// `WireFoo` that splices `Foo` describes a `Foo` on the wire. A wrapper that
+/// flattens nothing loses its leading `Wire` (`WireDiscoverRequest` is
+/// `DiscoverRequest`). Both rules are mechanical, so a new export needs no
+/// entry anywhere. Any other struct keeps its own name, whatever it flattens.
 fn ts_name(model: &Model, rust_name: &str) -> Result<String, Error> {
     let Some(TypeDef::Struct(s)) = model.types.get(rust_name) else {
         return Ok(rust_name.to_string());
@@ -664,8 +680,7 @@ fn emit_enrolment(model: &Model) -> Result<String, Error> {
         .map(|e| format!("\"{}\"", e.js_name))
         .collect();
     out.push_str(
-        "/**\n * Exports with no JSON on either side, so nothing here can drift for them.\n \
-         * `validateNamespace(stem: string): void` is the whole signature.\n */\n",
+        "/**\n * Exports with no JSON on either side, so nothing here can drift for them.\n */\n",
     );
     out.push_str(&format!(
         "export type WasmExportsWithoutJson = {};\n",

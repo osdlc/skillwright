@@ -2,32 +2,27 @@
 //!
 //! The TypeScript side is a projection of this one Rust implementation, reached
 //! over wasm — never a second copy of the compiler. Nothing here decides
-//! anything: parsing a skill note, resolving links, choosing a target layout,
-//! deciding whether a destination file may be overwritten all live in the core,
-//! and this crate exists only to let JavaScript reach them.
+//! anything: parsing a skill note, resolving links, choosing a target layout
+//! all live in the core, and this crate exists only to let JavaScript reach
+//! them.
 //!
 //! # The exports, and what each reaches
 //!
 //! | Export | Core entry point | The verbs over it |
 //! |---|---|---|
-//! | `publishSkill` | `publish::publish_skill` | `publish` |
-//! | `validateNamespace` | `Namespace::new` | every verb, once, at configuration load |
 //! | `discoverComponents` | `discover::discover_components` | the vault scan every other verb needs |
-//! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode` |
-//! | `loadMarketplace` | `model::load::load` | `list --json`, and any host that wants the model rather than files |
-//! | `adoptSkills` | `adopt::adopt_skills` | `adopt`, and its preview through `mode` |
-//! | `knownTargets` | `publish::KNOWN_TARGETS` | every verb that takes a target name |
-//! | `canonicalTarget` | `publish::canonical_target` | a host narrowing a run by target |
-//! | `publishableKinds` | `publish::kind_has_renderer` | a host choosing which notes to ask a status of |
-//! | `statusOf` | `status::status_of` | `status` |
+//! | `buildVault` | `export::build_vault` | `build` and `check` of every marketplace, through `mode` |
+//! | `loadMarketplace` | `model::load::load`, through `wire::marketplace` | any host that wants the structure rather than files |
+//! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a target name |
 //! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
-//! | `rootFileConfig` | `settings::root_file_config` | a host building from `skillwright.md` |
 //!
-//! `build` and `check` share an export, as do `adopt` and its preview, because
-//! a mode is a key on the request rather than an export of its own. See
-//! [`publish_skill`]'s "A dry run is one more key" note; `exportSkills` and
-//! `adoptSkills` are the same construction, and there is deliberately no
-//! `checkSkills` or `previewAdopt` beside them.
+//! `build` and `check` share an export, because a mode is a key on the
+//! request rather than an export of its own. There is deliberately no
+//! `checkVault` beside `buildVault`.
+//!
+//! No request carries configuration. The core reads the root file's shared
+//! defaults and `build.harnesses` from `skillwright.md` through the host's
+//! vfs; a request's `harnesses` replaces that list.
 //!
 //! # Boundary choices
 //!
@@ -37,165 +32,45 @@
 //!   call into JS and what happens when the host throws.
 //! - **The request and report cross as JSON strings**, deserialized and
 //!   serialized by the same `serde_json` the core is compiled against, through
-//!   the core's own derives. The wrappers this crate owns — `WireRequest`,
-//!   `WireExportRequest`, `WireAdoptRequest` — `flatten` the core's own
-//!   request rather than re-declaring its fields, so there is no second copy of
-//!   a request shape here to drift from the core's. `WireDiscoverRequest` is
-//!   the one exception and it re-declares nothing either: `discover_components`
-//!   takes loose parameters rather than a struct, so there is no core shape to
-//!   flatten and none to drift from.
+//!   the core's own derives. `buildVault` and `loadMarketplace` read the
+//!   core's `VaultRequest` and `LoadRequest` directly. `WireDiscoverRequest`
+//!   is the one request shape this crate owns, because `discover_components`
+//!   takes loose parameters rather than a struct. Every request refuses an
+//!   unknown key.
+//! - **`loadMarketplace` answers in this crate's own types** (`wire`), not
+//!   the core's model. The model carries what the translators work from, such
+//!   as each body as segments; the wire form carries the structure a host
+//!   shows, and nothing it would have to depend on beyond that.
+//! - **The vault is read in its layout** (`skillwright.md`, `marketplaces/`):
+//!   discovery and the load read only `marketplaces/`, so nothing a build
+//!   writes to `dist/` is ever read back.
 //! - **A `CoreError` becomes a thrown JS `Error`** whose `.name` is the variant,
-//!   mirroring what `yaml-splice-wasm` does for `EditError`. `Refused` and
-//!   `Conflict` in particular are the safety rails working, and a caller that
-//!   wants to tell them from a genuine I/O failure reads `.name` rather than
-//!   pattern-matching on a message.
+//!   mirroring what `yaml-splice-wasm` does for `EditError`. `Refused` is
+//!   a guard working, and a caller that wants to tell it from a genuine I/O
+//!   failure reads `.name` rather than pattern-matching on a message.
 //!
-//! # A refusal is not an error
-//!
-//! Note the asymmetry: a whole publish that a rail stops throws, but a single
-//! file the rail declines to overwrite comes back INSIDE the report as a
-//! `PublishedFile` with `status: "refused"` and a reason. That is the core's
-//! design, not this crate's, and the mapping below must not flatten it.
-//!
-//! Adoption has the same asymmetry: an adoption a rail stops
-//! whole — a symlinked source, a source the skills root contains — throws, and
-//! one skill whose vault target already exists comes back inside `AdoptReport`
-//! as an `AdoptedSkill` with `status: "refused"`. An export has no per-unit
-//! refusal at all: its rails fire before anything is staged, so every refusal
-//! it can produce is a throw.
+//! A build refuses before anything is staged, so its refusals throw. A check
+//! lists each marketplace that refused in its report.
 
 mod js_vfs;
+mod wire;
 
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use tradecraft_core::CoreError;
-use tradecraft_core::EntityKind;
-use tradecraft_core::Namespace;
-use tradecraft_core::adopt::{AdoptRequest, adopt_skills as core_adopt_skills};
 use tradecraft_core::discover::discover_components as core_discover_components;
-use tradecraft_core::export::MarketplaceConfig;
-use tradecraft_core::export::{ExportRequest, export_skills as core_export_skills};
-use tradecraft_core::model::load::{LoadRequest, load as core_load};
-use tradecraft_core::namespace::InvalidStem;
-use tradecraft_core::publish::{
-    KNOWN_TARGETS, PublishRequest, canonical_target as core_canonical_target, kind_has_renderer,
-    publish_skill as core_publish_skill,
-};
-use tradecraft_core::settings::{
-    parse_root_file as core_parse_root_file, root_file_config as core_root_file_config,
-};
-use tradecraft_core::status::{StatusRequest, status_of as core_status_of};
-use tradecraft_core::vfs::Vfs;
-use tradecraft_core::{SourceView, VaultScope, source_view, vault_config};
+use tradecraft_core::export::{VaultRequest, build_vault as core_build_vault};
+use tradecraft_core::harness::KNOWN_TARGETS;
+use tradecraft_core::model::load::LoadRequest;
+use tradecraft_core::settings::parse_root_file as core_parse_root_file;
 use wasm_bindgen::prelude::*;
+use wire::marketplace as wire_marketplace;
 
 pub use js_vfs::{HostVfs, JsVfs};
 
-/// What crosses the boundary as `request_json`: the core's `PublishRequest`,
-/// plus the one field this layer adds.
-///
-/// A field on the request rather than a third parameter: hosts call
-/// `publishSkill(vfs, requestJson)`.
-///
-/// It is a `String` stem rather than a `Namespace` because the core
-/// deliberately gives `Namespace` no `Deserialize`: every construction goes
-/// through [`Namespace::new`], so a stem that arrives over the wire is
-/// validated at the same gate a stem typed at a terminal is, and the same
-/// [`InvalidStem`] comes back.
-#[derive(Deserialize)]
-struct WireRequest {
-    /// Flattened, not re-declared: `skill_path`, `destination_root` and
-    /// `target` are read by the core's own derive.
-    #[serde(flatten)]
-    request: PublishRequest,
-    /// The vault's frontmatter namespace, as a stem, such as `sw`, or whatever the
-    /// host configured. Absent means [`Namespace::default`].
-    #[serde(default)]
-    namespace: Option<String>,
-}
-
-/// Publish one skill to one destination.
-///
-/// `vfs` is the host's filesystem object (see `js_vfs`); `request_json` is a
-/// serialized `PublishRequest`, optionally carrying a `namespace` stem (see
-/// `WireRequest`). Returns a serialized `PublishReport`.
-///
-/// Exported to JavaScript as `publishSkill`, in the same camelCase
-/// `yaml-splice-wasm` uses for `editYaml`.
-///
-/// # A dry run is one more key, not one more export
-///
-/// `PublishRequest` carries a `mode`: `"write"`, or `"dry-run"` to classify
-/// every file and write nothing. The key is optional and absent means
-/// `"write"`.
-///
-/// There is deliberately no `dryRunSkill` beside this: the core runs one
-/// publish path in both modes (see `tradecraft_core::publish`'s module doc),
-/// and the mode rides the wire the core's own derives define, so the generated
-/// glue and `.d.ts` are unmoved by it.
-///
-/// # The namespace is read once, here, and handed on once
-///
-/// The stem off the wire becomes exactly one [`Namespace`], which goes to
-/// `publish_skill` as its single `ns` argument — the core then hands that same
-/// value to both the read and the emit. There is no second place in this
-/// function where a prefix could be spelled.
-///
-/// # Errors
-///
-/// The core's refusals throw an `Error` whose `.name` is `Refused`, its
-/// message led by the reason token. Among them is `malformed-root-file`, when
-/// the root file at `skills_root`, or the workspace file above it, cannot say
-/// what it excludes.
-///
-/// A stem the core refuses throws an `Error` whose `.name` is `InvalidStem`,
-/// carrying [`InvalidStem`]'s own message. A host should validate its
-/// configured stem up front with [`validate_namespace`] rather than discover it
-/// one publish at a time — a bad stem is a configuration fault, not a fact
-/// about the note in front of it.
-#[wasm_bindgen(js_name = publishSkill)]
-pub fn publish_skill(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
-    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let wire: WireRequest = serde_json::from_str(request_json)
-        .map_err(|e| throwable(&format!("request is not a valid PublishRequest: {e}")))?;
-
-    let ns = namespace_of(wire.namespace.as_deref())?;
-
-    let report = core_publish_skill(&vfs, &wire.request, &ns).map_err(|e| core_error_to_js(&e))?;
-
-    report_json("publish report", &report)
-}
-
-/// Check that `stem` can be a frontmatter namespace, without publishing
-/// anything.
-///
-/// Exists so a host can fail a bad stem where the user set it — at
-/// configuration load — instead of once per note, without re-implementing
-/// [`Namespace::new`]'s rules in its own language. Those rules decide which of
-/// the author's keys get *deleted* at publish, so a TypeScript copy that
-/// drifted by one case would accept a stem the core refuses or reads
-/// differently.
-///
-/// Returns nothing on success. There is deliberately nothing to return: the
-/// derived forms (`prefix`, `block_key`) stay inside the core, so no host is
-/// ever tempted to spell `stem + "-"` for itself.
-///
-/// # Errors
-///
-/// An `Error` whose `.name` is `InvalidStem` and whose message is
-/// [`InvalidStem`]'s own — the offending stem and the reason, unmodified, so a
-/// host prints it rather than re-words it.
-#[wasm_bindgen(js_name = validateNamespace)]
-pub fn validate_namespace(stem: &str) -> Result<(), JsValue> {
-    Namespace::new(stem)
-        .map(|_| ())
-        .map_err(|e| invalid_stem_to_js(&e))
-}
-
-/// Every target name a note's targets key and a `--target` flag may name,
-/// sorted — `tradecraft_core::publish::KNOWN_TARGETS`, verbatim.
+/// Every name `build.harnesses` and a request's `harnesses` accept, in report order:
+/// `tradecraft_core::harness::KNOWN_TARGETS`, verbatim.
 ///
 /// Exported so a host validating a name off a command line checks the same
 /// list the core checks a note's frontmatter against. Without it a host has to
@@ -210,138 +85,39 @@ pub fn known_targets() -> Result<String, JsValue> {
     report_json("known targets", &KNOWN_TARGETS)
 }
 
-/// The one destination a target name folds onto, or `undefined` for a name
-/// outside [`KNOWN_TARGETS`] — `tradecraft_core::publish::canonical_target`,
-/// verbatim.
-///
-/// Exported because the fold is not derivable from [`known_targets`] alone:
-/// that list carries both spellings of a destination (`claude` and
-/// `claude-code`) and says nothing about which pairs name the same place. A
-/// host narrowing a run by `--target claude` against a destination configured
-/// `claude-code` has to ask the core, or keep a second copy of the table and
-/// drift from it.
-///
-/// # Why this one does not cross as JSON
-///
-/// Exports that return a core structure serialize it, because that is the
-/// only way a struct crosses. This answers with one name out of a
-/// compile-time vocabulary — there is no structure, and no error either, so
-/// there is nothing for a `Result<String, JsValue>` to carry. Wrapping it
-/// would add a `JSON.parse` to a value that is already a string.
-#[wasm_bindgen(js_name = canonicalTarget)]
-pub fn canonical_target(name: &str) -> Option<String> {
-    core_canonical_target(name).map(ToOwned::to_owned)
-}
-
-/// Every entity kind a publish has a projection for, in
-/// [`EntityKind::KNOWN`]'s order — the kinds
-/// `tradecraft_core::publish::kind_has_renderer` admits.
-///
-/// Exported so a host can tell a note it should never ask about from one whose
-/// state it could not determine. A marketplace and a hook are real vault
-/// entities that no destination installs directly; a host that asks anyway
-/// gets `no-renderer` back and has to decide whether that is drift (it is not)
-/// or the shape of the vault (it is).
-///
-/// A fixed vocabulary rather than a structure, so it crosses as values — see
-/// [`canonical_target`].
-#[wasm_bindgen(js_name = publishableKinds)]
-pub fn publishable_kinds() -> Vec<String> {
-    EntityKind::KNOWN
-        .iter()
-        .filter(|name| EntityKind::from_str(name).is_ok_and(kind_has_renderer))
-        .map(|name| (*name).to_owned())
-        .collect()
-}
-
 // --- the root file -----------------------------------------------------------
 
 /// Read a `skillwright.md`'s text into a serialized `RootFile`, the reader the
-/// CLI uses. It takes text and no vfs: finding the file is the host's.
+/// CLI uses. It takes text and no vfs: finding the file is the host's. A
+/// build reads the file itself; this is for a host that shows it.
 ///
 /// # Errors
 ///
 /// An `Error` carrying the core's message: frontmatter that is not a YAML
-/// mapping, or a known key of the wrong shape. An unknown key is a warning on
-/// the `RootFile`.
+/// mapping, a key the root file refuses, or a known key of the wrong shape.
+/// An unknown key is a warning on the `RootFile`.
 #[wasm_bindgen(js_name = parseRootFile)]
 pub fn parse_root_file(text: &str) -> Result<String, JsValue> {
     let root = core_parse_root_file(text).map_err(|e| throwable(&e.to_string()))?;
     report_json("root file", &root)
 }
 
-/// The `MarketplaceConfig` a `skillwright.md`'s text describes. `folder_name`
-/// is the root file's folder, the marketplace's name when the file gives none,
-/// so a host does not rebuild that default.
-///
-/// Returns a JS object, not a JSON string. `MarketplaceConfig` is a request
-/// type, and the generator spells each type for one direction, so this stays
-/// outside it. `core.ts` types the result, which goes back in as a request.
-///
-/// # Errors
-///
-/// As [`parse_root_file`].
-#[wasm_bindgen(js_name = rootFileConfig)]
-pub fn root_file_config(text: &str, folder_name: &str) -> Result<JsValue, JsValue> {
-    let config = core_root_file_config(text, folder_name).map_err(|e| throwable(&e.to_string()))?;
-    js_sys::JSON::parse(&report_json("marketplace config", &config)?)
-}
-
 // --- discovery ---------------------------------------------------------------
 
 /// What crosses as `request_json` for [`discover_components`].
 ///
-/// The one wire shape in this crate that does not `flatten` a core struct,
-/// because there is no core struct to flatten: `discover_components` takes its
-/// vault root and skills root as loose parameters. So this is not a second
-/// copy of anything — it is the parameter list, spelled once, in the only
-/// place it has to cross a wire.
+/// The one wire shape this crate owns: `discover_components` takes its vault
+/// root as a loose parameter, so there is no core struct to read.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct WireDiscoverRequest {
-    /// Absolute path to the vault.
+    /// Absolute path to the vault root, the folder holding `skillwright.md`
+    /// and `marketplaces/`.
     vault_root: PathBuf,
-    /// The content root to scan. Absent means the vault root, exactly as the
-    /// core reads it.
-    #[serde(default)]
-    skills_root: Option<PathBuf>,
-    /// Absolute path to the folder a build writes to. The scan leaves out what
-    /// a build owns there. Absent means nothing is left out.
-    #[serde(default)]
-    out_root: Option<PathBuf>,
-    /// Says where the packs folders are, under what the vault's own notes say.
-    /// Absent means the vault's root file.
-    #[serde(default)]
-    config: Option<MarketplaceConfig>,
-    /// The vault's frontmatter namespace, as a stem. Absent means
-    /// [`Namespace::default`].
-    #[serde(default)]
-    namespace: Option<String>,
 }
 
-/// The vault as `wire` asks to scan it. Refused when the request names no
-/// config and the vault's root file or workspace file does not parse.
-fn discovery_view<'v>(
-    vfs: &'v dyn Vfs,
-    wire: &WireDiscoverRequest,
-    ns: &Namespace,
-) -> Result<SourceView<'v>, CoreError> {
-    let config = match &wire.config {
-        Some(config) => config.clone(),
-        None => vault_config(vfs, &wire.vault_root)?,
-    };
-    let mut scope = VaultScope::new(&wire.vault_root);
-    scope.skills_root = wire.skills_root.as_deref();
-    Ok(source_view(
-        SourceView::over(vfs),
-        scope,
-        wire.out_root.as_deref(),
-        &config,
-        ns,
-    ))
-}
-
-/// Every component under a vault's skills root, vetted and sorted, and every
-/// note the scan could not read.
+/// Every component under the vault's `marketplaces/`, vetted and sorted, and
+/// every note the scan could not read.
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a
 /// `WireDiscoverRequest`. Returns a serialized
@@ -354,272 +130,81 @@ fn discovery_view<'v>(
 ///
 /// # Errors
 ///
-/// Only what is not a fact about one note: a missing skills root
-/// (`RootNotFound`), a symlink in the tree, a duplicate name, a bundle
-/// containing another component's entry, and `refused: malformed-root-file`
-/// when the vault's root file, or the workspace file above it, cannot say
-/// what it excludes (its frontmatter is not YAML, or its `workspace`,
-/// `build`, `build.exclude` or `build.patterns` has the wrong shape). A bad
-/// value in any other key of the root file does not throw here; a build says
-/// what is wrong with it. Everything wrong with a single note
-/// is reported in `skipped` and does not throw — one half-written draft must
-/// not block every publish out of a shared vault.
+/// Only what is not a fact about one note: `refused: layout` (the root is not
+/// a vault root, or the vault breaks the layout; every problem in one
+/// message), a symlink in the tree, and a duplicate name. Everything wrong
+/// with a single note is reported in `skipped` and does not throw — one
+/// half-written draft must not block every build out of a shared vault.
 #[wasm_bindgen(js_name = discoverComponents)]
 pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
     let wire: WireDiscoverRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid discovery request: {e}")))?;
-    let ns = namespace_of(wire.namespace.as_deref())?;
-
-    let view = discovery_view(&vfs, &wire, &ns).map_err(|e| core_error_to_js(&e))?;
     let report =
-        core_discover_components(&view, &wire.vault_root, wire.skills_root.as_deref(), &ns)
-            .map_err(|e| core_error_to_js(&e))?;
+        core_discover_components(&vfs, &wire.vault_root).map_err(|e| core_error_to_js(&e))?;
 
     report_json("discovery report", &report)
 }
 
 // --- the marketplace ---------------------------------------------------------
 
-/// What crosses as `request_json` for [`export_skills`]: the core's
-/// [`ExportRequest`], flattened, plus the namespace stem this layer adds.
-#[derive(Deserialize)]
-struct WireExportRequest {
-    /// Flattened, not re-declared: every field the core's own derive reads
-    /// arrives here untouched, so a field added there needs no change here.
-    #[serde(flatten)]
-    request: ExportRequest,
-    /// The vault's frontmatter namespace, as a stem. Absent means
-    /// [`Namespace::default`], exactly as on [`WireRequest`].
-    #[serde(default)]
-    namespace: Option<String>,
-}
-
-/// Render the vault into one marketplace tree per harness — and, per the request's
-/// `mode`, either swap the drifted roots into place or report the drift and
-/// write nothing.
+/// Build or check every marketplace of the vault, or the one the request's
+/// `marketplace` names, each into its `<vault_root>/dist/<m>/`.
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
-/// `ExportRequest` optionally carrying a `namespace` stem (see
-/// `WireExportRequest`). Returns a serialized `ExportReport`.
+/// `VaultRequest`. Returns a serialized `VaultReport`: one `ExportReport` per
+/// marketplace, and in a check, each marketplace that refused under `refused`.
 ///
-/// # `build` and `check` are one export, because they are one path
+/// Every marketplace is planned before any is written, and a build writes
+/// all of them or none: a failed swap rolls back every marketplace already
+/// swapped.
 ///
-/// `mode` is `"build"`, or `"check"` to render into the overlay, compare, and
-/// write nothing under any outcome. The key is optional and absent means
-/// `"build"` — the same default-to-the-write choice `PublishRequest` makes.
-///
-/// `check`'s verdict cannot disagree with `build`'s: there is one render and
-/// one comparison behind both. See `tradecraft_core::export`'s module doc.
-///
-/// The exit code is the caller's, not this layer's: `ExportReport.changed` is
-/// the fact, and a `check` that exits 1 on drift is the CLI reading it.
+/// A check of one marketplace may name `compare_with`, another built folder
+/// to compare with in place of `dist/<m>/`.
 ///
 /// # Errors
 ///
-/// * `Refused` — the rail (an output root that is, contains, or sits inside the
-///   vault), `empty-marketplace` (a vault with nothing publishable), and
-///   everything discovery and compilation refuse.
-/// * `SwapFailed` — the commit failed part-way; the message says what the
-///   rollback restored. Its own `.name`, because a host has to be able to tell
-///   "nothing happened" from "something happened and was undone".
-///
-/// There is no per-unit refusal to look for inside the report: an export's
-/// rails all fire before anything is staged.
-#[wasm_bindgen(js_name = exportSkills)]
-pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
+/// A build: the first marketplace's refusal, with nothing written, or
+/// `SwapFailed`. `Refused` (`compare-with`) for a build that names
+/// `compare_with`, or a request for several marketplaces that does.
+#[wasm_bindgen(js_name = buildVault)]
+pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let wire: WireExportRequest = serde_json::from_str(request_json)
-        .map_err(|e| throwable(&format!("request is not a valid ExportRequest: {e}")))?;
-    let ns = namespace_of(wire.namespace.as_deref())?;
+    let request: VaultRequest = serde_json::from_str(request_json)
+        .map_err(|e| throwable(&format!("request is not a valid VaultRequest: {e}")))?;
+    let report = core_build_vault(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
 
-    let report = core_export_skills(&vfs, &wire.request, &ns).map_err(|e| core_error_to_js(&e))?;
-
-    report_json("export report", &report)
+    report_json("vault report", &report)
 }
 
-/// What crosses as `request_json` for [`load_marketplace`]: the core's
-/// [`LoadRequest`], flattened, plus the namespace stem this layer adds.
-#[derive(Deserialize)]
-struct WireLoadRequest {
-    /// Flattened, not re-declared, as on [`WireExportRequest`].
-    #[serde(flatten)]
-    request: LoadRequest,
-    /// Absolute path to the folder a build writes to. The load leaves out what
-    /// a build owns there. Absent means nothing is left out.
-    #[serde(default)]
-    out_root: Option<PathBuf>,
-    /// The vault's frontmatter namespace, as a stem. Absent means
-    /// [`Namespace::default`].
-    #[serde(default)]
-    namespace: Option<String>,
-}
-
-/// The vault as `wire` asks to load it.
-fn load_view<'v>(vfs: &'v dyn Vfs, wire: &WireLoadRequest, ns: &Namespace) -> SourceView<'v> {
-    let request = &wire.request;
-    let mut scope = VaultScope::new(&request.vault_root);
-    scope.skills_root = request.skills_root.as_deref();
-    scope.marketplace = request.marketplace.as_deref();
-    source_view(
-        SourceView::over(vfs),
-        scope,
-        wire.out_root.as_deref(),
-        &request.config,
-        ns,
-    )
-}
-
-/// Load the vault into the marketplace model — every plugin and its members,
-/// with each body's links and calls resolved — and write nothing.
+/// Load one marketplace of the vault — every plugin and its members, with
+/// each body's links and calls resolved — and write nothing. The request's
+/// `marketplace` names it, and is required when the vault holds more than
+/// one.
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
-/// `LoadRequest` optionally carrying a `namespace` stem. Returns a serialized
-/// `Marketplace`: the same model `exportSkills` translates into files, so a
-/// host that wants to show a vault's structure reads it here rather than
-/// re-deriving it from a built tree.
+/// `LoadRequest`. Returns a serialized `wire::WireMarketplace`: the
+/// structure of the model `buildVault` translates into files, so a host
+/// that wants to show a vault reads it here rather than re-deriving it from a
+/// built tree.
 ///
 /// # Errors
 ///
-/// Everything the load refuses, thrown as on `exportSkills`: an unreadable
-/// member note, a call or link that does not resolve, an override key a
-/// requested harness does not read, an empty marketplace.
+/// Everything the load refuses, thrown as on `buildVault`: a vault outside
+/// the layout, `ambiguous-marketplace` (several and none named), an
+/// unreadable member note, a call or link that does not resolve, an empty
+/// marketplace.
 #[wasm_bindgen(js_name = loadMarketplace)]
 pub fn load_marketplace(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let wire: WireLoadRequest = serde_json::from_str(request_json)
+    let request: LoadRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid LoadRequest: {e}")))?;
-    let ns = namespace_of(wire.namespace.as_deref())?;
+    let market = wire_marketplace(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
 
-    let view = load_view(&vfs, &wire, &ns);
-    let market = core_load(&view, &wire.request, &ns).map_err(|e| core_error_to_js(&e))?;
-
-    report_json("marketplace model", &market)
-}
-
-// --- adoption ----------------------------------------------------------------
-
-/// What crosses as `request_json` for [`adopt_skills`]: the core's
-/// [`AdoptRequest`], flattened, plus the namespace stem this layer adds.
-#[derive(Debug, Deserialize)]
-struct WireAdoptRequest {
-    /// Flattened, not re-declared — including `adopted_at`, which is required
-    /// because the core has no clock and will not invent one.
-    #[serde(flatten)]
-    request: AdoptRequest,
-    /// The vault's frontmatter namespace, as a stem. Absent means
-    /// [`Namespace::default`]. It decides how the provenance keys the adoption
-    /// stamps are spelled, so a vault configured to `x` gets `x-source` and
-    /// reads it back as its own.
-    #[serde(default)]
-    namespace: Option<String>,
-}
-
-/// Import published `SKILL.md` bundles into the vault as notes — or, under
-/// `mode: "dry-run"`, report what that would have done and write nothing.
-///
-/// `vfs` is the host's filesystem object; `request_json` is a serialized
-/// `AdoptRequest` optionally carrying a `namespace` stem (see
-/// `WireAdoptRequest`). Returns a serialized `AdoptReport`.
-///
-/// # The preview is the core's mode, and a caller may not predict it
-///
-/// `mode` is `"write"`, or `"dry-run"` to plan the whole adoption and stop.
-/// Absent means `"write"`. The core runs the identical path in both, over a
-/// capturing overlay — same names, same collision refusals, same per-skill
-/// `refused` where a vault note already exists — so the preview is the report
-/// the write would have produced.
-///
-/// A host computing its own preview would be a second implementation of
-/// adoption's naming and refusal rules, wrong the first time the core's moved.
-///
-/// # Errors
-///
-/// Everything the core refuses before a byte is written, thrown: `RootNotFound`
-/// for a missing source, and `Refused` for the rail (a skills root that is,
-/// contains, or sits inside the source), `unknown-target`, `unsafe-path`,
-/// `path-collision`; `SkillNotFound` where a requested skill matched nothing.
-///
-/// An adoption target that already exists is NOT one of these. It is
-/// `status: "refused"` on that skill's report line, with the others proceeding
-/// — the same rail-inside-the-report shape `publishSkill` documents.
-#[wasm_bindgen(js_name = adoptSkills)]
-pub fn adopt_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
-    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let wire: WireAdoptRequest = serde_json::from_str(request_json)
-        .map_err(|e| throwable(&format!("request is not a valid AdoptRequest: {e}")))?;
-    let ns = namespace_of(wire.namespace.as_deref())?;
-
-    let report = core_adopt_skills(&vfs, &wire.request, &ns).map_err(|e| core_error_to_js(&e))?;
-
-    report_json("adopt report", &report)
-}
-
-// --- tracking ----------------------------------------------------------------
-
-/// What crosses as `request_json` for [`status_of`]: the core's
-/// [`StatusRequest`], flattened, plus the namespace stem this layer adds.
-#[derive(Deserialize)]
-struct WireStatusRequest {
-    /// Flattened, not re-declared — `skill_path`, `destination_root`,
-    /// `target` and `skills_root` are read by the core's own derive, so a
-    /// field added to the core's request reaches the boundary with no edit
-    /// here.
-    #[serde(flatten)]
-    request: StatusRequest,
-    /// The vault's frontmatter namespace, as a stem. Absent means
-    /// [`Namespace::default`], exactly as on [`WireRequest`].
-    #[serde(default)]
-    namespace: Option<String>,
-}
-
-/// One unit's publish state at one destination, for one target.
-///
-/// `vfs` is the host's filesystem object; `request_json` is a serialized
-/// `StatusRequest` optionally carrying a `namespace` stem (see
-/// `WireStatusRequest`). Returns a serialized `status::PublishUnitStatus`.
-///
-/// # A status is a publish that writes nothing
-///
-/// The core runs the classification a publish performs, in
-/// `PublishMode::DryRun` over the capturing overlay, and reads its report. No
-/// host may compute a state for itself: the five words come back from here
-/// already decided.
-///
-/// Nothing is written and no clock is read, which is why this export takes no
-/// timestamp where [`publish_skill`] does.
-///
-/// # Errors
-///
-/// Everything a publish of the same unit would throw, unchanged: an unreadable
-/// note, an unknown target, the destination rail. A destination whose manifest
-/// cannot be read is NOT one of these — it comes back inside the report as
-/// `state: "unknown"` with the reason, because "we could not determine a
-/// state" is an answer rather than a failure.
-#[wasm_bindgen(js_name = statusOf)]
-pub fn status_of(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
-    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let wire: WireStatusRequest = serde_json::from_str(request_json)
-        .map_err(|e| throwable(&format!("request is not a valid StatusRequest: {e}")))?;
-    let ns = namespace_of(wire.namespace.as_deref())?;
-
-    let status = core_status_of(&vfs, &wire.request, &ns).map_err(|e| core_error_to_js(&e))?;
-
-    report_json("status report", &status)
+    report_json("marketplace", &market)
 }
 
 // --- the shared half of every export ---------------------------------------
-
-/// The stem off the wire as exactly one [`Namespace`].
-///
-/// One function rather than four copies: a second place where a prefix could
-/// be spelled is the only way the read-once guarantee breaks.
-fn namespace_of(stem: Option<&str>) -> Result<Namespace, JsValue> {
-    match stem {
-        Some(stem) => Namespace::new(stem).map_err(|e| invalid_stem_to_js(&e)),
-        None => Ok(Namespace::default()),
-    }
-}
 
 /// A core report as the JSON string that crosses back.
 ///
@@ -637,19 +222,6 @@ fn core_error_to_js(e: &CoreError) -> JsValue {
     err.into()
 }
 
-/// A configured stem that cannot be a namespace, as a thrown `Error`.
-///
-/// `.name` is `InvalidStem` — the core's type, not a `CoreError` variant, and
-/// not one either: nothing was read, no note is involved, and a host that
-/// matched this against the `CoreError` names would be told a publish failed
-/// when in fact it never started. The message is `InvalidStem`'s `Display`
-/// verbatim, which already names the stem and the reason.
-fn invalid_stem_to_js(e: &InvalidStem) -> JsValue {
-    let err = js_sys::Error::new(&e.to_string());
-    err.set_name("InvalidStem");
-    err.into()
-}
-
 /// A boundary failure that never reached the core — bad JSON in, unserializable
 /// report out. Deliberately left with JavaScript's own `Error` name, because it
 /// is not any `CoreError` variant and claiming one would be a lie.
@@ -659,192 +231,74 @@ fn throwable(message: &str) -> JsValue {
 
 /// The wire, and only the wire.
 ///
-/// What these pin is the half of the boundary that fails silently: a
-/// `#[serde(flatten)]` envelope whose optional key is spelled wrong parses
-/// fine and drops the value, so a `mode: "check"` that never reached the core
-/// would write a marketplace a caller asked it not to. The exports themselves
+/// What these pin is the half of the boundary that fails silently: an
+/// optional key spelled wrong would, without `deny_unknown_fields`, parse fine
+/// and drop the value, so a `mode: "check"` that never reached the core would
+/// write a marketplace a caller asked it not to. The exports themselves
 /// need a JS engine, so they are tested end to end against the artifact
 /// `build.sh` produces, not here.
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use tradecraft_core::{AdoptMode, ExportMode, MemVfs};
+    use tradecraft_core::{ExportMode, MemVfs, Vfs};
 
     use super::*;
 
     #[test]
-    fn an_export_request_flattens_and_its_absences_are_the_core_defaults() {
-        let wire: WireExportRequest = serde_json::from_str(
+    fn a_vault_request_s_absences_are_the_core_defaults() {
+        let request: VaultRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        assert_eq!(request.vault_root, PathBuf::from("/vault"));
+        assert_eq!(request.mode, ExportMode::Build);
+        assert_eq!(request.marketplace, None);
+        assert!(request.harnesses.is_empty());
+        assert_eq!(request.compare_with, None);
+    }
+
+    #[test]
+    fn check_mode_crosses_in_the_request() {
+        let request: VaultRequest = serde_json::from_str(
             r#"{
                 "vault_root": "/vault",
-                "out_root": "/out",
-                "config": { "name": "market" }
+                "marketplace": "house",
+                "mode": "check"
             }"#,
         )
         .unwrap();
 
-        assert_eq!(wire.request.vault_root, PathBuf::from("/vault"));
-        assert_eq!(wire.request.out_root, PathBuf::from("/out"));
-        assert_eq!(wire.request.config.name.as_deref(), Some("market"));
-        // Every absence, at its documented default.
-        assert_eq!(wire.request.mode, ExportMode::Build);
-        assert_eq!(wire.request.skills_root, None);
-        assert_eq!(wire.namespace, None);
-        assert!(wire.request.config.plugins.is_empty());
+        assert_eq!(request.mode, ExportMode::Check);
+        assert_eq!(request.marketplace.as_deref(), Some("house"));
     }
 
     #[test]
-    fn check_mode_and_a_stem_cross_beside_the_flattened_request() {
-        let wire: WireExportRequest = serde_json::from_str(
-            r#"{
-                "vault_root": "/vault",
-                "skills_root": "/vault/skills",
-                "out_root": "/out",
-                "mode": "check",
-                "namespace": "x",
-                "config": { "name": "market" }
-            }"#,
-        )
-        .unwrap();
-
-        assert_eq!(wire.request.mode, ExportMode::Check);
-        assert_eq!(wire.namespace.as_deref(), Some("x"));
-        assert_eq!(
-            wire.request.skills_root,
-            Some(PathBuf::from("/vault/skills"))
-        );
-    }
-
-    #[test]
-    fn an_adopt_request_flattens_and_dry_run_reaches_the_core_mode() {
-        let write: WireAdoptRequest = serde_json::from_str(
-            r#"{
-                "source": "/src",
-                "vault_root": "/vault",
-                "adopted_at": "2026-08-22T00:00:00Z"
-            }"#,
-        )
-        .unwrap();
-        assert_eq!(write.request.mode, AdoptMode::Write);
-        assert!(write.request.overwrite.is_empty());
-        assert_eq!(write.request.plugin, None);
-        assert_eq!(write.request.targets, None);
-
-        let preview: WireAdoptRequest = serde_json::from_str(
-            r#"{
-                "source": "/src",
-                "vault_root": "/vault",
-                "adopted_at": "2026-08-22T00:00:00Z",
-                "mode": "dry-run",
-                "plugin": "adopted",
-                "targets": ["claude"],
-                "skills": ["code-review"],
-                "overwrite": ["/vault/plugins/adopted/skills/code-review/code-review.md"],
-                "namespace": "x"
-            }"#,
-        )
-        .unwrap();
-        assert_eq!(preview.request.mode, AdoptMode::DryRun);
-        assert_eq!(preview.request.plugin.as_deref(), Some("adopted"));
-        assert_eq!(
-            preview.request.targets.as_deref(),
-            Some(&["claude".to_string()][..])
-        );
-        assert_eq!(
-            preview.request.skills.as_deref(),
-            Some(&["code-review".to_string()][..])
-        );
-        assert_eq!(
-            preview.request.overwrite,
-            ["/vault/plugins/adopted/skills/code-review/code-review.md"]
-        );
-        assert_eq!(preview.namespace.as_deref(), Some("x"));
-    }
-
-    #[test]
-    fn an_adoption_without_a_timestamp_is_refused_at_the_wire() {
-        // The core has no clock, so `adopted_at` is required rather than
-        // defaulted: a stamp this layer invented would be a fact about the
-        // adoption that nothing on the wire agreed to.
-        let err = serde_json::from_str::<WireAdoptRequest>(
-            r#"{ "source": "/src", "vault_root": "/vault" }"#,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("adopted_at"), "{err}");
-    }
-
-    #[test]
-    fn a_status_request_flattens_and_its_namespace_defaults() {
-        let wire: WireStatusRequest = serde_json::from_str(
-            r#"{
-                "skill_path": "/vault/skills/code-review.md",
-                "destination_root": "/dest",
-                "target": "claude"
-            }"#,
-        )
-        .unwrap();
-
-        assert_eq!(
-            wire.request.skill_path,
-            PathBuf::from("/vault/skills/code-review.md")
-        );
-        assert_eq!(wire.request.destination_root, PathBuf::from("/dest"));
-        assert_eq!(wire.request.target, "claude");
-        // Absence has one meaning, and it is the documented default rather
-        // than a failure.
-        assert_eq!(wire.request.skills_root, None);
-        assert_eq!(wire.namespace, None);
-
-        let stemmed: WireStatusRequest = serde_json::from_str(
-            r#"{
-                "skill_path": "/vault/skills/code-review.md",
-                "destination_root": "/dest",
-                "target": "claude",
-                "skills_root": "/vault",
-                "namespace": "x"
-            }"#,
-        )
-        .unwrap();
-        assert_eq!(stemmed.request.skills_root, Some(PathBuf::from("/vault")));
-        assert_eq!(stemmed.namespace.as_deref(), Some("x"));
-    }
-
-    #[test]
-    fn a_discovery_request_defaults_its_optional_fields() {
+    fn a_discovery_request_requires_its_vault_root() {
         let wire: WireDiscoverRequest =
             serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
-        assert_eq!(wire.skills_root, None);
-        assert_eq!(wire.out_root, None);
-        assert!(wire.config.is_none());
-        assert_eq!(wire.namespace, None);
+        assert_eq!(wire.vault_root, PathBuf::from("/vault"));
 
-        // And the one required field is required.
         let err = serde_json::from_str::<WireDiscoverRequest>(r#"{}"#).unwrap_err();
         assert!(err.to_string().contains("vault_root"), "{err}");
     }
 
-    /// `discoverComponents` leaves an unset identity field out, so a skill's
-    /// `identity` is `{}`.
+    /// An unknown key is refused, not dropped: a removed key such as `config`
+    /// or `defaults`, or a typo of an optional key, would otherwise parse and
+    /// be lost.
     #[test]
-    fn a_discovered_skill_s_identity_is_an_empty_object() {
-        let vfs = MemVfs::new();
-        let path = Path::new("/vault/skills/a.md");
-        vfs.create_dir_all(path.parent().unwrap()).unwrap();
-        vfs.write_file(path, b"---\ndescription: Use it.\n---\nBody.\n")
-            .unwrap();
-        let ns = Namespace::bare();
-        let report = core_discover_components(&vfs, Path::new("/vault"), None, &ns).unwrap();
-        let json: serde_json::Value =
-            serde_json::from_str(&report_json("discovery report", &report).unwrap()).unwrap();
-        let skill = &json["components"][0];
-        assert_eq!(skill["kind"], "skill", "{json}");
-        assert_eq!(skill["identity"], serde_json::json!({}), "{json}");
+    fn every_request_refuses_an_unknown_key() {
+        for key in ["config", "defaults"] {
+            let json = format!(r#"{{ "vault_root": "/vault", "{key}": {{}} }}"#);
+            let vault = serde_json::from_str::<VaultRequest>(&json).unwrap_err();
+            assert!(vault.to_string().contains(key), "{vault}");
+            let load = serde_json::from_str::<LoadRequest>(&json).unwrap_err();
+            assert!(load.to_string().contains(key), "{load}");
+            let discover = serde_json::from_str::<WireDiscoverRequest>(&json).unwrap_err();
+            assert!(discover.to_string().contains(key), "{discover}");
+        }
     }
 
-    /// A vault that moves its packs folder inside itself, with a note left in
-    /// that folder.
-    fn vault_with_moved_output() -> MemVfs {
+    /// A vault: one marketplace `m`, one plugin `rev`, one skill `a`, and
+    /// a built tree in `dist/m/` holding a stale note.
+    fn vault() -> MemVfs {
         let vfs = MemVfs::new();
         let file = |path: &str, text: &str| {
             let path = Path::new(path);
@@ -852,53 +306,76 @@ mod tests {
             vfs.write_file(path, text.as_bytes()).unwrap();
         };
         let skill = "---\ndescription: Use it.\n---\nBody.\n";
-        file("/vault/skillwright.md", "---\nname: m\n---\n");
+        file("/vault/skillwright.md", "---\n---\n");
+        file("/vault/marketplaces/m/m.md", "---\n---\n");
+        file("/vault/marketplaces/m/plugins/rev/rev.md", "---\n---\n");
+        file("/vault/marketplaces/m/plugins/rev/skills/a/a.md", skill);
         file(
-            "/vault/marketplaces/m/skillwright.md",
-            "---\nname: m\nclaude: {packs: built}\n---\n",
+            "/vault/dist/m/.claude-plugin/packs/rev/skills/stale.md",
+            skill,
         );
-        file("/vault/marketplaces/m/plugins/rev/skills/a.md", skill);
-        file("/vault/built/rev/.claude-plugin/plugin.json", "{}");
-        file("/vault/built/rev/skills/stale.md", skill);
         vfs
     }
 
+    /// `discoverComponents` leaves an unset identity field out, so a skill's
+    /// `identity` is `{}`.
     #[test]
-    fn discovery_with_an_out_root_leaves_out_a_moved_packs_folder() {
-        let vfs = vault_with_moved_output();
-        let ns = Namespace::bare();
-        let found = |json: &str| {
-            let wire: WireDiscoverRequest = serde_json::from_str(json).unwrap();
-            let view = discovery_view(&vfs, &wire, &ns).unwrap();
-            let root = wire.vault_root.as_path();
-            let report = core_discover_components(&view, root, None, &ns).unwrap();
-            serde_json::to_string(&report).unwrap()
-        };
-
-        let all = found(r#"{ "vault_root": "/vault" }"#);
-        assert!(all.contains("stale"), "{all}");
-
-        let source = found(r#"{ "vault_root": "/vault", "out_root": "/vault" }"#);
-        assert!(source.contains("plugins/rev/skills/a.md"), "{source}");
-        assert!(!source.contains("stale"), "{source}");
+    fn a_discovered_skill_s_identity_is_an_empty_object() {
+        let vfs = vault();
+        let report = core_discover_components(&vfs, Path::new("/vault")).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&report_json("discovery report", &report).unwrap()).unwrap();
+        let skill = json["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["kind"] == "skill")
+            .unwrap();
+        assert_eq!(skill["identity"], serde_json::json!({}), "{json}");
     }
 
     #[test]
-    fn a_load_with_an_out_root_leaves_out_a_moved_packs_folder() {
-        let vfs = vault_with_moved_output();
-        let ns = Namespace::bare();
-        let load = |json: &str| {
-            let wire: WireLoadRequest = serde_json::from_str(json).unwrap();
-            core_load(&load_view(&vfs, &wire, &ns), &wire.request, &ns)
-        };
+    fn discovery_and_the_load_never_read_the_built_tree() {
+        let vfs = vault();
+        let report = core_discover_components(&vfs, Path::new("/vault")).unwrap();
+        let found = serde_json::to_string(&report).unwrap();
+        assert!(found.contains("plugins/rev/skills/a/a.md"), "{found}");
+        assert!(!found.contains("stale"), "{found}");
 
-        let err = load(r#"{ "vault_root": "/vault", "config": {} }"#).unwrap_err();
-        assert!(err.to_string().contains("stale"), "{err}");
+        let request: LoadRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        let market = wire_marketplace(&vfs, &request).unwrap();
+        let loaded = serde_json::to_string(&market).unwrap();
+        assert!(loaded.contains("rev"), "{loaded}");
+        assert!(!loaded.contains("stale"), "{loaded}");
+    }
 
-        let market =
-            load(r#"{ "vault_root": "/vault", "out_root": "/vault", "config": {} }"#).unwrap();
-        let source = serde_json::to_string(&market).unwrap();
-        assert!(source.contains("rev"), "{source}");
-        assert!(!source.contains("stale"), "{source}");
+    /// The load answers in the wire types: no body segments, no folder, no
+    /// agent-adapt content.
+    #[test]
+    fn the_loaded_marketplace_carries_the_wire_shape_only() {
+        let vfs = vault();
+        let request: LoadRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        let market = wire_marketplace(&vfs, &request).unwrap();
+        let json = serde_json::to_value(&market).unwrap();
+        let keys =
+            |v: &serde_json::Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+        assert_eq!(
+            keys(&json),
+            ["name", "plugins", "uncarried", "warnings", "checked"]
+        );
+        let skill = &json["plugins"]["rev"]["skills"][0];
+        assert_eq!(
+            keys(skill),
+            [
+                "kind",
+                "name",
+                "path",
+                "blocks",
+                "description",
+                "calls",
+                "resources"
+            ]
+        );
+        assert_eq!(skill["description"], "Use it.");
     }
 }

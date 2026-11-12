@@ -8,20 +8,14 @@ one implementation per vault concept.
 ## Decision
 
 - **skillwright keeps no vault code of its own.** Load reads the vault
-  through osdlc's crates: `vfs-seam` for file access, `vfs-walk` and
-  `markdown-vault-fs` for the walk, `markdown-link` for parsing, the link
-  index and resolution, `markdown-contract` for heading and block selection.
-  Renames use `markdown-corpus`, because the planner needs every note's
-  links. Load does not: it needs only the walk's paths, and a corpus would
-  read and scan every note to give them.
+  through osdlc's crates: `vfs-seam` for file access, `markdown-link` for
+  parsing links, `markdown-contract` for heading
+  and block selection, and `path-guard` for containment.
 - **What stays in skillwright is its own:** skill calls (`/[[call]]`) as a
-  layer over `markdown-link`'s tokens, component kinds, `sw-` frontmatter,
-  and the refusals that guard publishing.
+  layer over `markdown-link`'s tokens, the fixed layout, its walk and the component
+  kinds, its frontmatter keys, and the link scope of each plugin.
 - **`tradecraft-core`'s `Vfs` is `vfs-seam`'s,** re-exported.
   `tradecraft-wasm`'s `JsVfs` implements it for JS consumers.
-- **Asset and script walks use `vfs-walk` directly,** without vault rules.
-- **Excluded files are honoured.** A note the vault excludes is not
-  published. skillwright did not read the list before.
 - **Gaps are fixed upstream, as options,** not worked around here.
 
 ## Why
@@ -38,9 +32,7 @@ wasm. osdlc's crates now read through a trait, so that reason is gone.
 ## Consequences
 
 - osdlc releases first; skillwright then bumps to it.
-- skillwright resolves a vault's links the same way determined does.
-- `build --watch` can use `markdown-corpus`'s incremental refresh instead of
-  a full rebuild.
+- skillwright parses a vault's links the same way determined does.
 
 ## Reopen if
 

@@ -1,21 +1,8 @@
 //! Every harness this crate knows, as one row of data each.
 //!
-//! Harness facts used to live in about eight places — the build's roots
-//! table, publish's plugin layouts and its `plugin_format_carries_*`
-//! predicates, the destination-name folds, the runtime maps, the CLI's
-//! install adapters — and each covered a different set of harnesses. A fact
-//! two of them disagreed on was a bug nobody could see from either side.
-//! This table is the one place now (D-FDLQ): a harness differs from another
-//! in the values of its row, and what cannot be said as a value is code in
-//! its [`crate::harness::HarnessTranslator`].
-//!
-//! # Two kinds of row
-//!
-//! Claude, Codex, Cursor and Pi carry a [`PluginPolicy`]: they are the
-//! harnesses a marketplace is built for and a pack is published to. The other
-//! five — Amp, Antigravity, Copilot, OpenCode and the portable Agent Skills
-//! layout — are destinations a single note publishes to. Their rows hold only
-//! the names they answer to and the runtime they render through.
+//! A harness differs from another in the values of its row (D-FDLQ), and
+//! what cannot be said as a value is code in its `HarnessTranslator`. Each
+//! row in [`PROFILES`] has a [`PluginPolicy`].
 //!
 //! # Facts from the knowledge file, policy in code
 //!
@@ -31,7 +18,7 @@
 //! moves a fact is a visible test failure, not a silent change.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use agent_adapt::RuntimeId;
 
@@ -43,29 +30,22 @@ use crate::hooks_file::PluginRootVar;
 /// each harness's docs.
 const HOOKS_OBSERVED: &str = "2026-10-05";
 
-/// One harness: the names it answers to, the runtime it renders through and,
-/// for the four that have one, its plugin policy.
+/// One harness: its name, the runtime it renders through and its plugin
+/// policy.
 #[derive(Debug)]
 pub struct HarnessProfile {
-    /// The canonical destination name. Every spelling folds onto it.
+    /// The harness's name, one of [`KNOWN_TARGETS`].
     pub name: &'static str,
     /// The harness's product name, for messages.
     pub label: &'static str,
-    /// Every name `targets`, harness blocks and a publish's target accept
-    /// for this harness, the canonical one first.
-    pub spellings: &'static [&'static str],
-    /// The `agent-adapt` runtime a note renders through for this destination.
+    /// The `agent-adapt` runtime a note renders through for this harness.
     pub runtime: &'static str,
-    /// The runtime whose capability declaration answers for this
-    /// destination — which keys an override block may carry. `portable`
-    /// renders through `codex-cli` and is declared by the standards-only
-    /// adapter, so the two can differ.
+    /// The runtime whose capability declaration answers for this harness:
+    /// which keys an override block may carry.
     pub declaration: RuntimeId,
-    /// The plugin policy, for a harness a marketplace is built for. The
-    /// facts it leaves to the knowledge file are read by [`Self::format`].
-    pub plugin: Option<PluginPolicy>,
-    /// The harness's own `plugin` CLI, for one `skillwright harness` drives.
-    pub install: Option<InstallCli>,
+    /// The plugin policy. The facts it leaves to the knowledge file are read
+    /// by [`Self::format`].
+    pub plugin: PluginPolicy,
 }
 
 /// Where a profile value comes from.
@@ -112,7 +92,7 @@ pub struct PluginPolicy {
     pub packs: &'static str,
     /// Which shape the manifests take.
     pub dialect: PluginDialect,
-    /// How a rendered skill's body calls the launcher.
+    /// How a rendered skill's body names a file in its plugin's root.
     pub cli_invocation: CliInvocation,
     /// The plugin-root variable; `None` when the pack carries no hooks file.
     pub plugin_root: Option<PluginRootPolicy>,
@@ -139,12 +119,12 @@ pub struct PluginPolicy {
 /// Where a harness reads a plugin from, and how its pack is shaped.
 #[derive(Debug)]
 pub struct PluginFormat {
-    /// The project directory the runtime's projection puts a skill under,
-    /// and so where a pack published to a destination lands.
+    /// The project directory the runtime's projection puts a skill under.
+    /// The translator strips it and writes the skill under the pack's
+    /// `skills/`.
     pub skills_dir: &'static str,
     /// The folder under the home directory the harness loads a user's own
-    /// skills from. `publish` writes there and `adopt` reads from there when
-    /// no destination or source is named. Each row's `PluginPolicy::user_skills_dir`
+    /// skills from. Each row's `PluginPolicy::user_skills_dir`
     /// says where its value comes from and which folder it keeps when the
     /// harness reads several.
     pub user_skills_dir: &'static str,
@@ -162,7 +142,7 @@ pub struct PluginFormat {
     pub packs: &'static str,
     /// Which shape the manifests take.
     pub dialect: PluginDialect,
-    /// How a rendered skill's body should call the plugin's launcher.
+    /// How a rendered skill's body names a file in its plugin's root.
     pub cli_invocation: CliInvocation,
     /// The variable this harness's hook commands name the plugin root by.
     /// `None` when its pack carries no hooks file (Pi).
@@ -175,7 +155,7 @@ pub struct PluginFormat {
     /// Whether the pack has a place for a command.
     pub carries_commands: bool,
     /// Whether the pack carries a hooks file at
-    /// [`crate::publish::PLUGIN_HOOKS_PATH`].
+    /// [`PLUGIN_HOOKS_PATH`].
     pub carries_hooks: bool,
     /// The keys this harness reads in a pack manifest. A container note's
     /// harness block may set these, and the build merges them over what it
@@ -198,9 +178,6 @@ pub struct PluginFormat {
     block_keys: BlockKeys,
 }
 
-/// The block keys of a row with no plugin format.
-static NO_KEYS: BTreeSet<String> = BTreeSet::new();
-
 /// The keys a harness's blocks accept, by the kind of note they sit on,
 /// worked out once from the row.
 #[derive(Debug)]
@@ -218,8 +195,10 @@ struct BlockKeys {
 }
 
 impl BlockKeys {
+    /// `name` is in no set: a block refuses it (spec section 3 rule 4).
     fn of(profile: &HarnessProfile, policy: &PluginPolicy) -> Self {
-        let component = profile.accepted_override_keys();
+        let mut component = profile.accepted_override_keys();
+        component.remove(crate::keys::NAME_KEY);
         let member: BTreeMap<EntityKind, BTreeSet<String>> = EntityKind::ALL
             .into_iter()
             .map(|kind| {
@@ -244,6 +223,7 @@ impl BlockKeys {
         if policy.naming_choice {
             plugin.insert(crate::harness::manifest::NAMING_KEY.to_owned());
         }
+        plugin.remove(crate::keys::NAME_KEY);
         let passed_down: BTreeSet<String> = plugin
             .iter()
             .filter(|key| {
@@ -254,7 +234,7 @@ impl BlockKeys {
             .collect();
         let mut marketplace = passed_down.clone();
         marketplace.extend(owned(policy.marketplace_fields));
-        marketplace.insert(crate::harness::manifest::PACKS_KEY.to_owned());
+        marketplace.remove(crate::keys::NAME_KEY);
         Self {
             component,
             member,
@@ -440,19 +420,6 @@ const PI_MANIFEST_FIELDS: &[&str] = &[
     "pi",
 ];
 
-/// What `skillwright harness` needs to know about a harness's own CLI that
-/// is a fact rather than an argv builder. The builders stay in the CLI crate,
-/// which is the only one that runs them.
-#[derive(Debug)]
-pub struct InstallCli {
-    /// The scopes a registration can take, by the name the CLI prints.
-    pub scopes: &'static [&'static str],
-    /// The harness registers a marketplace only from a git URL.
-    pub needs_git_url: bool,
-    /// The harness's add command takes a git ref.
-    pub takes_git_ref: bool,
-}
-
 /// Which dialect a pack manifest is rendered in.
 ///
 /// Claude, Codex and Cursor differ in the display name: Codex carries it in
@@ -491,38 +458,19 @@ pub enum SkillNaming {
     PluginPrefixed,
 }
 
-/// How a rendered skill body calls the plugin's launcher.
-///
-/// Every skill in the vault writes the call site the same way, as
-/// `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` — the vault's own text is written
-/// for Claude, since that is the harness every skill author develops against.
-/// This decides what each *other* harness does with that same text at render
-/// time.
+/// How a rendered skill body names a file in its plugin's root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliInvocation {
-    /// Leave the vault's `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` text exactly
-    /// as written. Claude Code substitutes the token itself, inline, when it
-    /// loads skill markdown — see the plugin manifest reference's
-    /// "Environment variables" section
+    /// As `${CLAUDE_PLUGIN_ROOT}/<path>`. Claude Code expands the token in
+    /// skill, command and agent text
     /// (<https://code.claude.com/docs/en/plugins-reference>, retrieved
-    /// 2026-09-26): `${CLAUDE_PLUGIN_ROOT}` resolves in "Skill, command, and
-    /// agent content" bodies specifically, a Claude Code plugin mechanism
-    /// with no counterpart in another harness.
+    /// 2026-09-26).
     PluginRootToken,
-    /// Rewrite every `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` call site in a
-    /// skill's rendered body to the launcher's path relative to the skill's
-    /// own folder (`../../bin/tool`), the way a skill names its own files.
-    /// Neither Codex CLI nor Cursor substitutes
-    /// `${CLAUDE_PLUGIN_ROOT}` — Codex's own skills documentation
-    /// (<https://developers.openai.com/codex/skills>) never mentions the
-    /// token, and Cursor's skills documentation
-    /// (<https://cursor.com/docs/skills>, retrieved 2026-09-26) instructs
-    /// authors to "reference scripts in your SKILL.md using relative paths
-    /// from the skill root" instead — so a literal, un-rewritten
-    /// `${CLAUDE_PLUGIN_ROOT}/...` call site is dead text for either
-    /// harness, expanding to `/<launcher_path>` with an empty prefix. Pi does
-    /// not substitute it either, and tells the model a skill's base
-    /// directory so its relative paths resolve.
+    /// As the file's path from the folder the text lands in
+    /// (`../../scripts/tool`). Codex, Cursor and Pi expand no variable in
+    /// skill text: Cursor's skills documentation
+    /// (<https://cursor.com/docs/skills>, retrieved 2026-09-26) says to use
+    /// paths relative to the skill root.
     SkillRelativePath,
 }
 
@@ -530,10 +478,9 @@ pub enum CliInvocation {
 pub const CLAUDE: HarnessProfile = HarnessProfile {
     name: "claude",
     label: "Claude Code",
-    spellings: &["claude", "claude-code"],
     runtime: "claude-code",
     declaration: RuntimeId::ClaudeCode,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".claude/skills",
         user_skills_dir: Source::Knowledge,
         plugin_manifest: Source::Knowledge,
@@ -556,22 +503,16 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
         entry_fields: CLAUDE_ENTRY_FIELDS,
         naming_choice: false,
         agent_only_overrides: CLAUDE_AGENT_ONLY_OVERRIDES,
-    }),
-    install: Some(InstallCli {
-        scopes: &["user", "project", "local"],
-        needs_git_url: false,
-        takes_git_ref: false,
-    }),
+    },
 };
 
 /// The Codex row.
 pub const CODEX: HarnessProfile = HarnessProfile {
     name: "codex",
     label: "Codex",
-    spellings: &["codex", "codex-cli"],
     runtime: "codex-cli",
     declaration: RuntimeId::CodexCli,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".agents/skills",
         user_skills_dir: Source::Knowledge,
         // knowledge disagrees: plugins/manifest-fields names the Agent Plugins
@@ -599,22 +540,16 @@ pub const CODEX: HarnessProfile = HarnessProfile {
         entry_fields: CODEX_ENTRY_FIELDS,
         naming_choice: false,
         agent_only_overrides: &[],
-    }),
-    install: Some(InstallCli {
-        scopes: &["user"],
-        needs_git_url: false,
-        takes_git_ref: true,
-    }),
+    },
 };
 
 /// The Cursor row.
 pub const CURSOR: HarnessProfile = HarnessProfile {
     name: "cursor",
     label: "Cursor",
-    spellings: &["cursor"],
     runtime: "cursor",
     declaration: RuntimeId::Cursor,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".cursor/skills",
         // knowledge disagrees: skills/user-dirs lists `~/.agents/skills` first
         // and `~/.cursor/skills` second; the row keeps the harness's own folder
@@ -624,40 +559,32 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         packs: ".cursor-plugin/packs",
         dialect: PluginDialect::Cursor,
         cli_invocation: CliInvocation::SkillRelativePath,
-        plugin_root: Some(PluginRootPolicy {
-            name: Source::Knowledge,
-            url: "https://cursor.com/docs/reference/plugins",
-            observed_on: HOOKS_OBSERVED,
-            note: Some(
-                "documented as expanded, beside `CLAUDE_PLUGIN_ROOT`, in a plugin's MCP \
-                 server fields; not documented for hook commands",
-            ),
-        }),
-        naming: Source::Knowledge,
-        hooks_manifest_entry: Some("./hooks/hooks.json"),
+        // Cursor documents `CURSOR_PLUGIN_ROOT` only in `mcp.json`, not for
+        // hook commands, so the pack ships no hooks until a probe confirms it
+        // (spec section 4 rule 23; issue #152).
+        plugin_root: None,
+        // Policy, as Pi's: knowledge records what Cursor allows (plain
+        // names); prefixing the plugin is skillwright's default, so two
+        // plugins' skills cannot collide (spec section 8 rule 6).
+        naming: Source::Constant(SkillNaming::PluginPrefixed),
+        hooks_manifest_entry: None,
         carries_commands: false,
-        carries_hooks: true,
+        carries_hooks: false,
         manifest_fields: CURSOR_MANIFEST_FIELDS,
         marketplace_fields: CURSOR_MARKETPLACE_FIELDS,
         entry_fields: CURSOR_ENTRY_FIELDS,
         naming_choice: true,
         agent_only_overrides: &[],
-    }),
-    install: Some(InstallCli {
-        scopes: &["user"],
-        needs_git_url: true,
-        takes_git_ref: true,
-    }),
+    },
 };
 
 /// The Pi row.
 pub const PI: HarnessProfile = HarnessProfile {
     name: "pi",
     label: "Pi",
-    spellings: &["pi"],
     runtime: "pi",
     declaration: RuntimeId::Pi,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".pi/skills",
         user_skills_dir: Source::Knowledge,
         plugin_manifest: Source::Knowledge,
@@ -680,81 +607,13 @@ pub const PI: HarnessProfile = HarnessProfile {
         entry_fields: &[],
         naming_choice: true,
         agent_only_overrides: &[],
-    }),
-    // `pi install <path>` records a package in the user's settings, or with
-    // `-l` the project's. Pi has no marketplace, so packs install by path.
-    install: Some(InstallCli {
-        scopes: &["user", "project"],
-        needs_git_url: false,
-        takes_git_ref: false,
-    }),
-};
-
-/// The Amp row.
-pub const AMP: HarnessProfile = HarnessProfile {
-    name: "amp",
-    label: "Amp",
-    spellings: &["amp"],
-    runtime: "amp",
-    declaration: RuntimeId::Amp,
-    plugin: None,
-    install: None,
-};
-
-/// The Antigravity row.
-pub const ANTIGRAVITY: HarnessProfile = HarnessProfile {
-    name: "antigravity",
-    label: "Antigravity",
-    spellings: &["antigravity"],
-    runtime: "antigravity",
-    declaration: RuntimeId::Antigravity,
-    plugin: None,
-    install: None,
-};
-
-/// The GitHub Copilot row.
-pub const COPILOT: HarnessProfile = HarnessProfile {
-    name: "copilot",
-    label: "GitHub Copilot",
-    spellings: &["copilot", "github-copilot"],
-    runtime: "github-copilot",
-    declaration: RuntimeId::GithubCopilot,
-    plugin: None,
-    install: None,
-};
-
-/// The OpenCode row.
-pub const OPENCODE: HarnessProfile = HarnessProfile {
-    name: "opencode",
-    label: "OpenCode",
-    spellings: &["opencode"],
-    runtime: "opencode",
-    declaration: RuntimeId::OpenCode,
-    plugin: None,
-    install: None,
-};
-
-// `codex` and `portable` are the same layout, and that is the finding,
-// not a shortcut — Codex reads the neutral `.agents/skills/` convention,
-// which *is* the portable target. The portable target's `AGENTS.md` half
-// is not emitted yet; it is an instructions file, not a skill.
-/// The Agent Skills (portable) row.
-pub const PORTABLE: HarnessProfile = HarnessProfile {
-    name: "portable",
-    label: "Agent Skills (portable)",
-    spellings: &["portable"],
-    runtime: "codex-cli",
-    declaration: RuntimeId::Portable,
-    plugin: None,
-    install: None,
+    },
 };
 
 /// The harness's slug in the knowledge file.
 pub(crate) fn knowledge_slug(name: &str) -> &str {
     match name {
         "claude" => "claude-code",
-        "copilot" => "copilot-cli",
-        "portable" => "agent-skills",
         other => other,
     }
 }
@@ -839,10 +698,7 @@ fn sourced<T>(
 }
 
 fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
-    let policy = profile
-        .plugin
-        .as_ref()
-        .expect("a format is resolved from a plugin policy");
+    let policy = &profile.plugin;
     let name = profile.name;
     PluginFormat {
         skills_dir: policy.skills_dir,
@@ -896,85 +752,52 @@ fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
     }
 }
 
-/// Every harness, the four with a plugin format first and in report order
-/// (`claude`, `codex`, `cursor`, `pi`), then the spelling-only rows
-/// alphabetically.
-pub const PROFILES: [HarnessProfile; 9] = [
-    CLAUDE,
-    CODEX,
-    CURSOR,
-    PI,
-    AMP,
-    ANTIGRAVITY,
-    COPILOT,
-    OPENCODE,
-    PORTABLE,
-];
+/// Every harness, in report order.
+pub const PROFILES: [HarnessProfile; 4] = [CLAUDE, CODEX, CURSOR, PI];
+
+/// Every name `build.harnesses` and `--harness` accept, in report order: the
+/// list a refusal prints so the fix is on screen. There are no aliases.
+pub const KNOWN_TARGETS: &[&str] = &["claude", "codex", "cursor", "pi"];
+
+/// What a refusal of the names in `unknown` says after naming the key:
+/// which names are not harnesses, and the ones that are.
+pub(crate) fn unknown_targets_detail(unknown: &[&str]) -> String {
+    let names: Vec<String> = unknown.iter().map(|name| format!("`{name}`")).collect();
+    let known: Vec<String> = KNOWN_TARGETS
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect();
+    let (last, rest) = known.split_last().expect("four names");
+    format!(
+        "names {}, which {} not a harness. The harnesses are {} and {last}",
+        names.join(", "),
+        if unknown.len() == 1 { "is" } else { "are" },
+        rest.join(", ")
+    )
+}
+
+/// Where a plugin's hooks land inside its pack, for the formats that carry
+/// them.
+pub const PLUGIN_HOOKS_PATH: &str = "hooks/hooks.json";
 
 impl HarnessProfile {
-    /// The install facts of a harness `skillwright harness` drives, readable
-    /// in a `const` so the CLI's adapter table can be built from them.
+    /// The plugin format: this row's policy with the facts the knowledge
+    /// file gives, resolved once on first use.
     ///
     /// # Panics
     ///
-    /// At compile time, on a row with none.
-    pub const fn install_cli(&self) -> &InstallCli {
-        match &self.install {
-            Some(install) => install,
-            None => panic!("this harness has no install CLI"),
-        }
-    }
-
-    /// The plugin format of a harness that has one: its row's policy with the
-    /// facts the knowledge file gives, resolved once on first use.
-    ///
-    /// # Panics
-    ///
-    /// On a spelling-only row. Every caller holds a row from
-    /// [`with_plugin_format`], which yields no other kind. Also if the
-    /// embedded knowledge lacks a fact the row takes from it. The canonical
-    /// rows cannot, and that guarantee is the
-    /// `the_resolved_formats_equal_the_constants_the_rows_held` test; a custom
-    /// row that takes a fact the file lacks panics here.
+    /// On a row that is not one of [`PROFILES`], or if the embedded knowledge
+    /// lacks a fact the row takes from it. The canonical rows cannot, and
+    /// that guarantee is the
+    /// `the_resolved_formats_equal_the_constants_the_rows_held` test.
     pub fn format(&self) -> &'static PluginFormat {
-        self.plugin_format()
-            .expect("only a harness with a plugin format is asked for one")
-    }
-
-    /// [`Self::format`], or `None` for a spelling-only row.
-    ///
-    /// Resolved from this row's own policy and declaration. A row equal to a
-    /// canonical one shares its cached format; a modified or custom row is
-    /// resolved once per distinct name, declaration and policy and cached,
-    /// which is bounded by how many such rows a program makes.
-    pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
-        static FORMATS: OnceLock<Vec<(&'static HarnessProfile, PluginFormat)>> = OnceLock::new();
-        let policy = self.plugin.as_ref()?;
-        let canonical = FORMATS.get_or_init(|| {
-            with_plugin_format()
-                .map(|profile| (profile, resolve_format(profile)))
-                .collect()
-        });
-        if let Some((_, format)) = canonical.iter().find(|(row, _)| {
-            row.name == self.name
-                && row.declaration == self.declaration
-                && row.plugin.as_ref() == Some(policy)
-        }) {
-            return Some(format);
-        }
-        static CUSTOM: Mutex<Vec<(&'static str, RuntimeId, PluginPolicy, &'static PluginFormat)>> =
-            Mutex::new(Vec::new());
-        let mut custom = CUSTOM
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((_, _, _, format)) = custom.iter().find(|(name, declaration, row, _)| {
-            *name == self.name && *declaration == self.declaration && row == policy
-        }) {
-            return Some(format);
-        }
-        let format: &'static PluginFormat = Box::leak(Box::new(resolve_format(self)));
-        custom.push((self.name, self.declaration, policy.clone(), format));
-        Some(format)
+        static FORMATS: OnceLock<Vec<PluginFormat>> = OnceLock::new();
+        let formats = FORMATS.get_or_init(|| PROFILES.iter().map(resolve_format).collect());
+        let at = PROFILES
+            .iter()
+            .position(|row| row.name == self.name)
+            .unwrap_or_else(|| panic!("`{}` is not a harness row", self.name));
+        &formats[at]
     }
 
     /// The paths this harness owns in a marketplace directory: its packs
@@ -986,12 +809,7 @@ impl HarnessProfile {
     /// repository root: the folders around them, such as `.agents/skills/`,
     /// hold what people author.
     pub fn owned_paths(&self) -> Vec<&'static str> {
-        self.owned_paths_at(self.format().packs)
-    }
-
-    /// [`Self::owned_paths`] for a build whose packs folder is `packs`.
-    pub fn owned_paths_at<'p>(&self, packs: &'p str) -> Vec<&'p str> {
-        std::iter::once(packs)
+        std::iter::once(self.format().packs)
             .chain(self.format().marketplace_manifest)
             .collect()
     }
@@ -1023,46 +841,30 @@ impl HarnessProfile {
             .collect()
     }
 
-    /// The override keys this harness reads on a subagent and nowhere else:
-    /// its row's [`PluginPolicy::agent_only_overrides`].
-    pub fn agent_override_keys(&self) -> std::collections::BTreeSet<String> {
-        self.plugin
-            .iter()
-            .flat_map(|policy| policy.agent_only_overrides)
-            .map(|key| (*key).to_owned())
-            .collect()
-    }
-
     /// The keys this harness's block accepts on a note of `kind`.
     ///
-    /// `None` for an agent or a hook, whose blocks are not checked, and for a
-    /// row with no plugin format, which no note can carry a block for
-    /// ([`crate::keys::HARNESS_BLOCKS`] lists only plugin rows).
+    /// `None` for an agent, whose blocks are not checked.
     pub fn block_keys(&self, kind: EntityKind) -> Option<&'static BTreeSet<String>> {
-        let keys = &self.plugin_format()?.block_keys;
+        let keys = &self.format().block_keys;
         match kind {
             EntityKind::Skill | EntityKind::Command => Some(&keys.component),
             EntityKind::Plugin => Some(&keys.plugin),
             EntityKind::Marketplace => Some(&keys.marketplace),
-            EntityKind::Agent | EntityKind::Hook => None,
+            EntityKind::Agent => None,
         }
     }
 
     /// The keys of this harness's block a member of `kind` takes from its
     /// plugin: the keys `kind` accepts, less those a plugin's own manifests
-    /// read and those the harness reads on a subagent alone. No keys for a
-    /// row with no plugin format.
+    /// read and those the harness reads on a subagent alone.
     pub(crate) fn member_block_keys(&self, kind: EntityKind) -> &'static BTreeSet<String> {
-        self.plugin_format()
-            .and_then(|format| format.block_keys.member.get(&kind))
-            .unwrap_or(&NO_KEYS)
+        &self.format().block_keys.member[&kind]
     }
 
     /// The keys of a marketplace's block that pass down to each plugin's
-    /// block. No keys for a row with no plugin format.
+    /// block.
     pub(crate) fn passed_down_keys(&self) -> &'static BTreeSet<String> {
-        self.plugin_format()
-            .map_or(&NO_KEYS, |format| &format.block_keys.passed_down)
+        &self.format().block_keys.passed_down
     }
 }
 
@@ -1074,19 +876,14 @@ const CLAUDE_AGENT_ONLY_OVERRIDES: &[&str] = &["permissionMode"];
 /// `SKILL.md`.
 const UNREAD_OVERRIDES: &[&str] = &["policy.allow_implicit_invocation"];
 
-/// The row a name answers to, by any of its spellings.
-pub fn profile_for(name: &str) -> Option<&'static HarnessProfile> {
-    PROFILES.iter().find(|p| p.spellings.contains(&name))
-}
-
-/// The row for a canonical name, and only a canonical one.
+/// The row for a harness name.
 pub fn profile_named(canonical: &str) -> Option<&'static HarnessProfile> {
     PROFILES.iter().find(|p| p.name == canonical)
 }
 
 /// The harnesses a marketplace is built for, in report order.
 pub fn with_plugin_format() -> impl Iterator<Item = &'static HarnessProfile> {
-    PROFILES.iter().filter(|p| p.plugin.is_some())
+    PROFILES.iter()
 }
 
 #[cfg(test)]
@@ -1095,47 +892,31 @@ mod tests {
 
     #[test]
     fn the_agent_only_keys_are_keys_the_harness_declares() {
-        let claude = profile_for("claude").unwrap();
+        let claude = profile_named("claude").unwrap();
         let declared: std::collections::BTreeSet<String> =
             agent_adapt::runtimes::declaration_for(claude.declaration)
                 .overrides
                 .into_keys()
                 .collect();
-        let agent_only = claude.agent_override_keys();
+        let agent_only = claude.plugin.agent_only_overrides;
         assert_eq!(agent_only.len(), CLAUDE_AGENT_ONLY_OVERRIDES.len());
-        assert!(agent_only.is_subset(&declared), "{agent_only:?}");
         assert!(
-            profile_for("codex")
+            agent_only.iter().all(|key| declared.contains(*key)),
+            "{agent_only:?}"
+        );
+        assert!(
+            profile_named("codex")
                 .unwrap()
-                .agent_override_keys()
+                .plugin
+                .agent_only_overrides
                 .is_empty()
         );
     }
 
     #[test]
     fn a_key_no_fact_backs_is_not_accepted() {
-        let codex = profile_for("codex").unwrap();
+        let codex = profile_named("codex").unwrap();
         assert!(!codex.accepted_override_keys().contains(UNREAD_OVERRIDES[0]));
-    }
-
-    #[test]
-    fn every_known_target_spelling_has_exactly_one_row() {
-        let mut spellings: Vec<&str> = PROFILES
-            .iter()
-            .flat_map(|p| p.spellings.iter().copied())
-            .collect();
-        spellings.sort_unstable();
-        let before = spellings.len();
-        spellings.dedup();
-        assert_eq!(before, spellings.len(), "a spelling names two rows");
-        assert_eq!(spellings, crate::publish::KNOWN_TARGETS);
-    }
-
-    #[test]
-    fn the_canonical_name_is_each_rows_first_spelling() {
-        for profile in &PROFILES {
-            assert_eq!(profile.spellings.first(), Some(&profile.name));
-        }
     }
 
     #[test]
@@ -1147,13 +928,10 @@ mod tests {
     }
 
     #[test]
-    fn the_plugin_rows_come_first_in_report_order() {
+    fn every_row_has_a_plugin_format_and_is_a_known_target() {
         let names: Vec<&str> = with_plugin_format().map(|p| p.name).collect();
-        assert_eq!(names, ["claude", "codex", "cursor", "pi"]);
-        assert!(
-            PROFILES[..4].iter().all(|p| p.plugin.is_some()),
-            "a spelling row sits among the plugin rows"
-        );
+        assert_eq!(names, KNOWN_TARGETS);
+        assert!(profile_named("claude-code").is_none());
     }
 
     #[test]
@@ -1222,8 +1000,8 @@ mod tests {
                 ".cursor/skills",
                 ".cursor-plugin/plugin.json",
                 Some(".cursor-plugin/marketplace.json"),
-                Some("CURSOR_PLUGIN_ROOT"),
-                SkillNaming::Bare,
+                None,
+                SkillNaming::PluginPrefixed,
             ),
             "pi" => (
                 ".pi/agent/skills",
@@ -1263,7 +1041,7 @@ mod tests {
         };
         for profile in with_plugin_format() {
             let name = profile.name;
-            let policy = profile.plugin.as_ref().unwrap();
+            let policy = &profile.plugin;
             let (user, manifest, market, root, naming) = held(name);
             if matches!(policy.user_skills_dir, Source::Knowledge) {
                 let (value, strength) = facts::user_skills_dir(name)
@@ -1339,17 +1117,14 @@ mod tests {
 
     #[test]
     fn block_keys_follow_their_definitions() {
-        use crate::frontmatter::EntityKind::{Agent, Hook, Marketplace, Plugin};
+        use crate::frontmatter::EntityKind::{Agent, Marketplace, Plugin};
         for profile in with_plugin_format() {
             let format = profile.format();
-            let policy = profile.plugin.as_ref().unwrap();
+            let policy = &profile.plugin;
             let market = profile.block_keys(Marketplace).unwrap();
-            for key in format
-                .marketplace_fields
-                .iter()
-                .chain([&crate::harness::manifest::PACKS_KEY])
-            {
-                assert!(market.contains(*key), "{} {key}", profile.name);
+            for key in format.marketplace_fields {
+                let held = *key != crate::keys::NAME_KEY;
+                assert_eq!(market.contains(*key), held, "{} {key}", profile.name);
             }
             for key in crate::keys::BLOCK_IDENTITY_KEYS {
                 assert!(
@@ -1369,14 +1144,13 @@ mod tests {
                 profile.name
             );
             assert_eq!(profile.block_keys(Agent), None, "{}", profile.name);
-            assert_eq!(profile.block_keys(Hook), None, "{}", profile.name);
         }
     }
 
     #[test]
     fn only_claude_has_agent_only_overrides() {
         for profile in with_plugin_format() {
-            let keys = profile.plugin.as_ref().unwrap().agent_only_overrides;
+            let keys = &profile.plugin.agent_only_overrides;
             assert_eq!(
                 !keys.is_empty(),
                 profile.name == "claude",
@@ -1384,10 +1158,7 @@ mod tests {
                 profile.name
             );
         }
-        assert_eq!(
-            CLAUDE.plugin.as_ref().unwrap().agent_only_overrides,
-            ["permissionMode"]
-        );
+        assert_eq!(CLAUDE.plugin.agent_only_overrides, ["permissionMode"]);
     }
 
     #[test]
@@ -1409,70 +1180,5 @@ mod tests {
         let pi = profile_named("pi").unwrap();
         assert!(known(claude, "plugins/manifest-fields").is_some());
         assert!(known(pi, "skills/project-dirs").is_some());
-    }
-}
-
-#[cfg(test)]
-mod custom_rows {
-    use super::*;
-
-    #[test]
-    fn a_modified_row_resolves_from_its_own_policy() {
-        let mut row = CLAUDE;
-        row.plugin.as_mut().unwrap().packs = ".other/packs";
-        row.plugin.as_mut().unwrap().plugin_manifest = Source::Constant("custom/plugin.json");
-        let format = row.plugin_format().unwrap();
-        assert_eq!(format.plugin_manifest, "custom/plugin.json");
-        assert_eq!(format.packs, ".other/packs");
-        assert_eq!(
-            CLAUDE.format().plugin_manifest,
-            ".claude-plugin/plugin.json"
-        );
-    }
-
-    #[test]
-    fn a_custom_row_of_constants_needs_no_knowledge() {
-        let mut row = PI;
-        row.name = "mine";
-        let policy = row.plugin.as_mut().unwrap();
-        policy.user_skills_dir = Source::Constant(".mine/skills");
-        policy.plugin_manifest = Source::Constant("mine.json");
-        policy.marketplace_manifest = Source::Constant(None);
-        assert_eq!(row.format().user_skills_dir, ".mine/skills");
-    }
-
-    #[test]
-    fn a_row_with_another_declaration_gets_that_declaration_s_keys() {
-        use crate::frontmatter::EntityKind::Skill;
-        let mut row = CLAUDE;
-        row.declaration = CODEX.declaration;
-        assert_ne!(
-            CLAUDE.accepted_override_keys(),
-            CODEX.accepted_override_keys()
-        );
-        assert_eq!(row.block_keys(Skill), Some(&CODEX.accepted_override_keys()));
-    }
-
-    #[test]
-    fn a_custom_row_gets_its_own_block_keys() {
-        use crate::frontmatter::EntityKind::Plugin;
-        let mut row = CURSOR;
-        let policy = row.plugin.as_mut().unwrap();
-        policy.manifest_fields = &["name", "zz-extra"];
-        policy.naming_choice = false;
-        let keys = row.block_keys(Plugin).unwrap();
-        assert!(keys.contains("zz-extra"));
-        assert!(!keys.contains(crate::harness::manifest::NAMING_KEY));
-        assert!(!CURSOR.block_keys(Plugin).unwrap().contains("zz-extra"));
-    }
-
-    #[test]
-    fn a_custom_row_is_resolved_once() {
-        let mut row = CLAUDE;
-        row.plugin.as_mut().unwrap().packs = ".once/packs";
-        let first = row.plugin_format().unwrap();
-        for _ in 0..100 {
-            assert!(std::ptr::eq(first, row.plugin_format().unwrap()));
-        }
     }
 }

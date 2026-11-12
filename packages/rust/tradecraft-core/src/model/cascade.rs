@@ -1,88 +1,77 @@
-//! The cascade: what a note takes from the containers above it.
+//! The cascade: what a note takes from the containers above it (spec
+//! section 7).
 //!
-//! Every path that reads a note goes through here, so a note gives the same
-//! answer whether a build, a pack publish or a single-note publish reads it.
-//! The order, nearest first:
+//! Every path that reads a note goes through here. The order, nearest first:
 //!
 //! 1. the note's own frontmatter;
 //! 2. its plugin note;
-//! 3. the `skillwright.md` of the marketplace folder it sits in, if any;
-//! 4. the request's config, which is the vault's `skillwright.md` with the
-//!    workspace file already folded in
-//!    ([`crate::settings::RootFile::inherit`]).
+//! 3. its marketplace note, `marketplaces/<m>/<m>.md`;
+//! 4. the root file's shared defaults, read from `skillwright.md`.
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
 //! Names, descriptions and versions never do. A container's identity comes
 //! down through [`crate::frontmatter::ContainerIdentity::fill_unset_from`], and
-//! a note over the request through
+//! a note over the root through
 //! [`crate::frontmatter::ContainerIdentity::overlay`], so neither lists the
 //! fields it moves.
 //!
-//! A container is known by its folder, as its members are. A marketplace
-//! note's `name` is only what it publishes under.
-//!
-//! A note under no marketplace folder takes the one marketplace the vault
-//! holds, as a build does. In a vault of several there is no single answer, so
-//! it stays on the request's config.
+//! A container is known by its folder, as its members are.
 //!
 //! # A harness block key goes where the harness reads it
 //!
-//! For one key on a member, the order is: the note's own harness block, the
-//! note's own frontmatter, an inherited block (nearest container first), then
-//! what skillwright generates. `metadata` follows that order key by key.
+//! For one key, the order is: the note's own harness block, the note's own
+//! frontmatter, then for each container, nearest first, its block and then
+//! its frontmatter, and last what skillwright generates. So a container's
+//! plain `author` beats a farther container's `claude.author`.
+//! `metadata` follows that order key by key.
 //!
 //! Blocks inherit key by key, with these limits:
 //!
 //! * A key the member's kind does not accept stays with the container.
 //! * A key the container's own manifests read stays with the container.
-//!   `description`, `name`, `license` and Claude's `metadata` sit on both
-//!   lists; on a container they describe the pack. A note's own block can
-//!   still set them.
+//!   `description`, `license` and Claude's `metadata` sit on both lists; on
+//!   a container they describe the pack. A note's own block can still set
+//!   them. `name` is refused in every block.
 //! * A plugin takes neither the marketplace manifest's top-level keys nor
 //!   [`crate::keys::BLOCK_IDENTITY_KEYS`] from a marketplace block.
 //!
 //! A block key that reaches no file warns.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
 
-use crate::discover::{DiscoveredComponent, DiscoveryReport, read_container};
+use crate::discover::DiscoveredComponent;
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
-use crate::frontmatter::EntityKind;
-use crate::harness::manifest::{plugin_block, plugin_identity, plugin_targets};
+use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
+use crate::harness::manifest::{plugin_block, plugin_identity};
 use crate::keys;
-use crate::namespace::Namespace;
+use crate::settings::SharedDefaults;
 use crate::vault::VaultNote;
 
 /// The containers above some notes, folded into one config.
 #[derive(Debug, Clone)]
-pub struct Cascade {
-    /// The request's config with the marketplace note over it, and each plugin
-    /// note in [`MarketplaceConfig::plugins`].
-    pub config: MarketplaceConfig,
-    /// The marketplace folded in, which a note under no marketplace folder
-    /// takes as its own.
-    market: Option<String>,
-    /// The request's own `targets`, for a component of another marketplace.
-    requested_targets: Option<Vec<String>>,
+pub(crate) struct Cascade {
+    /// The root's shared defaults with the marketplace note over them, and
+    /// each plugin note in [`MarketplaceConfig::plugins`].
+    pub(crate) config: MarketplaceConfig,
 }
 
 impl Cascade {
     /// Folds the marketplace `market` and the plugin notes under it, out of a
-    /// scan or the notes [`Self::above`] read, over `requested`.
-    pub fn over(
+    /// scan, over `root`, the root file's shared defaults.
+    pub(crate) fn over(
         containers: &[DiscoveredComponent],
         market: Option<&str>,
-        requested: &MarketplaceConfig,
+        root: &SharedDefaults,
     ) -> Self {
-        let mut config = requested.clone();
+        let mut config = root_config(root);
 
         // A marketplace's own note belongs to no marketplace, so its folder
-        // finds it — see `DiscoveredComponent::marketplace`.
+        // finds it.
         let note = market.and_then(|name| {
             containers
                 .iter()
@@ -90,166 +79,48 @@ impl Cascade {
         });
         if let Some(note) = note {
             config.name = Some(note.name.clone());
-            // A marketplace describes itself where a skill describes itself.
             take_description(&mut config.description, note);
+            drop_shadowed(&mut config.blocks, &note.identity, EntityKind::Marketplace);
             config.identity.overlay(&note.identity);
-            // `targets` is not identity data: see `keys::identity_keys`.
-            take(&mut config.targets, note.targets.clone());
             merge_blocks(&mut config.blocks, &note.blocks);
         }
-        // Failing a note, the marketplace's own name is what it is called: the
-        // folder named the level, and a distribution named `house` on disk
-        // should not need a second place to say so.
         if config.name.is_none() {
             config.name = market.map(str::to_owned);
         }
-        // `version` is not inherited: a marketplace folder's version is its
-        // own note's, never the root file's above it, which the overlay above
-        // would keep.
-        if market.is_some_and(|m| marketplaces_in(containers).contains(m)) {
+        // A marketplace's version is its own note's, never the root's.
+        if market.is_some() {
             config.identity.version = note.and_then(|n| n.identity.version.clone());
         }
 
-        // Each plugin note fills its own override block. A block the request
-        // already spelled is left alone only field by field: a vault naming its
-        // pack's license and a request naming its version must produce a
-        // manifest carrying both, not whichever side spoke last.
+        // Each plugin note fills its own entry. The marketplace's blocks reach
+        // it through `plugin_block`, less what `plain_inherited` names.
         for note in containers
             .iter()
             .filter(|c| c.kind == EntityKind::Plugin)
             .filter(|c| belongs_to(c, market))
         {
             let overrides = config.plugins.entry(note.folder().to_owned()).or_default();
-            // A plugin note describes its pack in the same place a skill note
-            // describes itself.
             take_description(&mut overrides.description, note);
             overrides.identity.overlay(&note.identity);
-            take(&mut overrides.targets, note.targets.clone());
             merge_blocks(&mut overrides.blocks, &note.blocks);
         }
 
-        Self {
-            config,
-            market: market.map(str::to_owned),
-            requested_targets: requested.targets.clone(),
-        }
+        Self { config }
     }
 
-    /// The containers above the one note at `note_path`, read from their own
-    /// paths. A note outside `marketplaces/` also counts the marketplaces, by
-    /// a scan of that folder alone, where a duplicate name is only a warning.
-    /// With no `vault_root` there is no folder to read a container from, so
-    /// `requested` is all there is.
-    ///
-    /// # Errors
-    ///
-    /// What reading a container note refuses: a note whose plugin note cannot
-    /// be read cannot know where it may go. `refused: malformed-root-file`
-    /// when the root file, or a workspace file above it, cannot say what it
-    /// excludes. For a note outside `marketplaces/`, `refused: unsafe-path` for
-    /// a symlink under `marketplaces/` and [`CoreError::Io`] for a folder
-    /// there that cannot be listed, as a build refuses them.
-    pub fn above(
-        vfs: &dyn crate::vfs::Vfs,
-        vault_root: Option<&Path>,
-        note_path: &Path,
-        requested: &MarketplaceConfig,
-        ns: &Namespace,
-    ) -> Result<Self, CoreError> {
-        let placed = crate::patterns::Patterns::load_at(vfs, vault_root)?;
-        Self::above_with(vfs, placed.as_ref(), note_path, requested, ns)
-    }
-
-    /// [`Self::above`] with the vault root's patterns already read.
-    pub(crate) fn above_with(
-        vfs: &dyn crate::vfs::Vfs,
-        placed: Option<&crate::patterns::Placed<'_>>,
-        note_path: &Path,
-        requested: &MarketplaceConfig,
-        ns: &Namespace,
-    ) -> Result<Self, CoreError> {
-        let Some((patterns, root)) = placed else {
-            return Ok(Self::over(&[], None, requested));
-        };
-        let mut paths = crate::discover::container_notes_with(patterns, root, note_path);
-        let placed = crate::discover::folder_placement_with(patterns, root, note_path).marketplace;
-        let market = match placed {
-            Some(market) => Some(market),
-            None => only_marketplace(vfs, root, patterns, ns)?.inspect(|name| {
-                paths.push(marketplace_note(root, name));
-            }),
-        };
-        let mut containers = Vec::new();
-        for path in paths {
-            containers.extend(read_container(vfs, root, patterns, &path, ns)?);
-        }
-        Ok(Self::over(&containers, market.as_deref(), requested))
-    }
-
-    /// Gives every scanned component with no `targets` of its own what its
-    /// containers say.
-    pub fn resolve_targets(&self, components: &mut [DiscoveredComponent]) {
-        let from_plugins: BTreeMap<(Option<String>, String), Vec<String>> = components
-            .iter()
-            .filter(|c| c.kind == EntityKind::Plugin)
-            .filter_map(|c| {
-                c.targets
-                    .clone()
-                    .map(|targets| ((c.marketplace.clone(), c.folder().to_owned()), targets))
-            })
-            .collect();
-        let from_markets: BTreeMap<String, Vec<String>> = components
-            .iter()
-            .filter(|c| c.kind == EntityKind::Marketplace)
-            .filter_map(|c| {
-                c.targets
-                    .clone()
-                    .map(|targets| (c.folder().to_owned(), targets))
-            })
-            .collect();
-        // `targets` inherits on every kind (the key table), so only a
-        // marketplace's own note and a note that sets it are left alone.
-        for note in components.iter_mut() {
-            if note.kind == EntityKind::Marketplace || note.targets.is_some() {
-                continue;
-            }
-            let plugin = note
-                .plugin
-                .as_ref()
-                .and_then(|plugin| from_plugins.get(&(note.marketplace.clone(), plugin.clone())));
-            let own = note.marketplace.as_deref().or(self.market.as_deref());
-            let market = if own == self.market.as_deref() {
-                self.config.targets.as_ref()
-            } else {
-                own.and_then(|m| from_markets.get(m))
-                    .or(self.requested_targets.as_ref())
-            };
-            note.targets = plugin.or(market).cloned();
-        }
-    }
-
-    /// Gives one read note what it leaves out: `targets`, a skill's `license`,
-    /// and each harness block key by key. `plugin` is the plugin holding it.
-    pub fn apply(
-        &self,
-        note: &mut VaultNote,
-        kind: EntityKind,
-        plugin: Option<&str>,
-        ns: &Namespace,
-    ) {
+    /// Gives one read note what it leaves out: a skill's `license` and each
+    /// harness block key by key. `plugin` is the plugin holding it.
+    pub(crate) fn apply(&self, note: &mut VaultNote, kind: EntityKind, plugin: Option<&str>) {
         let plugin = plugin.unwrap_or_default();
-        if note.frontmatter.targets.is_none() {
-            note.frontmatter.targets = plugin_targets(&self.config, plugin);
-        }
         // A container's own `license` and blocks are the manifest's, read from
         // the config.
         if kind.holds_components() {
             return;
         }
-        if note.projection.content.license.is_none() && keys::inherits(kind, "license") {
-            note.projection.content.license = plugin_identity(&self.config, plugin).license;
+        if note.content.license.is_none() && keys::inherits(kind, "license") {
+            note.content.license = plugin_identity(&self.config, plugin).license;
         }
-        let own_metadata = crate::projection::skill_metadata(&note.projection.content, ns);
+        let own_metadata = crate::projection::skill_metadata(&note.content);
         for harness in keys::HARNESS_BLOCKS
             .iter()
             .filter(|harness| keys::inherits(kind, harness))
@@ -295,7 +166,7 @@ fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<St
         Entry::Vacant(slot) => {
             slot.insert(Value::Object(kept.collect()));
         }
-        // Anything but a mapping is refused by `publish::overrides_for`.
+        // Anything but a mapping is refused by `fold_harness_blocks`.
         Entry::Occupied(mut slot) => {
             if let Some(into) = slot.get_mut().as_object_mut() {
                 for (key, value) in kept {
@@ -306,85 +177,42 @@ fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<St
     }
 }
 
-/// The path of the note of the marketplace in `folder`.
-fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
-    root.join(crate::paths::WORKSPACE_DIR)
-        .join(folder)
-        .join(crate::settings::ROOT_FILE)
+/// Whether this note sits in the folder of the marketplace being built,
+/// `marketplaces/<market>/`. Its own note does too.
+pub(super) fn belongs_to(component: &DiscoveredComponent, market: Option<&str>) -> bool {
+    market.is_some_and(|market| {
+        component
+            .vault_relative_path
+            .strip_prefix(crate::layout::MARKETPLACES_DIR)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .and_then(|rest| rest.strip_prefix(market))
+            .is_some_and(|rest| rest.starts_with('/'))
+    })
 }
 
-/// The vault's one marketplace, or `None` when it holds none or several. Counted
-/// by scanning `marketplaces/` as a build does, so the two cannot disagree.
-///
-/// A duplicate name inside a marketplace is a warning, not a refusal: it is
-/// that marketplace's build's news. What stops the scan itself refuses, as it
-/// refuses the build: without the count, the note cannot know which
-/// marketplace's `targets` it may ship under.
-///
-/// # Errors
-///
-/// What walking `marketplaces/` refuses: `refused: unsafe-path` for a
-/// symlink, and [`CoreError::Io`] for a folder that cannot be listed.
-fn only_marketplace(
-    vfs: &dyn crate::vfs::Vfs,
-    root: &Path,
-    patterns: &crate::patterns::Patterns,
-    ns: &Namespace,
-) -> Result<Option<String>, CoreError> {
-    let folder = root.join(crate::paths::WORKSPACE_DIR);
-    if !vfs.exists(&folder) {
-        return Ok(None);
-    }
-    let files = crate::discover::load_source(vfs, root, patterns, Some(&folder))?.files;
-    // Placed from the vault root, as a build places them.
-    let source = crate::discover::Source {
-        root: root.to_path_buf(),
-        files,
-    };
-    let scan = crate::discover::discover_roster_in(vfs, root, patterns, &source, ns)?;
-    Ok(sole_marketplace(&marketplaces_in(&scan.components)))
-}
-
-/// The marketplaces a scan holds, by folder. A marketplace's own note counts:
-/// a marketplace need not hold a member of its own.
-pub fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
-    components
-        .iter()
-        .filter_map(|c| match c.kind {
-            EntityKind::Marketplace => Some(c.folder()),
-            _ => c.marketplace.as_deref(),
-        })
+/// The inherited keys `identity` sets as plain frontmatter on a note of
+/// `kind`: `author`, `license`, `repository` and `homepage` when set.
+pub(crate) fn plain_inherited(identity: &ContainerIdentity, kind: EntityKind) -> BTreeSet<String> {
+    identity
+        .set_fields()
+        .into_iter()
+        .map(|(key, _)| key)
+        .filter(|key| keys::inherits(kind, key))
         .collect()
 }
 
-/// The one marketplace of `present`, or `None` when it holds none or several.
-pub(super) fn sole_marketplace(present: &BTreeSet<&str>) -> Option<String> {
-    match present.len() {
-        1 => present.first().map(|name| (*name).to_owned()),
-        _ => None,
-    }
-}
-
-/// Gives every component of a scan what its containers say about `targets`,
-/// for a caller reporting on the vault with no build to run. `requested` is
-/// the root file's config.
-pub fn inherit_targets(report: &mut DiscoveryReport, requested: &MarketplaceConfig) {
-    let market = sole_marketplace(&marketplaces_in(&report.components));
-    Cascade::over(&report.components, market.as_deref(), requested)
-        .resolve_targets(&mut report.components);
-}
-
-/// Does this component render into the marketplace being built?
-///
-/// Its own do. So does everything promoted above every marketplace: a
-/// component at the vault level belongs to none of them and is shared by all
-/// of them — the promotion rule read from the far end — so it renders into
-/// each marketplace that is built, rather than into none.
-pub(super) fn belongs_to(component: &DiscoveredComponent, market: Option<&str>) -> bool {
-    match (component.marketplace.as_deref(), market) {
-        (None, _) => true,
-        (Some(own), Some(market)) => own == market,
-        (Some(_), None) => false,
+/// Drops from farther blocks each key a nearer note sets as plain
+/// frontmatter: the nearer plain value wins (section 7 rule 5).
+fn drop_shadowed(
+    blocks: &mut BTreeMap<String, Map<String, Value>>,
+    nearer: &ContainerIdentity,
+    kind: EntityKind,
+) {
+    let plain = plain_inherited(nearer, kind);
+    for block in blocks.values_mut() {
+        for key in &plain {
+            block.remove(key);
+        }
     }
 }
 
@@ -401,49 +229,101 @@ fn merge_blocks(slot: &mut BTreeMap<String, Map<String, Value>>, from: &Map<Stri
     }
 }
 
-/// Writes `from` into `slot` when the note supplied it, leaving a request-only
-/// value in place. The vault outranks the request where both spoke; where the
-/// vault is silent the request is all there is.
-fn take<T>(slot: &mut Option<T>, from: Option<T>) {
-    if let Some(value) = from {
-        *slot = Some(value);
+/// The root file's shared defaults as the config a marketplace note folds
+/// over. They name no marketplace and no plugin.
+pub(crate) fn root_config(root: &SharedDefaults) -> MarketplaceConfig {
+    MarketplaceConfig {
+        identity: ContainerIdentity {
+            author: root.author.clone(),
+            license: root.license.clone(),
+            repository: root.repository.clone(),
+            homepage: root.homepage.clone(),
+            ..ContainerIdentity::default()
+        },
+        blocks: root.blocks.clone(),
+        ..MarketplaceConfig::default()
     }
 }
 
-/// [`take`] for a note's `description`. A container note that writes none
-/// is silent and leaves the request's value in place.
+/// Sets `slot` to a note's `description` when it writes one.
 fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) {
     if !note.description.is_empty() {
         *slot = Some(note.description.clone());
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// A component's harness blocks, each checked against the harness that will
+/// receive it. Every block is
+/// folded and checked, whichever harnesses are being built. A container's
+/// blocks are checked where its manifests are written.
+///
+/// **Each block keeps only the keys its harness reads.** The rest are
+/// dropped; discovery warns about them, and they are never refused. A target
+/// the matrix has no declaration for keeps no keys, so an unmapped harness
+/// never receives unchecked ones. A kept key with the wrong kind of value is
+/// refused.
+///
+/// # Errors
+///
+/// * `refused: malformed` — a key a block's harness reads holds the wrong
+///   kind of value, such as `metadata` that is not a mapping. Not when
+///   `kind` is an agent: an agent's blocks never ship.
+pub fn fold_harness_blocks(
+    note: &VaultFrontmatter,
+    note_path: &Path,
+    kind: EntityKind,
+) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
+    let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
+    for (harness, block) in &note.blocks {
+        // `VaultFrontmatter::take_from` keeps only the harness blocks
+        // ([`crate::keys::HARNESS_BLOCKS`]), each a mapping.
+        debug_assert!(crate::harness::KNOWN_TARGETS.contains(&harness.as_str()));
+        let block = block.as_object().cloned().unwrap_or_default();
+        folded.insert(harness.clone(), block);
+    }
 
-    /// A harness with no plugin format has no container block to take keys
-    /// from, so it gives a member none, whatever its kind.
-    #[test]
-    fn a_harness_with_no_plugin_format_gives_a_member_no_block_keys() {
-        let without: Vec<&crate::harness::HarnessProfile> = crate::harness::PROFILES
-            .iter()
-            .filter(|profile| profile.plugin.is_none())
+    // A key a harness does not read warns at discovery and is dropped here,
+    // never refused. A key it reads takes the form every harness reads: a
+    // flag such as `yes` becomes a real boolean, a list hint its text.
+    for (canonical, block) in &mut folded {
+        let accepted = accepted_override_keys(canonical);
+        // Not `Map::retain`: the serde_json floor predates it.
+        *block = std::mem::take(block)
+            .into_iter()
+            .filter(|(key, _)| accepted.contains(key))
+            .map(|(key, value)| {
+                let value = crate::harness::field_types::normalized(EntityKind::Skill, &key, value);
+                (key, value)
+            })
             .collect();
-        assert!(!without.is_empty());
-        for profile in without {
-            for kind in EntityKind::ALL {
-                assert!(
-                    profile.member_block_keys(kind).is_empty(),
-                    "{} {kind:?}",
-                    profile.name
-                );
+    }
+    // A key a harness reads with the wrong kind of value is refused, in
+    // every block that can ship.
+    if kind == EntityKind::Agent {
+        return Ok(folded);
+    }
+    for (canonical, block) in &folded {
+        for (key, value) in block {
+            if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
+                && !ty.accepts(value)
+            {
+                return Err(CoreError::wrong_kind(
+                    note_path,
+                    format!("`{canonical}.{key}` {}", ty.refusal(value)),
+                ));
             }
         }
-        assert!(
-            !crate::harness::profile::CLAUDE
-                .member_block_keys(EntityKind::Skill)
-                .is_empty()
-        );
     }
+    Ok(folded)
+}
+
+/// Every key one harness reads in an override block, from that runtime's
+/// own capability declaration.
+///
+/// Empty for a name this build maps to no runtime, which is what makes every
+/// key under such a target a refusal rather than an unchecked write.
+fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String> {
+    crate::harness::profile_named(canonical)
+        .map(|p| p.accepted_override_keys())
+        .unwrap_or_default()
 }

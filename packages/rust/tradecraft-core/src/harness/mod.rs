@@ -13,10 +13,8 @@ pub mod profile;
 pub mod translator;
 
 pub use profile::{
-    CliInvocation, HarnessProfile, InstallCli, PROFILES, PluginDialect, PluginFormat, SkillNaming,
-    profile_for, profile_named, with_plugin_format,
+    CliInvocation, HarnessProfile, KNOWN_TARGETS, PLUGIN_HOOKS_PATH, PROFILES, PluginDialect,
+    PluginFormat, SkillNaming, profile_named, with_plugin_format,
 };
-pub use translator::{
-    Destination, FileSource, FileTree, HarnessTranslator, Layout, TreeFile, translator_for,
-    write_component,
-};
+pub use translator::{FileSource, FileTree, TreeFile};
+pub(crate) use translator::{HarnessTranslator, translator_for};

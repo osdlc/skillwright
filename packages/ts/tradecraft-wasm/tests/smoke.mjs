@@ -13,54 +13,36 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  CoreError,
-  InvalidNamespaceError,
-  createNodeVfs,
-  knownTargets,
-  publishSkill,
-  validateNamespace,
-} from '@osdlc/tradecraft-wasm'
+import { buildVault, CoreError, createNodeVfs, knownTargets } from '@osdlc/tradecraft-wasm'
 
 assert.ok(knownTargets().includes('claude'))
-validateNamespace('sw')
-assert.throws(() => validateNamespace('my-vault'), InvalidNamespaceError)
 
 const root = mkdtempSync(join(tmpdir(), 'tradecraft-smoke-'))
 try {
   const vault = join(root, 'vault')
   const folder = join(vault, 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(folder, { recursive: true })
+  writeFileSync(join(vault, 'skillwright.md'), '---\n---\n')
   writeFileSync(
-    join(vault, 'marketplaces/house/skillwright.md'),
-    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
+    join(vault, 'marketplaces/house/house.md'),
+    '---\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
-  const note = join(folder, 'review.md')
-  writeFileSync(note, '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n')
-  const destination = join(root, 'project')
-  mkdirSync(destination)
+  writeFileSync(join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
+  writeFileSync(join(folder, 'review.md'), '---\ndescription: Reviews a diff.\n---\n\n# Review\n')
+  const out = join(vault, 'dist/house')
 
-  const report = publishSkill(createNodeVfs(), {
-    skill_path: note,
-    destination_root: destination,
-    target: 'claude',
-    skills_root: vault,
+  const report = buildVault(createNodeVfs(), {
+    vault_root: vault,
+    mode: 'build',
   })
-  assert.deepEqual(
-    report.files.map((f) => f.status),
-    ['written', 'written'],
-  )
-  assert.match(
-    readFileSync(join(destination, '.claude/skills/review/SKILL.md'), 'utf-8'),
-    /Reviews a diff/,
-  )
+  assert.equal(report.marketplaces[0].report.changed, true)
+  assert.match(readFileSync(join(out, '.claude-plugin/marketplace.json'), 'utf-8'), /house/)
 
   assert.throws(
     () =>
-      publishSkill(createNodeVfs(), {
-        skill_path: join(root, 'missing.md'),
-        destination_root: destination,
-        target: 'claude',
+      buildVault(createNodeVfs(), {
+        vault_root: join(root, 'missing'),
+        mode: 'build',
       }),
     (error) => error instanceof CoreError,
   )

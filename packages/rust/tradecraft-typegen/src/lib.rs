@@ -94,8 +94,6 @@ pub fn read(crates: &Crates) -> Result<parse::Model, String> {
         // `RuntimeId` and a `ConceptKind`, which live beside it in agent-adapt
         // rather than in the core.
         &[
-            // `SkillContent::arguments`, which the marketplace model carries.
-            adapt.join("model/argument.rs"),
             adapt.join("capabilities.rs"),
             adapt.join("diagnostic.rs"),
             adapt.join("runtime.rs"),

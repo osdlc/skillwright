@@ -1,0 +1,14 @@
+---
+description: Reviews a diff.
+license: MIT
+arguments:
+  - name: pr-number
+    description: The pull request to review.
+    required: true
+  - name: depth
+    description: How much context to pull in.
+    values: [quick, thorough]
+    default: quick
+---
+
+Narrowed to one harness, and carrying a foreign key the model does not own.

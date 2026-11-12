@@ -8,13 +8,14 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 - **Value** is the kind of value the key takes. [Other accepted forms](#other-accepted-forms) notes what the column cannot say.
 - **Owner** says who the key belongs to:
-  - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
-  - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`, then the workspace's `skillwright.md`.
+  - `skillwright`: skillwright reads the key and leaves it out of what it builds.
+  - `spec`: the key belongs to the Agent Skills spec or a harness. It ships as written.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, the marketplace note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
 
 ## What is checked
 
 - A key the table does not list for that kind gets a warning.
+- `name` is refused on every note. `build:` is refused on every note: only `skillwright.md` reads it.
 - A listed key with the wrong kind of value is refused, and the message names the key. This applies to every `skillwright` key, and to every `spec` key on a skill, agent or command.
 - A `spec` key with no value, such as `model:`, is dropped. It does not clear a value the note inherits.
 
@@ -28,8 +29,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `owner` | string or `{name, email, url}` | skillwright | no | The marketplace owner, a name or `{name, email, url}`. |
@@ -37,7 +38,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
 | `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -47,8 +47,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
@@ -57,7 +57,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. Pi's `package.json` adds `pi-package`, the keyword its gallery lists a package by. |
 | `category` | string | skillwright | no | The plugin's category in a marketplace entry. Codex defaults it to Productivity. |
 | `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -67,11 +66,10 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
-| `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
+| `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin, the marketplace or `skillwright.md`. |
+| `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
@@ -85,16 +83,14 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
 | `pi` | harness block | skillwright | yes | Fields only Pi reads, in its own key names. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
 
 ## Agent
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
+| `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
@@ -109,16 +105,14 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
 | `pi` | harness block | skillwright | yes | Fields only Pi reads, in its own key names. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
 
 ## Command
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
+| `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
@@ -132,25 +126,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
 | `pi` | harness block | skillwright | yes | Fields only Pi reads, in its own key names. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
-
-## Hook
-
-| Key | Value | Owner | Inherited | Meaning |
-|---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
-| `event` | string | spec | no | The event the hook runs on, in Claude Code's spelling. |
-| `matcher` | string | spec | no | Which tool or source the hook matches. |
-| `type` | string | spec | no | `command`, `http` or `prompt`. Defaults to `command`. |
-| `command` | string | spec | no | The command a command hook runs. The body may carry it instead. |
-| `prompt` | string | spec | no | The prompt a prompt hook sends. The body may carry it instead. |
-| `url` | string | spec | no | The URL an http hook calls. |
-| `if` | string | spec | no | A condition the hook runs under. |
-| `async` | boolean | spec | no | True runs the hook without waiting for it. |
-| `once` | boolean | spec | no | True runs the hook once per session. |
-| `timeout` | number | spec | no | The timeout in seconds. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
 
 ## Harness blocks
 
@@ -161,31 +136,40 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 - On a skill, agent or command, a key takes the same type it takes written bare.
 - On a plugin or marketplace, a key takes the type that harness's manifest and marketplace docs give. A key with no documented type is not checked. A key the plugin passes down to its skills, such as `model`, takes the type it has on a skill.
 - A key with no value is dropped. It does not clear a value the note inherits.
+- The "kept" lines list the keys that stay with a plugin's or marketplace's block: the member below never takes them (spec section 7 rule 4).
 
 ### `claude:`
 
-- Skill and command: `allowed-tools`, `argument-hint`, `arguments`, `compatibility`, `context`, `description`, `disable-model-invocation`, `license`, `metadata`, `model`, `name`, `permissionMode`, `user-invocable`
+- Skill and command: `allowed-tools`, `argument-hint`, `arguments`, `compatibility`, `context`, `description`, `disable-model-invocation`, `license`, `metadata`, `model`, `permissionMode`, `user-invocable`
 - Agent: not checked.
-- Plugin: `$schema`, `agents`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `displayName`, `documentationUrl`, `experimental`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `name`, `outputStyles`, `privacyPolicyUrl`, `relevance`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
-- Marketplace: `$schema`, `agents`, `allowCrossMarketplaceDependenciesOn`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `documentationUrl`, `experimental`, `forceRemoveDeletedPlugins`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `name`, `outputStyles`, `owner`, `packs`, `plugins`, `privacyPolicyUrl`, `relevance`, `renames`, `repository`, `settings`, `skills`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
+- Plugin: `$schema`, `agents`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `displayName`, `documentationUrl`, `experimental`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `outputStyles`, `privacyPolicyUrl`, `relevance`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
+- Plugin, kept from skills and commands: `$schema`, `agents`, `author`, `category`, `channels`, `commands`, `defaultEnabled`, `dependencies`, `description`, `displayName`, `documentationUrl`, `experimental`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `monitors`, `outputStyles`, `privacyPolicyUrl`, `relevance`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `userConfig`, `version`, `workflows`
+- Marketplace: `$schema`, `agents`, `allowCrossMarketplaceDependenciesOn`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `documentationUrl`, `experimental`, `forceRemoveDeletedPlugins`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `outputStyles`, `owner`, `plugins`, `privacyPolicyUrl`, `relevance`, `renames`, `repository`, `settings`, `skills`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
+- Marketplace, kept from plugins: `$schema`, `allowCrossMarketplaceDependenciesOn`, `description`, `forceRemoveDeletedPlugins`, `metadata`, `owner`, `plugins`, `renames`, `version`
 
 ### `codex:`
 
-- Skill and command: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`, `name`
+- Skill and command: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`
 - Agent: not checked.
-- Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `policy`, `repository`, `skills`, `source`, `version`
-- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `packs`, `plugins`, `policy`, `repository`, `skills`
+- Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `policy`, `repository`, `skills`, `source`, `version`
+- Plugin, kept from skills and commands: `apps`, `author`, `category`, `commands`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `policy`, `repository`, `skills`, `source`, `version`
+- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `plugins`, `policy`, `repository`, `skills`
+- Marketplace, kept from plugins: `interface`, `plugins`
 
 ### `cursor:`
 
-- Skill and command: `allowed-tools`, `color`, `compatibility`, `description`, `disable-model-invocation`, `globs`, `icon`, `license`, `metadata`, `name`, `paths`
+- Skill and command: `allowed-tools`, `color`, `compatibility`, `description`, `disable-model-invocation`, `globs`, `icon`, `license`, `metadata`, `paths`
 - Agent: not checked.
-- Plugin: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `description`, `disable-model-invocation`, `displayName`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `naming`, `paths`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
-- Marketplace: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `disable-model-invocation`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `naming`, `owner`, `packs`, `paths`, `plugins`, `publisher`, `repository`, `rules`, `skills`, `tags`, `variables`
+- Plugin: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `description`, `disable-model-invocation`, `displayName`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `naming`, `paths`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
+- Plugin, kept from skills and commands: `agents`, `author`, `category`, `commands`, `description`, `displayName`, `homepage`, `hooks`, `keywords`, `license`, `logo`, `mcpServers`, `minClientVersions`, `naming`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
+- Marketplace: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `disable-model-invocation`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `naming`, `owner`, `paths`, `plugins`, `publisher`, `repository`, `rules`, `skills`, `tags`, `variables`
+- Marketplace, kept from plugins: `metadata`, `owner`, `plugins`
 
 ### `pi:`
 
-- Skill and command: `allowed-tools`, `compatibility`, `description`, `disable-model-invocation`, `license`, `metadata`, `name`
+- Skill and command: `allowed-tools`, `compatibility`, `description`, `disable-model-invocation`, `license`, `metadata`
 - Agent: not checked.
-- Plugin: `allowed-tools`, `author`, `compatibility`, `dependencies`, `description`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `name`, `naming`, `peerDependencies`, `pi`, `repository`, `version`
-- Marketplace: `allowed-tools`, `author`, `compatibility`, `dependencies`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `naming`, `packs`, `peerDependencies`, `pi`, `repository`
+- Plugin: `allowed-tools`, `author`, `compatibility`, `dependencies`, `description`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `naming`, `peerDependencies`, `pi`, `repository`, `version`
+- Plugin, kept from skills and commands: `author`, `dependencies`, `description`, `homepage`, `keywords`, `license`, `naming`, `peerDependencies`, `pi`, `repository`, `version`
+- Marketplace: `allowed-tools`, `author`, `compatibility`, `dependencies`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `naming`, `peerDependencies`, `pi`, `repository`
+- Marketplace, kept from plugins: none

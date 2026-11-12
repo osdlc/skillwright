@@ -7,7 +7,8 @@
 # 2. stops unless X.Y.Z equals `version` in the plugin's vault note;
 # 3. opens a pull request on osdlc/marketplace that replaces only the
 #    skillwright pack in each harness root and the skillwright entry in each
-#    marketplace manifest (scripts/plugin-marketplace.ts). Every other plugin
+#    marketplace manifest, copied from plugin/dist/osdlc/
+#    (scripts/plugin-marketplace.ts). Every other plugin
 #    in that repository is left alone.
 #
 # Merging that pull request is the publish; users get it on their next
@@ -89,7 +90,7 @@ jobs:
 
       - name: Build the plugin
         working-directory: packages/rust
-        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.md
+        run: cargo run --locked -p skillwright -- build --yes --vault ../../plugin
 
       - name: The build matches what is committed
         run: |

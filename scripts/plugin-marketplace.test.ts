@@ -18,17 +18,17 @@ function fixture(): { plugin: string; target: string } {
   const target = join(base, 'marketplace')
   write(
     plugin,
-    'vault/plugins/skillwright/skillwright.md',
+    'marketplaces/osdlc/plugins/skillwright/skillwright.md',
     '---\nname: skillwright\nversion: 1.2.3\n---\nbody\n',
   )
   for (const { root, manifest } of HARNESSES) {
-    write(plugin, `${root}/packs/skillwright/new.txt`, 'new')
+    write(plugin, `dist/osdlc/${root}/packs/skillwright/new.txt`, 'new')
     write(target, `${root}/packs/skillwright/old.txt`, 'old')
     write(target, `${root}/packs/other/keep.txt`, 'keep')
     if (manifest === null) continue
     write(
       plugin,
-      manifest,
+      `dist/osdlc/${manifest}`,
       JSON.stringify({ name: 'm', plugins: [{ name: 'skillwright', version: '1.2.3' }] }),
     )
     write(
@@ -77,4 +77,19 @@ test('syncPlugin refuses a target without a manifest', () => {
   write(target, manifest, '{"plugins":[]}')
   rmSync(join(target, HARNESSES[1]!.manifest!))
   assert.throws(() => syncPlugin(plugin, target), /has no/)
+})
+
+test('syncPlugin names the build folder it looked in', () => {
+  const { plugin, target } = fixture()
+  rmSync(join(plugin, 'dist/osdlc/.claude-plugin/packs/skillwright'), { recursive: true })
+  assert.throws(
+    () => syncPlugin(plugin, target),
+    /dist\/osdlc\/\.claude-plugin\/packs\/skillwright/,
+  )
+  const other = fixture()
+  write(other.plugin, 'dist/osdlc/.claude-plugin/marketplace.json', '{"plugins":[]}')
+  assert.throws(
+    () => syncPlugin(other.plugin, other.target),
+    /dist\/osdlc\/\.claude-plugin\/marketplace\.json lists no skillwright/,
+  )
 })

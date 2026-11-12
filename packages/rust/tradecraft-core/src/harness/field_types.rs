@@ -148,6 +148,18 @@ pub(crate) fn normalized(kind: EntityKind, key: &str, value: Value) -> Value {
     normal.unwrap_or(value)
 }
 
+/// `block` with a string `author` read as `{name: <string>}`, as the plain
+/// `author` key reads it.
+pub(crate) fn with_author_shorthand(
+    mut block: serde_json::Map<String, Value>,
+) -> serde_json::Map<String, Value> {
+    if let Some(Value::String(name)) = block.get("author") {
+        let person = serde_json::json!({ "name": name });
+        block.insert("author".to_owned(), person);
+    }
+    block
+}
+
 /// `harness`'s `block` less the keys it reads that are set to nothing. Such a
 /// key is unset, as it is written bare, so it is dropped rather than shipped
 /// as `null`. A key in `unknown`, as `<harness>.<key>`, stays, so it warns.
@@ -310,16 +322,16 @@ impl Shape {
             Self::Number => NUMBER,
             Self::Mapping => OBJECT,
             Self::Arguments => STRING_OR_LIST,
-            Self::Url | Self::Person | Self::HarnessBlock | Self::Adopted => return None,
+            Self::Url | Self::Person | Self::HarnessBlock | Self::Refused => return None,
         })
     }
 }
 
 /// The type of `key` in a marketplace's or plugin's block for `profile`: the
 /// facts' type, or for a key that passes to members, [`component_type`].
-/// `None` for a row with no plugin format.
+/// `None` for a key neither gives a type.
 pub(crate) fn container_type(profile: &HarnessProfile, key: &str) -> Option<FieldType> {
-    facts_for(profile.plugin_format()?.dialect)
+    facts_for(profile.format().dialect)
         .iter()
         .find(|(name, _)| *name == key)
         .map(|(_, ty)| *ty)
@@ -338,7 +350,7 @@ mod tests {
     use serde_json::json;
 
     /// Container keys a harness reads that no fact gives a type for, by harness.
-    /// They are not checked. `packs` and `naming` have their own checks.
+    /// They are not checked. `naming` has its own check.
     const UNTYPED: &[(&str, &[&str])] = &[(
         "pi",
         &["description", "author", "license", "repository", "homepage"],

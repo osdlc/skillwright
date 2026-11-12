@@ -81,22 +81,6 @@ fn every_wasm_export_is_resolved() {
     }
 }
 
-/// `validateNamespace` has no JSON on either side.
-///
-/// Recorded as a fact rather than a gap: its signature is
-/// `validateNamespace(stem: string): void`, so there is no request or response
-/// shape for the gate to compare and none for it to invent.
-#[test]
-fn validate_namespace_has_no_json_boundary() {
-    let model = tradecraft_typegen::read(&crates()).expect("reading the crates");
-    let export = model
-        .exports
-        .iter()
-        .find(|e| e.js_name == "validateNamespace")
-        .expect("the wrapper exports validateNamespace");
-    assert!(export.request.is_none() && export.response.is_none());
-}
-
 /// The generated file on disk is what the current Rust source produces.
 ///
 /// `cargo test -p tradecraft-typegen` fails when the committed file is stale.
@@ -176,35 +160,10 @@ fn a_diagnostic_export_emits() {
     }
 }
 
-/// `statusOf` hands back `tradecraft_core::status`'s per-unit report, an
-/// object with a `state`, not the export report's four-word status token.
-#[test]
-fn status_of_responds_with_the_status_report() {
-    let model = tradecraft_typegen::read(&crates()).expect("reading the crates");
-    let export = model
-        .exports
-        .iter()
-        .find(|e| e.js_name == "statusOf")
-        .expect("the wrapper exports statusOf");
-    let (name, list) = export.response.clone().expect("statusOf has a response");
-    assert!(!list);
-    let Some(tradecraft_typegen::parse::TypeDef::Struct(s)) = model.types.get(&name) else {
-        panic!("statusOf's response `{name}` is not a struct");
-    };
-    let fields: Vec<&str> = s.fields.iter().map(|f| f.name.as_str()).collect();
-    for field in ["state", "reason", "files", "version_bump_suggestion"] {
-        assert!(
-            fields.contains(&field),
-            "statusOf's response `{name}` has no `{field}`: {fields:?}"
-        );
-    }
-}
-
-/// The marketplace model is declared in `tradecraft-core/src/model/`, a module
-/// directory, and holds fields marked `#[serde(skip)]` that never reach the
-/// wire. Both must hold for `loadMarketplace` to emit at all: the directory is
-/// read, and a skipped field — `Marketplace::config`, here — is left out of the
-/// interface rather than described.
+/// `loadMarketplace` answers with `WireMarketplace`, declared in
+/// `tradecraft-wasm/src/wire.rs` beside `lib.rs`. The file is read, the `Wire`
+/// prefix is dropped, and none of the core model's own fields, such as
+/// `config` and `vault_root`, cross.
 #[test]
 fn the_marketplace_model_emits_without_its_skipped_fields() {
     let ts = tradecraft_typegen::generate(&crates()).expect("generating");
@@ -220,25 +179,4 @@ fn the_marketplace_model_emits_without_its_skipped_fields() {
     );
     assert!(!interface.contains("config"), "{interface}");
     assert!(!interface.contains("vault_root"), "{interface}");
-}
-
-/// A struct that flattens another keeps its own name and takes the other's
-/// fields: `MarketplaceConfig` splices `ContainerIdentity`. Only a `Wire…`
-/// wrapper is named for what it flattens.
-#[test]
-fn a_flattened_identity_is_spliced_into_a_type_that_keeps_its_name() {
-    let ts = tradecraft_typegen::generate(&crates()).expect("generating");
-    for name in ["MarketplaceConfig", "PluginOverrides", "MarketplaceFields"] {
-        let start = ts
-            .find(&format!("export interface {name} {{"))
-            .unwrap_or_else(|| panic!("`{name}` is emitted"));
-        let end = start + ts[start..].find("\n}").expect("the interface closes");
-        let interface = &ts[start..end];
-        assert!(interface.contains("license?: string;"), "{interface}");
-        assert!(!interface.contains("identity"), "{interface}");
-    }
-    assert_eq!(
-        ts.matches("export interface ContainerIdentity {").count(),
-        1
-    );
 }

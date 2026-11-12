@@ -30,7 +30,7 @@ the build. The commits must cover them:
 | Decision | Where written | Commit |
 |---|---|---|
 | A removed command is clap's own unknown-command error: a usage error, exit 3 (`EXIT_USAGE`), with no "removed in v2" hint. | Spec section 10 | 1 |
-| The flags are `--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes`, plus `bump`'s own. `--config` and `--namespace` go. | Spec section 10 rule 5 | 1 to 3 |
+| The flags are `--vault`, `--marketplace`, `--harness`, `--json`, `--quiet`, `--dry-run` and `--yes`, plus `bump`'s own. `--config` and `--namespace` go. | Spec section 10 rule 5 | 1 to 3 |
 | `--yes` stays. On `origin/main`, `build` and `bump` both ask before writing (`confirm_write` in `commands/marketplace.rs` and `commands/bump.rs`), and off a terminal without `--yes` they exit 3. So the `plugin` workflow keeps `build --yes` and only drops `--config`. | Spec section 10 rule 6 | 2 |
 | The wasm exports of removed features go: `publishSkill`, `adoptSkills`, `statusOf`, `publishableKinds` and `validateNamespace`. | This plan | 1 and 3 |
 | Hooks come only from `hooks/hooks.json`. Hook notes are removed; richer hook authoring is [#152](https://github.com/osdlc/skillwright/issues/152). | Spec section 3 | 2 and 4 |
@@ -39,10 +39,10 @@ the build. The commits must cover them:
 | `check` takes no `--dry-run` and no `--yes`. Today it takes both. | Spec section 10 rule 5 | 1 |
 | Output is fixed at `dist/<m>/` from commit 2, so `build` works on the new layout as soon as `init` writes it. `build.out` and `--out` go there. | Spec section 9 rule 1 | 2 |
 | Only the root's direct children are checked. `skills/`, `agents/`, `commands/`, `hooks/` and `plugins/` there are refused; anything else, at any depth, is not read. | Spec section 1 rule 3, section 11 cases 4 and 5 | 2 |
-| `targets` and `build.harnesses` accept only `claude`, `codex`, `cursor` and `pi`. The publish targets and the aliases are refused. `KNOWN_TARGETS` shrinks to the four. | Spec section 9 rule 12 | 3 |
+| `build.harnesses` and `--harness` accept only `claude`, `codex`, `cursor` and `pi`. The publish targets and the aliases are refused. `KNOWN_TARGETS` shrinks to the four. `targets` is refused on every note. | Spec section 9 rule 12, section 6 rule 7 | 3 |
 | `build.launcher_path` is refused and deleted together with `build.assets`, because the launcher is found through `asset_covers`. | Spec section 11 case 7 | 4 |
-| `exportSkills` writes `<root>/dist/<m>/` in the host's filesystem object. `loadMarketplace` takes a marketplace name, required when the vault has more than one; without it such a vault is an error. | This plan | 4 |
-| The Cursor hooks warning fires only when the plugin's Cursor pack is built (Cursor in `build.harnesses` and in the plugin's `targets`) and the plugin has `hooks/hooks.json`. | Spec section 4 rule 23 | 4 |
+| `buildVault` writes `<root>/dist/<m>/` in the host's filesystem object. `loadMarketplace` takes a marketplace name, required when the vault has more than one; without it such a vault is an error. | This plan | 4 |
+| The Cursor hooks warning fires only when the plugin's Cursor pack is built (Cursor among the harnesses built) and the plugin has `hooks/hooks.json`. | Spec section 4 rule 23 | 4 |
 | `\[[x]]` ships as `[[x]]`, with the backslash removed. Today's code keeps it. | Spec section 4 rule 13 | 5 |
 | A hand-written call is checked in the forms that name the plugin, for the harnesses being built, with each harness's naming in effect: `/p:s`, `$p:s`, `/p-s` and `/skill:p-s`. For a command, only the forms of harnesses whose packs contain commands. A match ends before a character outside `a-z`, `0-9` and `-`. A bare `/s` or `/skill:s` is not checked. There is no escape form; code ships as written. | Spec section 4 rule 8 | 5 |
 | `${CLAUDE_PLUGIN_ROOT}` is refused only in interpreted text and `hooks/hooks.json`, not in byte-for-byte files, never-ship folders or container note bodies. | Spec section 4 rule 22 | 4 and 5 |
@@ -152,7 +152,7 @@ Tests first:
 Also in this commit, so the gates pass:
 
 - `tradecraft-core/README.md` is compiled as a doctest (`lib.rs` includes it).
-  Its quick start calls `publish_skill`; rewrite it around `export_skills`.
+  Its quick start calls `publish_skill`; rewrite it around `build_vault`.
   Its "Load a vault and build it" and "Launcher path" sections describe
   workspaces, the namespace and `out_root`; commits 2 to 4 update them as
   those go.
@@ -164,7 +164,7 @@ Also in this commit, so the gates pass:
   `tests/windows-host.test.ts` lose those cases; `tests/status-of.test.ts`
   and `examples/publish-a-skill.test.ts` go. `tests/smoke.mjs` (run by
   `pnpm smoke`, not in CI) calls `publishSkill` and `validateNamespace`;
-  rewrite it around `exportSkills`.
+  rewrite it around `buildVault`.
 - `src/core.ts` keeps a hand-written `ReasonToken` that mirrors
   `publish::ReasonToken`, with `PublishReason` and `PublishedFile`. They go
   with publish.
@@ -184,7 +184,7 @@ The output moves here because `init` no longer writes an output path, and a
 build of several marketplaces needs one folder each. The core keeps
 `ExportRequest::out_root` in this commit, and the CLI passes
 `<root>/dist/<m>/` as it. Commit 4 removes `out_root` from the core, the wasm
-`exportSkills`, `core.generated.ts` and the TypeScript tests together.
+exports, `core.generated.ts` and the TypeScript tests together.
 
 The root file's marketplace fields stop being read here; commit 3 refuses
 them.
@@ -283,7 +283,7 @@ The repo's `plugin/`:
 
 The root file's key set, the closed key table, the
 root-marketplace-plugin-component cascade, the `name` key, and the four
-`targets` values. Delete `build.namespace`, `--namespace`, prefixed keys and
+harness names. Delete `build.namespace`, `--namespace`, prefixed keys and
 the `validateNamespace` export. The wasm package's hand-kept `Target` union in
 `src/core.ts` shrinks to the four names.
 
@@ -306,14 +306,15 @@ Tests first:
 - A plugin's `claude: {description: x}` does not set its skills'
   `description` (section 7 rule 4).
 - A key in a plugin's block that a skill's kind does not accept stays with the
-  plugin (section 7 rule 6).
+  plugin (section 7 rule 4).
 - An unknown key in a harness block warns and is left out of that harness's
   output. A known key with a wrong value is refused (section 8 rule 2).
 - A plugin with no `version` builds as `0.1.0` with a warning. A marketplace
   with no `version` writes none, with no warning.
-- `targets: [opencode]` and `targets: [claude-code]` are refused, naming
-  `claude`, `codex`, `cursor` and `pi`. So is `build.harnesses: [amp]`.
-- `build.harnesses: [claude, pi]` writes only those two trees.
+- `build.harnesses: [opencode]` and `[claude-code]` are refused, naming
+  `claude`, `codex`, `cursor` and `pi`. `targets` on any note is refused.
+- `build.harnesses: [claude, pi]` writes only those two trees, and
+  `--harness codex` replaces that list for one run.
 
 Section 11:
 
@@ -371,16 +372,14 @@ Also:
 - No source but `hooks/hooks.json` adds hooks.
 - `${CLAUDE_PLUGIN_ROOT}` in a hooks file is an error that says to write
   `${PLUGIN_ROOT}`.
-- The Cursor warning is not printed when `build.harnesses` leaves Cursor out,
-  when the plugin's `targets` leave it out, or when the plugin has no
-  `hooks/hooks.json`.
+- The Cursor warning is not printed when Cursor is not built, or when the
+  plugin has no `hooks/hooks.json`.
 
 Output tests:
 
 - A file in `dist/acme/` beside the packs folders survives a build (section
   9 rule 4).
 - `check` reports drift after a hand edit there, and when `dist/` is missing.
-- A skill with `targets: [claude]` is only in the Claude Code pack.
 
 Naming tests, for the `tools` plugin's `review` skill:
 
@@ -405,7 +404,7 @@ Section 11:
 
 wasm (TypeScript tests through the package):
 
-- `exportSkills` over a vault writes `<root>/dist/acme/` in the filesystem
+- `buildVault` over a vault writes `<root>/dist/acme/` in the filesystem
   object.
 - `loadMarketplace` with `marketplace: "acme"` loads it. On a vault with two
   marketplaces and no name, it is an error naming both.
@@ -421,6 +420,8 @@ strings. Nothing is renamed by hand. The Pi pack already uses these names.
 Scoped resolution, the link table, the real-path check, missing targets as
 errors, calls and plain links (D2, D3), hand-written calls, literal code, the
 leftover check, the embed rules of section 5, and plugin-root paths (D9).
+It also compiles the plugin's shared `references/` Markdown, which lands at
+the pack root.
 
 Tests first, through `build`, one test per rule in sections 4 and 5. All use
 plugin `tools`.
@@ -476,7 +477,6 @@ Calls:
 | `/[[setup\|words]]` | ``words (`/tools:setup`)`` | ``words (`$tools:setup`)`` | ``words (`/tools-setup`)`` | ``words (`/skill:tools-setup`)`` |
 | `/[[deploy]]`, a command | `` `/tools:deploy` `` | error | error | error |
 | `/[[helper]]`, an agent | error | error | error | error |
-| `/[[deploy]]`, `deploy` with `targets: [claude]` (Appendix A5) | `` `/tools:deploy` `` | error naming the file and the call | the same | the same |
 
 Also:
 
@@ -807,12 +807,12 @@ tests and the gates above hold. The number in brackets is the commit.
   - Go: everything that writes to a destination: `publish_skill`'s
     single-note arms, the destination manifest, the rails, `publishes_to`,
     `overrides_for`, `override_states` and `accepted_override_keys`.
-  - Stay, because `export.rs` and `model/cascade.rs` call them: the plugin
-    arm, `plugin_format_carries_commands`, `plugin_format_carries_hooks`,
-    `kind_has_renderer`, `canonical_target`, `KNOWN_TARGETS` and
-    `accepted_keys`. `KNOWN_TARGETS` and `canonical_target` shrink to
-    `claude`, `codex`, `cursor` and `pi` in commit 3, with no aliases. Moving those into `export.rs` or `harness/` is a
-    follow-up, not v2.
+  - The rest goes in commit 4. `kind_has_renderer` and
+    `plugin_format_carries_commands`/`_hooks` have no callers, and
+    `canonical_target` is only a membership test of `KNOWN_TARGETS`.
+    `KNOWN_TARGETS` (the four names, no aliases), `PLUGIN_HOOKS_PATH` and
+    the unknown-target message move to `harness/profile.rs`, and
+    `refuse_carried_peers` to `model/load.rs`. The module is deleted.
 - `tradecraft-core/src/manifest.rs`, the destination manifest: all of it.
   Only `publish.rs`, `status.rs` and `lib.rs` use it. (`harness/manifest.rs`
   is a different file and stays.)
@@ -841,9 +841,10 @@ tests and the gates above hold. The number in brackets is the commit.
   `--from-git` cache), `markdown-relink` and `markdown-corpus` (the authoring
   writer). Check each against what stays before removing it.
 - `tradecraft-wasm/src/lib.rs`: `publishSkill`, `adoptSkills`, `statusOf`
-  and `publishableKinds` go. `exportSkills`, `discoverComponents`,
-  `loadMarketplace`, `parseRootFile`, `rootFileConfig`, `knownTargets` and
-  `canonicalTarget` stay. `validateNamespace` goes in commit 3.
+  and `publishableKinds` go. `discoverComponents`, `loadMarketplace`,
+  `parseRootFile` and `knownTargets` stay; `buildVault` replaces `exportSkills`.
+  `validateNamespace` goes in commit 3, `canonicalTarget` and
+  `rootFileConfig` in commit 4.
   `src/core.ts`'s hand-kept `Target` union shrinks to the four names in
   commit 3.
 - `packages/ts/tradecraft-wasm` (repository root): the wrappers in
@@ -896,9 +897,10 @@ tests and the gates above hold. The number in brackets is the commit.
 ### tradecraft-wasm
 
 - `lib.rs`: the pattern and workspace options of `discovery_view` and
-  `load_view` go [2]. `rootFileConfig` reads no marketplace fields [2, 3].
-  The `out_root` argument of `exportSkills` goes, and it writes
-  `<root>/dist/<m>/` in the filesystem object [4]. `loadMarketplace` takes a
+  `load_view` go [2]. `rootFileConfig` reads no marketplace fields [2, 3],
+  and goes [4]: a request takes the root file's `SharedDefaults`.
+  `exportSkills` goes; `buildVault` writes `<root>/dist/<m>/` in the
+  filesystem object [4]. `loadMarketplace` takes a
   marketplace name, required when the vault has more than one [4].
 
 ### tradecraft-typegen
@@ -990,6 +992,21 @@ The PRs this work depended on are done:
 [#137](https://github.com/osdlc/skillwright/pull/137) and
 [#140](https://github.com/osdlc/skillwright/pull/140) are closed. v2 itself
 is one PR, built as the six commits of the build order.
+
+### Extras
+
+Changes the build order did not list:
+
+- `build_vault` and `plan_vault` plan every marketplace, then write all of
+  them or none. A failed swap rolls back every marketplace already swapped.
+  A check reports each marketplace, and each refusal in
+  `VaultReport::refused`. The wasm crate exports this as `buildVault`.
+  It is the one public build function: `export_skills` is gone, and
+  `VaultRequest::compare_with` gives `bump` its baseline.
+- `loadMarketplace` returns a narrow wire shape of its own (`wire.rs`), not
+  the core's model. Body segments and resolved content do not cross.
+- `Closure::hash` is dropped. Only tests called it, and the core no longer
+  needs `sha2`.
 
 ### Open issues
 

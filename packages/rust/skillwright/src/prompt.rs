@@ -8,7 +8,7 @@
 
 use std::io::{BufRead, IsTerminal, Write};
 
-use crate::exit::{EXIT_BLOCKED, EXIT_OK, usage_error};
+use crate::exit::{EXIT_OK, EXIT_REFUSED, usage_error};
 
 /// True when both stdin and stdout are a real terminal.
 pub fn is_interactive() -> bool {
@@ -88,10 +88,10 @@ pub fn confirm_write(verb: &str, plan: &[String], err: &mut dyn Write) -> i32 {
     for line in plan {
         let _ = writeln!(err, "{line}");
     }
-    // Nothing attempted, at the user's own request — not a failure.
+    // Declined: nothing is written, so not 0, and it is not drift.
     if confirm("Proceed?", err) {
         EXIT_OK
     } else {
-        EXIT_BLOCKED
+        EXIT_REFUSED
     }
 }

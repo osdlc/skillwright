@@ -7,15 +7,47 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- Exit 1 means only that `check` found drift. Every refusal exits 2: a vault error, `init` over an existing file, a version `bump` refuses, a failed write and a declined prompt. `init` and `bump` used to exit 1 for these.
+- skillwright v2 reads one fixed vault layout and builds it into `dist/<m>/`. `docs/spec/v2-changes.md` says what each change below means for an existing vault.
+- Four commands remain: `init`, `build`, `check` and `bump`. `publish`, `unpublish`, `adopt`, `list`, `status`, `author`, `new`, `rename`, `move`, `delete`, `convert`, `harness install`, `harness update`, `harness uninstall`, `link` and `unlink` are removed. A removed command is an unknown command: a usage error, exit 3.
+- The flags `--config`, `--namespace`, `--out`, `--skills-root` and `--watch` are removed, and `init` loses `--out` and `--name`. `--vault` names the root. `check` no longer takes `--dry-run` or `--yes`.
+- The vault has one layout: `skillwright.md` and `marketplaces/` at the root, `marketplaces/<m>/<m>.md` for each marketplace, `plugins/<p>/<p>.md` for each plugin, and `skills/<s>/<s>.md` for each skill. Plugin notes are required. The walk up from the working directory stops only at a folder holding both `skillwright.md` and `marketplaces/`. A layout problem is reported once, with its paths and the expected layout.
+- Gone from the layout: workspaces, a root file that is also a marketplace, a root `skills/` or `plugins/`, flat entry notes, `SKILL.md` entries, hook notes, custom folder patterns, Obsidian's excluded files, and loose files in a component folder. A `.mcp.json` in a plugin folder is an error. `marketplaces`, `plugins`, `skills`, `agents`, `commands` and `hooks` are reserved names.
+- The root file holds only the shared defaults (`author`, `license`, `repository`, `homepage` and the harness blocks) and `build:`. `workspace`, `targets` and the `build:` keys `out`, `namespace`, `exclude`, `patterns`, `assets`, `hooks`, `launcher_path`, `destinations` and `scan_locations` are refused. `build:` outside the root file is refused.
+- `name` is refused on every note and in a harness block: the folder's name is the name. There is no key prefix: `sw-version` and an `sw:` block are unknown keys. `packs` in a harness block is refused.
+- `build` writes each marketplace to `<root>/dist/<m>/`. There is no other output location. With no `--marketplace` it builds every marketplace, and writes all of them or none. `check` with no `dist/<m>/` reports drift.
+- `targets` is removed at every level: the root file, a marketplace, plugin or component note that sets it is refused, saying to use `build.harnesses` or `--harness`. Every component is built for every harness built, and a plugin with no component, or only agents, is built for every harness built.
+- `build.harnesses` accepts only `claude`, `codex`, `cursor` and `pi`. The other targets and the aliases `claude-code`, `codex-cli` and `github-copilot` are refused.
+- Cursor names a plugin's skill `<p>-<s>`, as Pi does, and a call to it renders `/<p>-<s>`. `cursor: {naming: bare}` keeps plain names. Two skills of different plugins that build to one name are refused, naming both plugins.
+- A plugin's `references/`, `scripts/` and `assets/` ship under their own names at the pack root. `assets/bin/tool` ships as `assets/bin/tool`, not `bin/tool`.
+- Hooks come only from a plugin's `hooks/hooks.json`, which writes `${PLUGIN_ROOT}`. A `${CLAUDE_PLUGIN_ROOT}` there is refused. The Cursor pack ships no hooks for now, and the build warns ([#152](https://github.com/osdlc/skillwright/issues/152)). Packs no longer ship `hooks/gap-report.json`.
+- A link resolves inside its plugin. A link that leaves the plugin, reaches a never-ship folder or names nothing is an error. A plain `[[skill]]` is a file link that warns `Did you mean to call /[[skill]]?`; it is not a mention. Nothing is copied to `references/vault/` or `assets/vault/`.
+- A name-only link ignores case, and warns `link-case` when it matches a file only by ignoring case. Two files whose names differ only in case are both matches, an error. A name with an extension, such as `[[run.sh]]`, matches only that file, not `run.sh.md`. Name lookup never searches a never-ship folder such as `docs/`: a name in both `references/` and `docs/` resolves to `references/`, and a name only `docs/` holds is refused `excluded-link`.
+- `${PLUGIN_ROOT}/<path>` is rewritten in a Markdown link destination too, such as `[t](${PLUGIN_ROOT}/scripts/tool)`. The path is checked as a plugin-root path, not as a relative link. `${CLAUDE_PLUGIN_ROOT}` there is an error, as it is in prose.
+- A call, `/[[name]]`, names a skill or command of the marketplace. A name two plugins share, a fragment on a call and a call to an agent are errors. Code spans and fenced blocks are literal: no call, link or embed is read in them. A call string written by hand in prose is an error. `\[[x]]` ships as `[[x]]` and `\/[[x]]` as `/[[x]]`; `\/tools:setup` is no longer an escape.
+- A note or embedded file that holds a noncharacter U+FDD0 to U+FDD2 is refused (`noncharacter`): the build uses them as internal marks.
+- An embed of a text file that is neither a note nor an image ships as a fenced code block. An embed of a binary file is refused. Malformed frontmatter in an embedded note is an error that names both notes.
+- `${PLUGIN_ROOT}/<path>` in a component's Markdown is checked against what each pack ships, and written for each harness. A path that names nothing shipped is an error. `${CLAUDE_PLUGIN_ROOT}` in a note is an error.
+- `init` takes `<m> <p>` and writes the root file, the marketplace note and the plugin note. `bump` names a plugin, or bumps `<m>.md` with `--marketplace`.
+- The library modules `apply`, `dirs` and `git_source` are removed, with the modules of the removed commands. The crate still has no supported library API.
+
 ### Added
 
-- `cursor: {naming: prefixed}` on `skillwright.md` or a plugin note publishes that plugin's Cursor skills as `<plugin>-<skill>`, and body calls and mentions name them so. A plugin's value overrides the marketplace's. The default stays bare. A prefixed name that another plugin's skill also publishes under stops the build with `path-collision`.
+- `--harness <name>` on `build`, `check` and `bump` picks the harnesses to build, and may be repeated. It replaces the root file's `build.harnesses` for that run, which is now only the default. `bump --changed-since` builds and compares the same harnesses. An unknown name is a usage error, exit 3.
+- `cursor: {naming: bare | prefixed}` on `skillwright.md`, a marketplace note or a plugin note. A plugin's value overrides the marketplace's.
 - A plugin's Cursor display name reaches its entry in `.cursor-plugin/marketplace.json` as well as its `plugin.json`.
 
 ### Changed
 
-- `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts.
+- `build` checks every marketplace before it asks, then builds through the core's one build entry point. The vault is rendered twice; what `build` writes and prints is the same.
+- `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts. It also lists, per harness, the block keys that stay with a plugin or marketplace and never reach its members.
 - A root file value of the wrong shape is refused with the words a note gets, naming the key.
+
+### Fixed
+
+- Private-use characters, such as icon-font glyphs, ship unchanged. U+E002 shipped as `[[`.
 
 ## [0.11.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.0...skillwright/v0.11.1) - 2026-11-10
 

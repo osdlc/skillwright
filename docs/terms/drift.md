@@ -2,7 +2,7 @@
 
 Status: current.
 
-A difference between what `build` would write and what is on disk. `check` reports it and exits 1.
+A difference between what `build` would write and what is in `dist/<m>/`. A missing `dist/<m>/` is drift too. `check` reports it and exits 1.
 
 ## In code
 

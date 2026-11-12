@@ -2,12 +2,12 @@
 
 Status: current.
 
-A harness's name as written in `targets` or `--target`. Several spellings fold to one (`claude`, `claude-code`).
+A harness's name as written in `build.harnesses` or `--harness`: `claude`, `codex`, `cursor` or `pi`. Any other value is refused.
 
 ## In code
 
-`KNOWN_TARGETS`, `canonical_target` in `publish.rs`.
+`KNOWN_TARGETS` in `harness/profile.rs`.
 
 ## Not to be confused with
 
-A [destination](destination.md), which is a directory.
+A [harness](harness.md), the tool itself.

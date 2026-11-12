@@ -11,8 +11,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CoreError {
-    /// A content root (or an adopt source) does not exist. Returned before
-    /// anything is read.
+    /// A content root does not exist. Returned before anything is read.
     #[error("corpus root not found: {0}")]
     RootNotFound(PathBuf),
 
@@ -20,10 +19,6 @@ pub enum CoreError {
     /// as a routine condition.
     #[error("path escapes its corpus root: {0}")]
     PathEscapesRoot(PathBuf),
-
-    /// The referenced skill is not present under any known root.
-    #[error("skill not found: {0}")]
-    SkillNotFound(String),
 
     /// Filesystem failure reading a corpus. Carries the path, because a bare
     /// `io::Error` ("permission denied") is unactionable.
@@ -36,27 +31,21 @@ pub enum CoreError {
         source: std::io::Error,
     },
 
-    /// A safety rail said no: publishing into a protected source tree, a
-    /// coverage probe finding pre-existing content, or any other guard
-    /// decision. Always the rail working, never a bug.
+    /// A guard said no: a build refusal such as an unreadable root file or an
+    /// output path that overlaps the vault. Always the guard working, never a
+    /// bug.
     #[error("refused: {0}")]
     Refused(String),
-
-    /// Two authorities disagree about the same content — a diverged draft on
-    /// reimport, a user-modified obsolete file at a destination. Needs an
-    /// explicit human decision; nothing here picks a winner silently.
-    #[error("conflict: {0}")]
-    Conflict(String),
 
     /// Rendering a skill for a runtime target failed.
     #[error("projection: {0}")]
     Projection(String),
 
     /// The marketplace commit failed part-way through its root swaps. The
-    /// message says what failed and what the rollback restored — the
-    /// destination is back to its pre-build state unless the message says
-    /// otherwise. Its own variant because no other fits: it is not a rail
-    /// refusing and not a plain read failure, and a host has to be able to
+    /// message says what failed and what the rollback restored — `dist/<m>/`
+    /// is back to its pre-build state unless the message says otherwise. Its
+    /// own variant because no other fits: it is not a refusal and not a plain
+    /// read failure, and a host has to be able to
     /// tell "nothing happened" from "something happened and was undone".
     #[error("swap failed: {0}")]
     SwapFailed(String),
@@ -79,29 +68,10 @@ impl CoreError {
         match self {
             CoreError::RootNotFound(_) => "RootNotFound",
             CoreError::PathEscapesRoot(_) => "PathEscapesRoot",
-            CoreError::SkillNotFound(_) => "SkillNotFound",
             CoreError::Io { .. } => "Io",
             CoreError::Refused(_) => "Refused",
-            CoreError::Conflict(_) => "Conflict",
             CoreError::Projection(_) => "Projection",
             CoreError::SwapFailed(_) => "SwapFailed",
-        }
-    }
-
-    /// The closed-set reason token a host reports for this error when its
-    /// message carries none. Exhaustive like [`Self::variant_name`], so a new
-    /// variant needs a token before it compiles.
-    pub fn reason_token(&self) -> crate::publish::ReasonToken {
-        use crate::publish::ReasonToken;
-        match self {
-            CoreError::Projection(_) => ReasonToken::NoRenderer,
-            CoreError::PathEscapesRoot(_) => ReasonToken::UnsafePath,
-            CoreError::RootNotFound(_) => ReasonToken::Io,
-            CoreError::SkillNotFound(_) => ReasonToken::Io,
-            CoreError::Io { .. } => ReasonToken::Io,
-            CoreError::SwapFailed(_) => ReasonToken::Io,
-            CoreError::Refused(_) => ReasonToken::Io,
-            CoreError::Conflict(_) => ReasonToken::Conflict,
         }
     }
 
@@ -142,7 +112,7 @@ impl CoreError {
 
     /// A refusal message split into the token it leads with and the prose
     /// after it, or `None` when it leads with nothing shaped like a token:
-    /// some rails carry prose alone.
+    /// some refusals carry prose alone.
     pub(crate) fn split_refusal(message: &str) -> Option<(&str, &str)> {
         message.split_once(": ").filter(|(token, _)| {
             !token.is_empty()
@@ -152,9 +122,8 @@ impl CoreError {
         })
     }
 
-    /// A refusal prefixed with one of the publish spec's
-    /// closed-set reason tokens — `unknown-kind`, `mixed-frontmatter-shape`,
-    /// and the rest.
+    /// A refusal prefixed with a reason token, such as `unknown-harness` or
+    /// `path-collision`.
     ///
     /// The token leads the message so a report, a test, or a later UI can find
     /// it without a second field on the variant; the prose after it names the
@@ -175,10 +144,6 @@ mod tests {
         assert_eq!(
             CoreError::RootNotFound(PathBuf::from("/nope")).to_string(),
             "corpus root not found: /nope"
-        );
-        assert_eq!(
-            CoreError::SkillNotFound("abc".into()).to_string(),
-            "skill not found: abc"
         );
         assert_eq!(
             CoreError::PathEscapesRoot(PathBuf::from("/etc/passwd")).to_string(),
@@ -204,14 +169,10 @@ mod tests {
             err.to_string(),
             "refused: malformed: /vault/a.md: `model` must be a string, not a list"
         );
-        assert_eq!(
-            crate::publish::PublishReason::from_refusal(
-                err.to_string().strip_prefix("refused: ").unwrap(),
-                crate::publish::ReasonToken::Io,
-            )
-            .token,
-            crate::publish::ReasonToken::Malformed
-        );
+        let message = err.to_string();
+        let (token, _) = CoreError::split_refusal(message.strip_prefix("refused: ").unwrap())
+            .expect("a token leads the refusal");
+        assert_eq!(token, "malformed");
     }
 
     #[test]

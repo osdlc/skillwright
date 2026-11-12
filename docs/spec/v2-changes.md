@@ -23,6 +23,18 @@ and may return in a later milestone:
 A removed command is now an unknown command: a usage error, exit 3, with no
 hint that it was removed.
 
+## Exit codes
+
+Exit 1 now means only that `check` found drift. Every refusal exits 2: a
+vault error, `init` over an existing file, a version `bump` refuses, a
+failed write and a declined prompt (section 10 rule 8). In v1, a refusal
+during a run exited 1, as drift did. A script that read 1 as "drift" can now trust it; one
+that read 1 as "refused" must read 2.
+
+The `adopted` key, the provenance `adopt` wrote, goes with `adopt`. A v1
+`adopted:` block is now an unknown key: it warns. On a skill it ships under
+`metadata:`; on a plugin or marketplace note it is ignored.
+
 These flags go too:
 
 | Flag | Why |
@@ -34,8 +46,8 @@ These flags go too:
 | `--watch` | `build --watch` is out of v2. |
 | `init --out`, `init --name` | `init` takes `<m> <p>` (section 10 rule 1). |
 
-`--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes` stay
-(section 10 rule 5). `build` and `bump` still ask before writing, so `--yes`
+`--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes` stay,
+and `--harness` is new (section 10 rule 5). `build` and `bump` still ask before writing, so `--yes`
 is still needed off a terminal.
 
 ## Features removed or changed
@@ -53,6 +65,10 @@ is still needed off a terminal.
   There is one root file, and every marketplace sits under it.
 - The `name` key on any note. The folder name is the name, and a `name` key is
   refused.
+- `targets`, at every level: the root file, a marketplace, plugin or component
+  note. It is refused. Every component is built for every harness built. Pick
+  the harnesses with `build.harnesses` in the root file, or with `--harness`
+  for one run (section 6 rule 7, section 10 rule 7).
 - `build.namespace` and prefixed keys (`sw-version`, an `sw:` block). A
   prefixed key is now an unknown key.
 
@@ -93,10 +109,10 @@ is still needed off a terminal.
   `<p>-<s>`, folder and `name`, as Pi already does. `cursor: {naming: bare}`
   keeps today's plain names (section 8 rule 6). A call to a Cursor skill
   renders `/<p>-<s>`, not `/<s>`.
-- `targets` values other than `claude`, `codex`, `cursor` and `pi`. The
+- Harness names other than `claude`, `codex`, `cursor` and `pi`. The
   publish targets (`amp`, `antigravity`, `copilot`, `opencode`, `portable`)
   and the aliases (`claude-code`, `codex-cli`, `github-copilot`) are now
-  refused (section 9 rule 12).
+  refused in `build.harnesses` and `--harness` (section 9 rule 12).
 - Hooks in the Cursor pack. The build now leaves them out and warns, until a
   probe confirms that Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands
   (section 4 rule 23, [#152](https://github.com/osdlc/skillwright/issues/152)).
@@ -134,7 +150,7 @@ is still needed off a terminal.
 | Decision | Amendment |
 |---|---|
 | [D-WNTQ](../decisions/D-WNTQ-harness-profile-values-from-config.md) | `pi: {naming}` stays settable, `cursor: {naming}` is added, and `packs` is not settable. |
-| [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) | `build.namespace` and prefixed keys are gone. An unknown key still warns, with two exceptions: the removed keys `workspace` (root file) and `packs` (harness block) are refused. A key the table lists is refused where it does not belong: a key that is not inherited in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |
+| [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) | `build.namespace` and prefixed keys are gone. An unknown key still warns, with three exceptions: the removed keys `workspace` (root file), `targets` (any level) and `packs` (harness block) are refused. A key the table lists is refused where it does not belong: a key that is not inherited in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |
 | [D-GPYR](../decisions/D-GPYR-convention-first.md) | Its patterns layer is gone. |
 
 ## What each decision changes

@@ -1,13 +1,14 @@
-//! `skillwright bump` — raise a plugin's `version` by a semver level,
-//! rewriting only that frontmatter key (or, for a note that uses the nested
-//! `sw:` block, only that block). Contract: the CLI spec's `bump` section.
+//! `skillwright bump` — raise a `version` by a semver level, rewriting only
+//! that frontmatter key. Contract: spec section 10 rule 4.
 //!
-//! Two forms. `bump <plugin>` raises one plugin. `bump --changed-since
-//! <ref|dir>` raises every plugin whose rendered members differ from a
-//! baseline and whose version has not moved since: a directory is a built
-//! marketplace as it stands, and anything else is a git ref, built in a
-//! temporary folder with the ref's own copy of the root file. Only the files
-//! that build reads are checked out there.
+//! Three forms. `bump <p>` raises the plugin `<p>` in `<p>.md`; when plugins
+//! in two marketplaces share the name, `--marketplace` picks one. `bump
+//! --marketplace <m>` with no plugin raises the marketplace in `<m>.md`.
+//! `bump --changed-since <ref|dir>` raises every plugin whose rendered
+//! members differ from a baseline and whose version has not moved since: a
+//! directory is one built marketplace as it stands, and anything else is a
+//! git ref, built in a temporary folder from the ref's own `skillwright.md`
+//! and `marketplaces/`.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
 //! rather than guessed at ([`tradecraft_core::next_version`]); an absent
@@ -19,36 +20,34 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tradecraft_core::harness::with_plugin_format;
-use tradecraft_core::model::marketplaces_in;
+use tradecraft_core::discover::discover_in;
+use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
-    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportUnit, MarketplaceConfig,
-    Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs, apply_field_edits, check_packs,
-    discover_components, export_skills, in_plugin_folder, next_version, ns_field_edits,
-    ns_field_label, owned_paths, packs_path, parse_semver, plugin_folder_in, plugin_manifest_path,
-    read_ns_field, workspace_file,
+    BumpLevel, CoreError, DiscoveredComponent, EntityKind, ExportMode, ExportReport, ExportUnit,
+    NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest, Vfs, build_vault,
+    dist_dir, is_vault_root, next_version, owned_paths, packs_path, parse_semver,
+    plugin_manifest_path, read_version, set_version,
 };
 
-use crate::commands::marketplace::{configured_request, marketplace_inputs};
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
+use crate::exit::{EXIT_OK, EXIT_REFUSED, refused, usage_error};
 use crate::prompt::confirm_write;
-use crate::report::normalize_thrown_reason;
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, workspace_runs};
+use crate::report::{normalize_thrown_reason, print_json};
+use crate::resolve::{CommonFlags, ResolvedRun, resolve_at, resolve_run};
 
 /// The resolved flags of `skillwright bump`.
 pub struct BumpFlags {
-    /// The plugin to bump, by its frontmatter `name`. `None` with
-    /// `changed_since`.
+    /// The plugin to bump, by its folder name. `None` with `changed_since`,
+    /// or to bump the marketplace `--marketplace` names.
     pub plugin: Option<String>,
     /// `--changed-since`: bump every plugin that changed since this git ref
     /// or built directory.
     pub changed_since: Option<String>,
-    /// `--marketplace`: the marketplace to work in.
+    /// `--marketplace`: the marketplace to work in, or to bump.
     pub marketplace: Option<String>,
     /// How much of the version to bump.
     pub level: BumpLevel,
-    /// The global `--vault`, `--config` and `--namespace` flags.
+    /// The global `--vault` flag.
     pub common: CommonFlags,
     /// `--json`: print the report as one JSON document.
     pub json: bool,
@@ -58,6 +57,9 @@ pub struct BumpFlags {
     pub yes: bool,
     /// `--quiet`: drop progress and the tally from stderr.
     pub quiet: bool,
+    /// `--harness`: the harnesses to build and compare. Empty means the root
+    /// file's `build.harnesses`.
+    pub harnesses: BTreeSet<String>,
 }
 
 /// `--changed-since`'s `--json` document: the baseline, and one row per
@@ -99,21 +101,8 @@ fn write_row(ctx: &mut CommandContext<'_>, json: bool, row: &Row) -> Result<(), 
     }
 }
 
-fn print_json(ctx: &mut CommandContext<'_>, value: &impl Serialize) -> Result<(), i32> {
-    match serde_json::to_string_pretty(value) {
-        Ok(document) => {
-            let _ = writeln!(ctx.out, "{document}");
-            Ok(())
-        }
-        Err(err) => Err(blocked(
-            ctx.err,
-            &format!("the report would not serialize: {err}"),
-        )),
-    }
-}
-
 fn bump_failed(err: &mut dyn std::io::Write, e: impl std::fmt::Display) -> i32 {
-    blocked(
+    refused(
         err,
         &format!("bump failed: {}", normalize_thrown_reason(&e.to_string())),
     )
@@ -154,22 +143,17 @@ struct Planned {
     rel: String,
     entry_path: PathBuf,
     source: String,
-    /// The version key as the note spells it.
-    key: String,
     current: String,
     /// Whether the note carries a version key at all.
     versioned: bool,
     /// `None`: the current version is not plain semver.
     new: Option<String>,
-    /// How this note spells its keys.
-    namespace: Namespace,
 }
 
 /// A note that holds a plugin's version.
 struct VersionNote {
     path: PathBuf,
     rel: String,
-    namespace: Namespace,
 }
 
 fn plan_bump(
@@ -178,17 +162,10 @@ fn plan_bump(
     scheme: PatchScheme,
     now: u64,
 ) -> Result<Planned, String> {
-    let VersionNote {
-        path,
-        rel,
-        namespace,
-    } = note;
+    let VersionNote { path, rel } = note;
     let bytes = NativeVfs.read_file(&path).map_err(|e| e.to_string())?;
     let source = String::from_utf8(bytes).map_err(|e| format!("{rel} is not valid UTF-8: {e}"))?;
-    // Either shape the note writes it in: flat `version`, or `version`
-    // inside a nested `sw:` block. Messages name the key as the note spells it.
-    let key = ns_field_label(&source, &namespace, "version").map_err(|e| e.to_string())?;
-    let found = read_ns_field(&source, &namespace, "version").map_err(|e| e.to_string())?;
+    let found = read_version(&source).map_err(|e| e.to_string())?;
     let versioned = found.is_some();
     // No version key in either shape is not a refusal — the core's stated
     // default is what a bump starts from.
@@ -198,22 +175,14 @@ fn plan_bump(
         rel,
         entry_path: path,
         source,
-        key,
         current,
         versioned,
         new,
-        namespace,
     })
 }
 
 fn write_bump(planned: &Planned, new: &str) -> Result<(), String> {
-    let edited = ns_field_edits(
-        &planned.source,
-        &planned.namespace,
-        &[("version", Some(yaml_splice::Value::Str(new.to_owned())))],
-    )
-    .and_then(|edits| apply_field_edits(&planned.source, &edits))
-    .map_err(|e| e.to_string())?;
+    let edited = set_version(&planned.source, new).map_err(|e| e.to_string())?;
     NativeVfs
         .write_file(&planned.entry_path, edited.as_bytes())
         .map_err(|e| e.to_string())
@@ -221,74 +190,41 @@ fn write_bump(planned: &Planned, new: &str) -> Result<(), String> {
 
 /// Run `skillwright bump` and return the exit code.
 pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
-    let run = match resolve_run(&flags.common, &ctx.cwd, ctx.err) {
+    let run = match resolve_run(
+        &flags.common,
+        flags.marketplace.as_deref(),
+        &ctx.cwd,
+        ctx.err,
+    ) {
         Ok(run) => run,
         Err(code) => return code,
     };
-    if !run.is_workspace() {
-        return bump_in(flags, ctx, &run, flags.marketplace.as_deref());
-    }
-    // At a workspace root `--marketplace` picks the member, a vault of its own.
-    let Some(only) = flags.marketplace.as_deref() else {
-        return blocked(
-            ctx.err,
-            &format!(
-                "bump acts on one marketplace, and {} is a workspace. Pass --marketplace \
-                 <name>, or run it from inside marketplaces/<name>/",
-                run.vault.display()
-            ),
-        );
-    };
-    match workspace_runs(&run, &flags.common, Some(only), ctx.err) {
-        Ok(members) => members
-            .first()
-            .map_or(EXIT_OK, |member| bump_in(flags, ctx, member, None)),
-        Err(code) => code,
-    }
-}
-
-/// `bump` in one vault, narrowed to the marketplace folder `market`.
-fn bump_in(
-    flags: &BumpFlags,
-    ctx: &mut CommandContext<'_>,
-    run: &ResolvedRun,
-    market: Option<&str>,
-) -> i32 {
-    let namespace = run.core_namespace();
-
-    let mut scan = match discover_components(&run.source_vfs(None), &run.vault, None, namespace) {
+    let scan = match discover_in(&NativeVfs, &run.loaded.layout) {
         Ok(scan) => scan,
         Err(err) => {
-            let message = err.to_string();
-            return blocked(
+            return refused(
                 ctx.err,
                 &format!(
                     "the vault scan could not complete: {}",
-                    normalize_thrown_reason(&message)
+                    normalize_thrown_reason(&err.to_string())
                 ),
             );
         }
     };
-    if let Some(market) = market {
-        let markets: Vec<&str> = marketplaces_in(&scan.components).into_iter().collect();
-        // As `build` takes it: a vault with no marketplaces has no set to
-        // pick from, so the name selects everything.
-        if !markets.is_empty() && !markets.contains(&market) {
-            return usage_error(
-                ctx.err,
-                &format!(
-                    "no marketplace `{market}` in this vault: it holds {}",
-                    markets.join(", ")
-                ),
-            );
-        }
-        scan.components.retain(|c| {
-            c.marketplace.as_deref().is_none_or(|m| m == market)
-                && (c.kind != EntityKind::Marketplace || c.folder() == market)
-        });
-    }
+    // The plugin notes of the marketplaces this run covers.
+    let plugins: Vec<&DiscoveredComponent> = scan
+        .components
+        .iter()
+        .filter(|c| {
+            c.kind == EntityKind::Plugin
+                && c.marketplace
+                    .as_deref()
+                    .is_some_and(|m| run.loaded.marketplace(m).is_some())
+        })
+        .collect();
     let scheme = run
-        .config
+        .loaded
+        .settings
         .build
         .bump
         .as_ref()
@@ -296,10 +232,24 @@ fn bump_in(
         .unwrap_or_default();
 
     match (&flags.plugin, &flags.changed_since) {
-        (Some(plugin), None) => run_one(flags, ctx, run, &scan.components, plugin, scheme),
-        (None, Some(since)) => {
-            run_changed(flags, ctx, run, market, &scan.components, since, scheme)
-        }
+        (Some(plugin), None) => match plugin_note(&plugins, plugin) {
+            Ok(note) => run_one(flags, ctx, plugin, note, scheme),
+            Err(message) => usage_error(ctx.err, &message),
+        },
+        (None, None) => match (flags.marketplace.as_deref(), run.marketplaces()) {
+            (Some(_), [market]) => {
+                let note = VersionNote {
+                    path: market.note.clone(),
+                    rel: vault_relative(&run.vault, &market.note),
+                };
+                run_one(flags, ctx, &market.name, note, scheme)
+            }
+            _ => usage_error(
+                ctx.err,
+                "bump takes a plugin name, --marketplace or --changed-since",
+            ),
+        },
+        (None, Some(since)) => run_changed(flags, ctx, &run, &plugins, since, scheme),
         _ => usage_error(
             ctx.err,
             "bump takes a plugin name or --changed-since, and not both",
@@ -307,106 +257,68 @@ fn bump_in(
     }
 }
 
-/// The plugin notes named `name`.
-fn plugin_notes<'a>(
-    components: &'a [DiscoveredComponent],
-    name: &str,
-) -> Vec<&'a DiscoveredComponent> {
-    components
-        .iter()
-        .filter(|c| c.kind == EntityKind::Plugin && c.name == name)
-        .collect()
+/// `path` relative to `root`, forward-slashed.
+fn vault_relative(root: &Path, path: &Path) -> String {
+    crate::config::relative_path(root, path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
-/// The note holding the version of the marketplace's own plugin: `name` is the
-/// marketplace's and no folder holds such a plugin. It is a `skillwright.md`,
-/// so its keys are bare under any namespace.
-fn marketplace_note(
-    run: &ResolvedRun,
-    components: &[DiscoveredComponent],
-    name: &str,
-) -> Option<VersionNote> {
-    if components.iter().any(|c| in_plugin_folder(c, name)) {
-        return None;
-    }
-    let own = components
-        .iter()
-        .find(|c| c.kind == EntityKind::Marketplace && c.name == name);
-    let (path, rel) = match own {
-        Some(note) => (note.entry_path.clone(), note.vault_relative_path.clone()),
-        None if run.root_config().name.as_deref() == Some(name) => {
-            let file = run.config_path.as_ref()?;
-            let rel = crate::config::relative_path(&run.vault, file)
-                .to_string_lossy()
-                .replace('\\', "/");
-            (file.clone(), rel)
-        }
-        None => return None,
-    };
-    Some(VersionNote {
-        path,
-        rel,
-        namespace: Namespace::bare(),
-    })
-}
-
-/// The version note of the plugin note `component`.
-fn plugin_version_note(component: &DiscoveredComponent, run: &ResolvedRun) -> VersionNote {
-    VersionNote {
-        path: component.entry_path.clone(),
-        rel: component.vault_relative_path.clone(),
-        namespace: run.core_namespace().clone(),
-    }
-}
-
-fn run_one(
-    flags: &BumpFlags,
-    ctx: &mut CommandContext<'_>,
-    run: &ResolvedRun,
-    components: &[DiscoveredComponent],
-    plugin: &str,
-    scheme: PatchScheme,
-) -> i32 {
-    let matches = plugin_notes(components, plugin);
-    let note = match matches.as_slice() {
-        [] => match marketplace_note(run, components, plugin) {
-            Some(note) => note,
-            None => {
-                let folder = components
+/// The note of the plugin `name`, or why there is none to bump.
+fn plugin_note(plugins: &[&DiscoveredComponent], name: &str) -> Result<VersionNote, String> {
+    let matches: Vec<&&DiscoveredComponent> = plugins.iter().filter(|c| c.name == name).collect();
+    match matches.as_slice() {
+        [] => {
+            let names: BTreeSet<&str> = plugins.iter().map(|c| c.name.as_str()).collect();
+            let held = if names.is_empty() {
+                "none".to_owned()
+            } else {
+                names
                     .iter()
-                    .filter(|c| c.plugin.as_deref() == Some(plugin))
-                    .find_map(|c| plugin_folder_in(&c.vault_relative_path, plugin))
-                    .unwrap_or_else(|| format!("plugins/{plugin}"));
-                return usage_error(
-                    ctx.err,
-                    &format!(
-                        "no plugin note named `{plugin}` in this vault. A folder-only plugin has no note to bump: add `{folder}/{plugin}.md` with a `version`"
-                    ),
-                );
-            }
-        },
-        [one] => plugin_version_note(one, run),
+                    .map(|n| format!("`{n}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            Err(format!("no plugin `{name}` in this vault: it holds {held}"))
+        }
+        [one] => Ok(plugin_version_note(one)),
         many => {
             let paths: Vec<&str> = many
                 .iter()
                 .map(|c| c.vault_relative_path.as_str())
                 .collect();
-            return usage_error(
-                ctx.err,
-                &format!(
-                    "`{plugin}` names more than one plugin: {} — name one with --marketplace",
-                    paths.join(", ")
-                ),
-            );
+            Err(format!(
+                "`{name}` names a plugin in more than one marketplace: {} — name one with --marketplace",
+                paths.join(", ")
+            ))
         }
-    };
+    }
+}
 
+/// The version note of the plugin note `component`.
+fn plugin_version_note(component: &DiscoveredComponent) -> VersionNote {
+    VersionNote {
+        path: component.entry_path.clone(),
+        rel: component.vault_relative_path.clone(),
+    }
+}
+
+/// Bump the one note `note`, a plugin's or a marketplace's, named `label` in
+/// the report.
+fn run_one(
+    flags: &BumpFlags,
+    ctx: &mut CommandContext<'_>,
+    label: &str,
+    note: VersionNote,
+    scheme: PatchScheme,
+) -> i32 {
+    let plugin = label;
     let planned = match plan_bump(note, flags.level, scheme, utc_now_stamp()) {
         Ok(planned) => planned,
         Err(err) => return bump_failed(ctx.err, err),
     };
     let Some(new) = planned.new.clone() else {
-        let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
+        let reason = format!("non-semver: `version` reads `{}`", planned.current);
         let row = Row::refused(plugin, &planned.rel, &planned.current, reason).single();
         if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
@@ -421,17 +333,19 @@ fn run_one(
         if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
-        let _ = writeln!(
-            ctx.err,
-            "dry run — reporting the bump this run would make; nothing will be written"
-        );
+        if !flags.quiet {
+            let _ = writeln!(
+                ctx.err,
+                "dry run — reporting the bump this run would make; nothing will be written"
+            );
+        }
         return EXIT_OK;
     }
 
     if !flags.yes {
         let plan = vec![format!(
-            "{}  {} {} -> {new}",
-            planned.rel, planned.key, planned.current
+            "{}  version {} -> {new}",
+            planned.rel, planned.current
         )];
         let gate = confirm_write("bump", &plan, ctx.err);
         if gate != EXIT_OK {
@@ -495,17 +409,10 @@ impl Skip {
 
     /// Read the baseline's own manifests of `plugin` in `roots` to tell the
     /// three causes apart.
-    fn of(
-        baseline: &Path,
-        config: &MarketplaceConfig,
-        roots: &[&str],
-        plugin: &str,
-        current: &str,
-    ) -> Skip {
+    fn of(baseline: &Path, roots: &[&str], plugin: &str, current: &str) -> Skip {
         let mut held = false;
         for root in roots {
-            let (Some(packs), Some(manifest)) =
-                (packs_path(config, root), plugin_manifest_path(root))
+            let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root))
             else {
                 continue;
             };
@@ -529,10 +436,9 @@ impl Skip {
 }
 
 /// Whether `dir` holds a plugin manifest for any of `roots`.
-fn holds_a_plugin_manifest(dir: &Path, config: &MarketplaceConfig, roots: &[&str]) -> bool {
+fn holds_a_plugin_manifest(dir: &Path, roots: &[&str]) -> bool {
     roots.iter().any(|root| {
-        let (Some(packs), Some(manifest)) = (packs_path(config, root), plugin_manifest_path(root))
-        else {
+        let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root)) else {
             return false;
         };
         std::fs::read_dir(dir.join(packs)).is_ok_and(|entries| {
@@ -543,145 +449,144 @@ fn holds_a_plugin_manifest(dir: &Path, config: &MarketplaceConfig, roots: &[&str
     })
 }
 
+/// The one marketplace's report from a request for one, or what refused it.
+fn one_report(report: Result<VaultReport, CoreError>) -> Result<ExportReport, String> {
+    let mut report = report.map_err(|err| err.to_string())?;
+    if let Some(refusal) = report.refused.pop() {
+        return Err(refusal.error);
+    }
+    report
+        .marketplaces
+        .pop()
+        .map(|m| m.report)
+        .ok_or_else(|| "the build reported no marketplace".to_owned())
+}
+
 fn run_changed(
     flags: &BumpFlags,
     ctx: &mut CommandContext<'_>,
     run: &ResolvedRun,
-    market: Option<&str>,
-    components: &[DiscoveredComponent],
+    plugins: &[&DiscoveredComponent],
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
-    // Its `out_root` becomes the baseline once that resolves.
-    let mut request = configured_request(run, market, run.vault.clone(), ExportMode::Check);
-    // The build's own `packs` check, before a ref is built and its packs are
-    // moved to where this config keeps them.
-    if let Err(err) = check_packs(&request.config) {
-        return blocked(
-            ctx.err,
-            &format!(
-                "--changed-since `{since}`: {}",
-                normalize_thrown_reason(&err.to_string())
-            ),
-        );
-    }
-    let baseline = match Baseline::resolve(since, flags, run, market, &request.config, ctx) {
+    // Each request compares with its baseline once that resolves.
+    let requests: Vec<(&str, VaultRequest)> = run
+        .marketplaces()
+        .iter()
+        .map(|m| {
+            let mut request = run.loaded.vault_request(m, ExportMode::Check);
+            request.harnesses.clone_from(&flags.harnesses);
+            (m.name.as_str(), request)
+        })
+        .collect();
+    let baseline = match Baseline::resolve(since, run, &flags.harnesses, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
-    request.out_root = baseline.root().to_path_buf();
-    let mut roots: Vec<&str> = match owned_paths(&request) {
-        Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
-        Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
-    };
-    roots.dedup();
-    if let Baseline::Dir(dir) = &baseline
-        && !holds_a_plugin_manifest(dir, &request.config, &roots)
-    {
-        let expected: Vec<String> = roots
-            .iter()
-            .filter_map(|root| {
-                Some(format!(
-                    "{}/<plugin>/{}",
-                    packs_path(&request.config, root)?,
-                    plugin_manifest_path(root)?
-                ))
-            })
-            .collect();
-        return blocked(
-            ctx.err,
-            &format!(
-                "--changed-since `{since}`: {} holds no plugin manifest for any configured harness; a built marketplace holds one at {}",
-                dir.display(),
-                expected.join(" or ")
-            ),
-        );
-    }
-    let namespace = run.core_namespace();
-    let vfs = run.export_vfs(None, baseline.root());
-    let report = match export_skills(&vfs, &request, namespace) {
-        Ok(report) => report,
-        Err(err) => {
-            return blocked(
-                ctx.err,
-                &format!(
-                    "comparing against `{since}` failed: {}",
-                    normalize_thrown_reason(&err.to_string())
-                ),
-            );
-        }
-    };
-
-    let mut verdicts: BTreeMap<&str, Verdict> = BTreeMap::new();
-    for unit in &report.units {
-        if let ExportUnit::Plugin {
-            root,
-            name,
-            status,
-            version_bump_suggestion,
-            ..
-        } = unit
-        {
-            let verdict = verdicts.entry(name.as_str()).or_default();
-            verdict.bump |= version_bump_suggestion.is_some();
-            verdict.drift |= *status == UnitStatus::Drift;
-            verdict.roots.push(root.as_str());
-        }
-    }
 
     let now = utc_now_stamp();
     let mut rows: Vec<Row> = Vec::new();
-    for (name, verdict) in verdicts {
-        let note = match plugin_notes(components, name).as_slice() {
-            [one] => Some(plugin_version_note(one, run)),
-            [] => marketplace_note(run, components, name),
-            _ => {
-                rows.push(Row::refused(
-                    name,
-                    "",
-                    "",
-                    format!("`{name}` names more than one plugin in this vault"),
-                ));
-                continue;
-            }
+    for (market, mut request) in requests {
+        request.compare_with = Some(baseline.root(market));
+        let mut roots: Vec<&str> = match owned_paths(&run.loaded.settings, &request.harnesses) {
+            Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
+            Err(err) => return refused(ctx.err, normalize_thrown_reason(&err.to_string())),
         };
-        let Some(note) = note else {
-            let reason = format!("`{name}` has no note to bump; add one with a `version`");
-            let mut row = Row::refused(name, "", "", reason);
-            if !verdict.drift {
-                row.status = "unchanged";
-                row.reason = None;
-            }
-            rows.push(row);
-            continue;
-        };
-        let planned = match plan_bump(note, flags.level, scheme, now) {
-            Ok(planned) => planned,
-            Err(err) => return bump_failed(ctx.err, err),
-        };
-        // A note with no version key has no version to have moved, so any
-        // drift is a change.
-        let changed = verdict.bump || (verdict.drift && !planned.versioned);
-        let row = if !verdict.drift {
-            Row::plain(name, &planned, "unchanged", None)
-        } else if !changed {
-            let skip = Skip::of(
-                baseline.root(),
-                &request.config,
-                &verdict.roots,
-                name,
-                &planned.current,
+        roots.dedup();
+        if let Baseline::Dir(dir) = &baseline
+            && !holds_a_plugin_manifest(dir, &roots)
+        {
+            let expected: Vec<String> = roots
+                .iter()
+                .filter_map(|root| {
+                    Some(format!(
+                        "{}/<plugin>/{}",
+                        packs_path(root)?,
+                        plugin_manifest_path(root)?
+                    ))
+                })
+                .collect();
+            return refused(
+                ctx.err,
+                &format!(
+                    "--changed-since `{since}`: {} holds no plugin manifest for any configured harness; a built marketplace holds one at {}",
+                    dir.display(),
+                    expected.join(" or ")
+                ),
             );
-            let mut row = Row::plain(name, &planned, "skipped", Some(skip.token().to_owned()));
-            row.explain = Some(skip.text());
-            row
-        } else if planned.new.is_none() {
-            let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
-            Row::refused(name, &planned.rel, &planned.current, reason)
-        } else {
-            Row::bump(name, planned)
+        }
+        let report = match one_report(build_vault(&NativeVfs, &request)) {
+            Ok(report) => report,
+            Err(err) => {
+                return refused(
+                    ctx.err,
+                    &format!(
+                        "comparing against `{since}` failed: {}",
+                        normalize_thrown_reason(&err)
+                    ),
+                );
+            }
         };
-        rows.push(row);
+
+        let mut verdicts: BTreeMap<&str, Verdict> = BTreeMap::new();
+        for unit in &report.units {
+            if let ExportUnit::Plugin {
+                root,
+                name,
+                status,
+                version_bump_suggestion,
+                ..
+            } = unit
+            {
+                let verdict = verdicts.entry(name.as_str()).or_default();
+                verdict.bump |= version_bump_suggestion.is_some();
+                verdict.drift |= *status == UnitStatus::Drift;
+                verdict.roots.push(root.as_str());
+            }
+        }
+
+        for (name, verdict) in verdicts {
+            let note = plugins
+                .iter()
+                .find(|c| c.name == name && c.marketplace.as_deref() == Some(market));
+            let Some(note) = note else {
+                let reason = format!("`{name}` has no note to bump; add one with a `version`");
+                let mut row = Row::refused(name, "", "", reason);
+                if !verdict.drift {
+                    row.status = "unchanged";
+                    row.reason = None;
+                }
+                rows.push(row);
+                continue;
+            };
+            let planned = match plan_bump(plugin_version_note(note), flags.level, scheme, now) {
+                Ok(planned) => planned,
+                Err(err) => return bump_failed(ctx.err, err),
+            };
+            // A note with no version key has no version to have moved, so any
+            // drift is a change.
+            let changed = verdict.bump || (verdict.drift && !planned.versioned);
+            let row = if !verdict.drift {
+                Row::plain(name, &planned, "unchanged", None)
+            } else if !changed {
+                let skip = Skip::of(
+                    &baseline.root(market),
+                    &verdict.roots,
+                    name,
+                    &planned.current,
+                );
+                let mut row = Row::plain(name, &planned, "skipped", Some(skip.token().to_owned()));
+                row.explain = Some(skip.text());
+                row
+            } else if planned.new.is_none() {
+                let reason = format!("non-semver: `version` reads `{}`", planned.current);
+                Row::refused(name, &planned.rel, &planned.current, reason)
+            } else {
+                Row::bump(name, planned)
+            };
+            rows.push(row);
+        }
     }
     drop(baseline);
 
@@ -692,9 +597,8 @@ fn run_changed(
             .filter_map(|r| {
                 let p = r.planned.as_ref()?;
                 Some(format!(
-                    "{}  {} {} -> {}",
+                    "{}  version {} -> {}",
                     p.rel,
-                    p.key,
                     p.current,
                     p.new.as_deref()?
                 ))
@@ -744,7 +648,7 @@ fn run_changed(
             let _ = writeln!(ctx.out, "{}", row.line());
         }
     }
-    if flags.dry_run {
+    if flags.dry_run && !flags.quiet {
         let _ = writeln!(
             ctx.err,
             "dry run — reporting the bumps this run would make; nothing will be written"
@@ -794,8 +698,8 @@ struct Row {
 /// The two `--json` row objects `bump` prints.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum JsonShape {
-    /// A single-plugin run's object: the note, its status and versions. It
-    /// names no plugin and carries no reason.
+    /// A single-plugin run's object: the note, its status and versions, and
+    /// why when there is a reason. It names no plugin.
     Single,
     /// A `--changed-since` row: the plugin, and why when there is a reason.
     Changed,
@@ -860,8 +764,7 @@ impl Row {
         };
         match (self.status, &self.new, &self.reason) {
             ("written", Some(new), _) => {
-                let key = self.planned.as_ref().map_or("version", |p| p.key.as_str());
-                format!("{label}  written · {key} {} -> {new}", self.current)
+                format!("{label}  written · version {} -> {new}", self.current)
             }
             ("dry-run", Some(new), _) => format!("{label}  {} \u{2192} {new}", self.current),
             (status, _, Some(reason)) => match self.explain {
@@ -887,43 +790,51 @@ impl Row {
             status: self.status,
             current: &self.current,
             new: self.new.as_deref(),
-            reason: self.reason.as_deref().filter(|_| changed),
+            reason: self.reason.as_deref(),
         }
     }
 }
 
-/// What `--changed-since` compares against: a built directory as it is, or
-/// a git ref checked out and built in a temporary folder that is removed on
-/// drop.
+/// What `--changed-since` compares against: one built marketplace in a
+/// directory as it is, or a git ref checked out and built in a temporary
+/// folder that is removed on drop.
 enum Baseline {
     Dir(PathBuf),
     Built(BuiltRef),
 }
 
 impl Baseline {
-    fn root(&self) -> &Path {
+    /// The built tree of the marketplace `market`.
+    fn root(&self, market: &str) -> PathBuf {
         match self {
-            Baseline::Dir(dir) => dir,
-            Baseline::Built(built) => &built.out,
+            Baseline::Dir(dir) => dir.clone(),
+            Baseline::Built(built) => dist_dir(&built.base_root, market),
         }
     }
 
     /// A directory that exists is a built baseline; anything else is a git
-    /// ref, built with the ref's own copy of the root file. `current` is this
-    /// run's config, where a built ref's packs are moved to.
+    /// ref, built from the ref's own root file and `marketplaces/`.
+    ///
+    /// A directory holds one marketplace, so a run over several is refused.
     fn resolve(
         since: &str,
-        flags: &BumpFlags,
         run: &ResolvedRun,
-        market: Option<&str>,
-        current: &MarketplaceConfig,
+        harnesses: &BTreeSet<String>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<Baseline, i32> {
         let as_dir = crate::config::resolve_against_cwd(since, &ctx.cwd);
         if as_dir.is_dir() {
+            if let [_, _, ..] = run.marketplaces() {
+                return Err(usage_error(
+                    ctx.err,
+                    &format!(
+                        "--changed-since `{since}` is one built marketplace, and this vault holds several; name one with --marketplace"
+                    ),
+                ));
+            }
             return Ok(Baseline::Dir(as_dir));
         }
-        BuiltRef::build(since, flags, run, market, current, ctx).map(Baseline::Built)
+        BuiltRef::build(since, run, harnesses, ctx).map(Baseline::Built)
     }
 }
 
@@ -938,12 +849,13 @@ const GUARD_FILE: &str = "guard";
 static NEXT_CLAIM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// A git ref's build inputs checked out into a temporary folder, and built
-/// there. No worktree is registered and the repository's own index is not
-/// touched.
+/// there: each marketplace into the checkout's `dist/<m>/`. No worktree is
+/// registered and the repository's own index is not touched.
 struct BuiltRef {
     temp: PathBuf,
     checkout: PathBuf,
-    out: PathBuf,
+    /// The ref's vault root inside `checkout`.
+    base_root: PathBuf,
     lock_path: PathBuf,
     /// Held until drop, so a concurrent run's prune leaves this one alone.
     _lock: std::fs::File,
@@ -952,28 +864,19 @@ struct BuiltRef {
 impl BuiltRef {
     fn build(
         since: &str,
-        flags: &BumpFlags,
         run: &ResolvedRun,
-        market: Option<&str>,
-        current: &MarketplaceConfig,
+        harnesses: &BTreeSet<String>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<BuiltRef, i32> {
         let fail = |ctx: &mut CommandContext<'_>, why: String| {
-            Err(blocked(
+            Err(refused(
                 ctx.err,
                 &format!("--changed-since `{since}`: {why}"),
             ))
         };
-        let Some(config_path) = run.config_path.as_ref() else {
-            return fail(
-                ctx,
-                "is not a directory, and a git ref needs a root file to build it with".to_owned(),
-            );
-        };
-        let config_path = config_path.canonicalize().unwrap_or(config_path.clone());
-        let config_dir = config_path.parent().unwrap_or(Path::new("."));
+        let root = run.vault.canonicalize().unwrap_or(run.vault.clone());
         let repo = match typed_git::git()
-            .dir(config_dir)
+            .dir(&root)
             .args(&["rev-parse", "--show-toplevel"])
             .run()
         {
@@ -983,7 +886,7 @@ impl BuiltRef {
                     ctx,
                     format!(
                         "is not a directory, and {} is not in a git repository",
-                        config_path.display()
+                        root.display()
                     ),
                 );
             }
@@ -995,10 +898,10 @@ impl BuiltRef {
                 format!("is neither a directory nor a commit in {}", repo.display()),
             );
         };
-        let Ok(config_rel) = config_path.strip_prefix(&repo).map(Path::to_path_buf) else {
+        let Ok(vault_rel) = root.strip_prefix(&repo).map(Path::to_path_buf) else {
             return fail(
                 ctx,
-                format!("{} is outside {}", config_path.display(), repo.display()),
+                format!("{} is outside {}", root.display(), repo.display()),
             );
         };
 
@@ -1016,7 +919,7 @@ impl BuiltRef {
         let temp = temp.canonicalize().unwrap_or(temp);
         let built = BuiltRef {
             checkout: temp.join("checkout"),
-            out: temp.join("out"),
+            base_root: temp.join("checkout").join(&vault_rel),
             temp,
             lock_path,
             _lock: lock,
@@ -1029,57 +932,59 @@ impl BuiltRef {
             );
         }
         let index = built.temp.join("index");
-        let check_out = |candidates| {
-            let set = path_set(&repo, &sha, candidates)?;
-            check_out_paths(&repo, &sha, &index, &built.checkout, &set).map(|()| set)
-        };
-        // The root files first: the ref's build inputs are known only once
-        // its root file is read.
-        let root_files = match check_out(root_file_candidates(&repo, &config_path)) {
-            Ok(set) => set,
-            Err(err) => return fail(ctx, format!("checking it out failed: {err}")),
-        };
-
-        let Some(base_config) = ref_root_file(&built.checkout, &config_rel) else {
-            return fail(
-                ctx,
-                format!(
-                    "{since} holds no {} here, so it cannot be built. A ref from before \
-                     {ROOT_FILE} cannot be a baseline: compare against a built folder instead",
-                    config_rel.display()
-                ),
-            );
-        };
-        let common = CommonFlags {
-            // `--config` decides the vault, so a `--vault` would go unread.
-            vault: None,
-            config: Some(base_config.display().to_string()),
-            namespace: flags.common.namespace.clone(),
-        };
-        let base_cwd = base_config
-            .parent()
-            .unwrap_or(&built.checkout)
-            .to_path_buf();
-        let base_run = resolve_run(&common, &base_cwd, ctx.err)?;
-        if root_files != [WHOLE_TREE]
-            && let Err(err) = check_out(build_input_candidates(&built.checkout, &base_run))
-        {
+        let checked_out = path_set(&repo, &sha, vault_candidates(&repo, &root))
+            .and_then(|set| check_out_paths(&repo, &sha, &index, &built.checkout, &set));
+        if let Err(err) = checked_out {
             return fail(ctx, format!("checking it out failed: {err}"));
         }
-        let request = configured_request(&base_run, market, built.out.clone(), ExportMode::Build);
-        // The ref's own `build.out` may be committed, and is output, not source.
-        let vfs = base_run.export_vfs(None, &built.out);
-        if let Err(err) = export_skills(&vfs, &request, base_run.core_namespace()) {
+
+        let base_root = &built.base_root;
+        if !is_vault_root(&NativeVfs, base_root) {
             return fail(
                 ctx,
                 format!(
-                    "building it failed: {}",
-                    normalize_thrown_reason(&err.to_string())
+                    "{since} holds no `{ROOT_FILE}` and `{MARKETPLACES_DIR}/` at {}, so it cannot be built. \
+                     Compare against a built folder instead",
+                    if vault_rel.as_os_str().is_empty() {
+                        "the repository top".to_owned()
+                    } else {
+                        vault_rel.display().to_string()
+                    }
                 ),
             );
         }
-        if let Err(err) = align_packs(&built.out, &request.config, current) {
-            return fail(ctx, format!("moving its packs failed: {err}"));
+        // The ref's refusal names the temporary checkout, so it is said as
+        // this flag's failure.
+        let mut said: Vec<u8> = Vec::new();
+        let base_run = match resolve_at(base_root, None, &mut said) {
+            Ok(base_run) => base_run,
+            Err(_) => {
+                let said = String::from_utf8_lossy(&said);
+                return fail(ctx, format!("building it failed: {}", said.trim_end()));
+            }
+        };
+        for market in run.marketplaces() {
+            let out = dist_dir(base_root, &market.name);
+            // A marketplace the ref does not hold has an empty baseline.
+            let Some(base_market) = base_run.loaded.marketplace(&market.name) else {
+                if let Err(err) = std::fs::create_dir_all(&out) {
+                    return fail(ctx, format!("cannot create {}: {err}", out.display()));
+                }
+                continue;
+            };
+            let mut request = base_run
+                .loaded
+                .vault_request(base_market, ExportMode::Build);
+            request.harnesses.clone_from(harnesses);
+            if let Err(err) = build_vault(&NativeVfs, &request) {
+                return fail(
+                    ctx,
+                    format!(
+                        "building it failed: {}",
+                        normalize_thrown_reason(&err.to_string())
+                    ),
+                );
+            }
         }
         Ok(built)
     }
@@ -1106,33 +1011,12 @@ fn relative_to(top: &Path, path: &Path) -> Option<String> {
     })
 }
 
-/// What finding the ref's root file reads, relative to `repo`: the run's
-/// root file, [`ROOT_FILE`] in its folder (as [`ref_root_file`] falls back
-/// to), and the workspace file a member inherits from.
-fn root_file_candidates(repo: &Path, config_path: &Path) -> Vec<String> {
-    let dir = config_path.parent();
-    [
-        Some(config_path.to_path_buf()),
-        dir.map(|dir| dir.join(ROOT_FILE)),
-        dir.and_then(workspace_file),
-    ]
-    .into_iter()
-    .flatten()
-    .filter_map(|path| relative_to(repo, &path))
-    .collect()
-}
-
-/// What the ref's build reads besides its root files, relative to
-/// `checkout`: the vault, and each asset and hooks source. The sources come
-/// from [`marketplace_inputs`], as the build's own request does; a path the
-/// core learns to read outside the vault must be added there or here. A
-/// source outside the checkout is read from disk and is left out.
-fn build_input_candidates(checkout: &Path, run: &ResolvedRun) -> Vec<String> {
-    let inputs = marketplace_inputs(run);
-    std::iter::once(run.vault.clone())
-        .chain(inputs.assets.into_iter().map(|asset| asset.source))
-        .chain(inputs.hooks.into_iter().map(|hook| hook.source))
-        .filter_map(|path| relative_to(checkout, &path))
+/// What the build reads of the vault at `root`, relative to `repo`: the root
+/// file and `marketplaces/`.
+fn vault_candidates(repo: &Path, root: &Path) -> Vec<String> {
+    [root.join(ROOT_FILE), root.join(MARKETPLACES_DIR)]
+        .iter()
+        .filter_map(|path| relative_to(repo, path))
         .collect()
 }
 
@@ -1298,40 +1182,6 @@ fn check_out_paths(
     cmd.run().map(drop).map_err(|err| err.to_string())
 }
 
-/// Moves each harness's packs in a baseline built under `base` to where
-/// `current` keeps them, so a `packs` setting that changed since the ref
-/// still compares each plugin with itself.
-fn align_packs(
-    out: &Path,
-    base: &MarketplaceConfig,
-    current: &MarketplaceConfig,
-) -> std::io::Result<()> {
-    let side = out.join(".moving");
-    let moved: Vec<(&str, &str, PathBuf)> = with_plugin_format()
-        .filter_map(|spec| {
-            let from = packs_path(base, spec.name)?;
-            let to = packs_path(current, spec.name)?;
-            (from != to && out.join(from).is_dir()).then(|| (from, to, side.join(spec.name)))
-        })
-        .collect();
-    // Through a side folder: one harness's new folder can be another's old one.
-    for (from, _, aside) in &moved {
-        std::fs::create_dir_all(&side)?;
-        std::fs::rename(out.join(from), aside)?;
-    }
-    for (_, to, aside) in &moved {
-        let target = out.join(to);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::rename(aside, target)?;
-    }
-    if !moved.is_empty() {
-        std::fs::remove_dir(&side)?;
-    }
-    Ok(())
-}
-
 /// Claims a baseline under `baselines`: an `<id>.lock`, created and locked.
 /// [`GUARD_FILE`] is held across the prune and the claim, so one run's prune
 /// never takes a lock another run has created and not yet locked.
@@ -1367,16 +1217,6 @@ fn claim_baseline(
     Ok((id, lock_path, lock))
 }
 
-/// The ref's root file: the one at this run's path, else [`ROOT_FILE`] in
-/// that folder.
-fn ref_root_file(checkout: &Path, config_rel: &Path) -> Option<PathBuf> {
-    let dir = config_rel.parent().unwrap_or(Path::new(""));
-    [config_rel.to_path_buf(), dir.join(ROOT_FILE)]
-        .into_iter()
-        .map(|rel| checkout.join(rel))
-        .find(|path| path.is_file())
-}
-
 /// Remove the baselines a killed run left behind: each `<id>.lock` no live
 /// run holds, its `<id>/` folder and, for one an older version built in a
 /// worktree, that worktree's registration.
@@ -1384,7 +1224,6 @@ fn prune_stale_baselines(baselines: &Path, repo: &Path) {
     let Ok(entries) = std::fs::read_dir(baselines) else {
         return;
     };
-    let mut pruned = false;
     for path in entries.flatten().map(|entry| entry.path()) {
         if path.extension().is_none_or(|ext| ext != "lock") {
             continue;
@@ -1396,26 +1235,14 @@ fn prune_stale_baselines(baselines: &Path, repo: &Path) {
             continue;
         }
         let dir = path.with_extension("");
-        // Fails on a checkout that is not a worktree, as every new one is;
-        // `remove_dir_all` does the work then.
+        // Removes an older run's worktree and its registration, and only that
+        // one. Fails on a checkout that is not a worktree, as every new one
+        // is; `remove_dir_all` does the work then.
         let _ = typed_git::worktree::remove(repo, &dir.join("checkout"));
         let _ = std::fs::remove_dir_all(&dir);
         drop(file);
         let _ = std::fs::remove_file(&path);
-        pruned = true;
     }
-    if pruned {
-        prune_worktrees(repo);
-    }
-}
-
-/// `git worktree prune`: drop the registration of every worktree whose
-/// folder is gone. Best-effort.
-fn prune_worktrees(repo: &Path) {
-    let _ = typed_git::git()
-        .dir(repo)
-        .args(&["worktree", "prune"])
-        .run();
 }
 
 impl Drop for BuiltRef {
@@ -1512,18 +1339,6 @@ mod tests {
 
     fn strings(paths: &[&str]) -> Vec<String> {
         paths.iter().map(|p| (*p).to_owned()).collect()
-    }
-
-    /// The run `cwd` resolves to, as `bump` resolves it.
-    fn run_at(cwd: &Path) -> ResolvedRun {
-        let flags = CommonFlags {
-            vault: None,
-            config: None,
-            namespace: None,
-        };
-        let mut err = Vec::new();
-        resolve_run(&flags, cwd, &mut err)
-            .unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&err)))
     }
 
     /// A fresh `checkout` folder under a new temp folder, and the private
@@ -1663,88 +1478,77 @@ mod tests {
         assert!(files_under(&dest).is_empty());
     }
 
+    /// A vault: the root file, one marketplace and one plugin, under
+    /// `prefix`, with `root` as the root file.
+    fn vault_files(prefix: &str, root: &str) -> Vec<(String, String)> {
+        vec![
+            (format!("{prefix}skillwright.md"), root.to_owned()),
+            (
+                format!("{prefix}marketplaces/m1/m1.md"),
+                "---\n---\n".to_owned(),
+            ),
+            (
+                format!("{prefix}marketplaces/m1/plugins/p/p.md"),
+                "---\nversion: 1.0.0\n---\n".to_owned(),
+            ),
+            (
+                format!("{prefix}marketplaces/m1/plugins/p/skills/s/s.md"),
+                "---\ndescription: S.\n---\n".to_owned(),
+            ),
+        ]
+    }
+
+    fn borrowed(files: &[(String, String)]) -> Vec<(&str, &str)> {
+        files
+            .iter()
+            .map(|(path, text)| (path.as_str(), text.as_str()))
+            .collect()
+    }
+
     #[test]
-    fn a_root_file_at_the_repo_top_gives_the_whole_tree() {
-        let (_dir, repo, sha) = repo_of(&[
-            ("skillwright.md", "---\nname: acme\n---\n"),
-            ("skills/s.md", "---\ndescription: S.\n---\n"),
-        ]);
-        let run = run_at(&repo);
-        let set = path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap();
-        assert_eq!(set, ["."]);
+    fn a_vault_at_the_repo_top_checks_out_only_what_the_build_reads() {
+        let mut files = vault_files("", "---\n---\n");
+        files.push(("unread/file".to_owned(), "u\n".to_owned()));
+        let (_dir, repo, sha) = repo_of(&borrowed(&files));
+        let set = path_set(&repo, &sha, vault_candidates(&repo, &repo)).unwrap();
+        assert_eq!(set, ["marketplaces", "skillwright.md"]);
     }
 
     #[cfg(unix)]
     #[test]
     fn a_symlinked_folder_above_the_vault_gives_the_whole_tree() {
-        let (_dir, repo, _) =
-            repo_of(&[("real/docs/vault/skillwright.md", "---\nname: acme\n---\n")]);
+        let files = vault_files("real/docs/vault/", "---\n---\n");
+        let (_dir, repo, _) = repo_of(&borrowed(&files));
         std::os::unix::fs::symlink("real/docs", repo.join("docs")).unwrap();
         git(&repo, &["add", "docs"]);
         git(&repo, &["commit", "--quiet", "-m", "link"]);
         let sha = git(&repo, &["rev-parse", "HEAD"]);
 
-        let config = repo.join("docs/vault/skillwright.md");
-        let set = path_set(&repo, &sha, root_file_candidates(&repo, &config)).unwrap();
+        let root = repo.join("docs/vault");
+        let set = path_set(&repo, &sha, vault_candidates(&repo, &root)).unwrap();
         assert_eq!(set, ["."]);
     }
 
     #[test]
     fn the_path_set_holds_ancestor_gitattributes() {
-        let (_dir, repo, sha) = repo_of(&[
-            (".gitattributes", "*.md text\n"),
-            ("sub/.gitattributes", "*.md text\n"),
-            ("sub/vault/skillwright.md", "---\nname: acme\n---\n"),
-            ("other/.gitattributes", "*.md text\n"),
-        ]);
-        let config = repo.join("sub/vault/skillwright.md");
-        let set = path_set(&repo, &sha, root_file_candidates(&repo, &config)).unwrap();
+        let mut files = vault_files("sub/vault/", "---\n---\n");
+        for path in [
+            ".gitattributes",
+            "sub/.gitattributes",
+            "other/.gitattributes",
+        ] {
+            files.push((path.to_owned(), "*.md text\n".to_owned()));
+        }
+        let (_dir, repo, sha) = repo_of(&borrowed(&files));
+        let root = repo.join("sub/vault");
+        let set = path_set(&repo, &sha, vault_candidates(&repo, &root)).unwrap();
         assert_eq!(
             set,
             [
                 ".gitattributes",
                 "sub/.gitattributes",
+                "sub/vault/marketplaces",
                 "sub/vault/skillwright.md"
-            ]
-        );
-    }
-
-    #[test]
-    fn the_baseline_path_set_names_the_vault_root_files_assets_and_hooks() {
-        let outside = tempfile::tempdir().unwrap();
-        let elsewhere = outside.path().canonicalize().unwrap().join("ELSEWHERE");
-        write(&elsewhere, "x\n");
-        let member = format!(
-            "---\nname: m1\nbuild:\n  out: built\n  assets:\n    \
-             - {{from: NOTICE, to: NOTICE}}\n    \
-             - {{from: ../../tools/run.sh, to: run.sh}}\n    \
-             - {{from: {}, to: ELSEWHERE}}\n  hooks:\n    \
-             - {{from: ../../hooks/hooks.json}}\n---\n",
-            elsewhere.display()
-        );
-        let (_dir, repo, sha) = repo_of(&[
-            ("skillwright.md", "---\nworkspace: true\n---\n"),
-            ("marketplaces/m1/skillwright.md", &member),
-            ("marketplaces/m1/NOTICE", "n\n"),
-            ("marketplaces/m1/skills/s.md", "---\ndescription: S.\n---\n"),
-            ("tools/run.sh", "echo\n"),
-            ("hooks/hooks.json", "{\"hooks\": {}}\n"),
-            ("unread/file", "u\n"),
-        ]);
-        let config = repo.join("marketplaces/m1/skillwright.md");
-        let run = run_at(&repo.join("marketplaces/m1"));
-
-        let mut set = path_set(&repo, &sha, root_file_candidates(&repo, &config)).unwrap();
-        set.extend(path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap());
-        set.sort();
-        assert_eq!(
-            set,
-            [
-                "hooks/hooks.json",
-                "marketplaces/m1",
-                "marketplaces/m1/skillwright.md",
-                "skillwright.md",
-                "tools/run.sh",
             ]
         );
     }
@@ -1758,27 +1562,6 @@ mod tests {
         check_out_paths(&repo, &sha, &index, &dest, &strings(&["v[1]"])).unwrap();
 
         assert_eq!(files_under(&dest), ["v[1]/f"]);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlink_inside_an_asset_folder_gives_the_whole_tree() {
-        let (_dir, repo, _) = repo_of(&[
-            (
-                "vault/skillwright.md",
-                "---\nname: acme\nbuild:\n  assets:\n    - {from: ../tools, to: tools}\n---\n",
-            ),
-            ("tools/run.sh", "echo\n"),
-            ("elsewhere/f", "f\n"),
-        ]);
-        std::os::unix::fs::symlink("../elsewhere/f", repo.join("tools/link")).unwrap();
-        git(&repo, &["add", "tools/link"]);
-        git(&repo, &["commit", "--quiet", "-m", "link"]);
-        let sha = git(&repo, &["rev-parse", "HEAD"]);
-        let run = run_at(&repo.join("vault"));
-
-        let set = path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap();
-        assert_eq!(set, ["."]);
     }
 
     const NOW: u64 = 20_261_105_143_000;
@@ -1800,6 +1583,34 @@ mod tests {
         assert!(!baselines.join("stale.lock").exists());
         assert!(baselines.join("live").exists());
         assert!(baselines.join("live.lock").exists());
+    }
+
+    /// A prune removes only its own baselines: a worktree of the user's whose
+    /// folder is missing stays registered.
+    #[test]
+    fn a_prune_leaves_the_users_worktrees_registered() {
+        let (_dir, repo, _sha) = repo_of(&[("f", "f\n")]);
+        let other = repo.join("away");
+        git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                other.to_str().unwrap(),
+            ],
+        );
+        std::fs::remove_dir_all(&other).unwrap();
+        let baselines = repo.join("baselines");
+        std::fs::create_dir_all(baselines.join("stale/out")).unwrap();
+        std::fs::write(baselines.join("stale.lock"), "").unwrap();
+
+        prune_stale_baselines(&baselines, &repo);
+
+        assert!(!baselines.join("stale").exists());
+        let listed = git(&repo, &["worktree", "list", "--porcelain"]);
+        assert!(listed.contains("away"), "{listed}");
     }
 
     #[test]

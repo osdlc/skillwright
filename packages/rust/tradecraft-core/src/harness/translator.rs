@@ -1,9 +1,9 @@
 //! The code half of a harness: the marketplace model written as one
 //! harness's files (D-FDLQ).
 //!
-//! [`HarnessTranslator`]'s default methods do the work every harness shares,
+//! `HarnessTranslator`'s default methods do the work every harness shares,
 //! reading the harness's [`HarnessProfile`] for what differs as data:
-//! admission by kind and `targets`, how a published skill is named, how a
+//! admission by kind, how a published skill is named, how a
 //! call is spelled, where a pack's files land, and a skill's files through
 //! `agent-adapt`. A harness overrides what is its own code — its manifests,
 //! mostly.
@@ -14,41 +14,37 @@
 //! execute bits and the notes each file came from. It reads no file and
 //! writes none — the load read everything it needs, and what happens to the
 //! tree is the emitting verb's: `build` diffs it against a marketplace
-//! directory and swaps it in, `publish` classifies it against a destination's
-//! manifest.
+//! directory and swaps it in.
 //!
-//! # Two layouts
-//!
-//! A pack is written in one of two [`Layout`]s. In a built marketplace each
-//! harness's packs sit under its own tree beside its marketplace manifest,
-//! and every emitted skill carries the provenance marker `check` reads back.
-//! At a destination a pack sits in the harness's own skills directory, where
-//! the runtime reads it, beside the container's own files.
+//! Each harness's packs sit under its own tree beside its marketplace
+//! manifest, and every emitted skill and command carries the provenance
+//! marker `check` reads back.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use agent_adapt::RuntimeId;
 
-use super::manifest::packs_of;
 use super::manifest::{
-    NAMING_KEY, claude_marketplace_manifest, codex_marketplace_manifest,
-    cursor_marketplace_manifest, pi_package_manifest, render_plugin_manifest,
+    claude_marketplace_manifest, codex_marketplace_manifest, cursor_marketplace_manifest,
+    pi_package_manifest, render_plugin_manifest,
 };
+use super::profile::PLUGIN_HOOKS_PATH;
 use super::profile::{CliInvocation, HarnessProfile, PluginFormat, SkillNaming};
 use crate::compile::Closure;
 use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
-use crate::model::load::{Pack, admits, targets_name};
-use crate::model::{Body, Call, Component, Marketplace, Plugin, ResourceContent, Segment};
-use crate::namespace::Namespace;
-use crate::projection::{
-    ProjectedFile, RedundantOverride, parse_runtime_target, project_agent, project_command,
-    project_plugin_hooks, project_skill_reporting, to_adapt_hook,
+use crate::model::load::kind_carried;
+use crate::model::{
+    Body, Call, Component, Marketplace, Plugin, PluginRootPath, ResolvedRef, ResourceContent,
+    Segment,
 };
-use crate::publish::PLUGIN_HOOKS_PATH;
+use crate::projection::{
+    RedundantOverride, parse_runtime_target, project_command, project_plugin_hooks,
+    project_skill_reporting,
+};
 
 /// The provenance marker every `SKILL.md` and command a built marketplace
 /// emits opens its body with. `check` reads it back to tell a tree this tool
@@ -73,8 +69,8 @@ pub struct TreeFile {
     pub bytes: Vec<u8>,
     /// Whether the file is executable.
     pub executable: bool,
-    /// The note the file came from and what fed it, where a destination's
-    /// manifest records one.
+    /// The note the file came from and what fed it, for the provenance
+    /// `check` reads back.
     pub source: Option<FileSource>,
 }
 
@@ -110,45 +106,21 @@ impl FileTree {
             },
         );
     }
-
-    /// The files as a projection's list, in path order.
-    pub fn projected(&self) -> Vec<ProjectedFile> {
-        self.files
-            .iter()
-            .map(|(path, file)| ProjectedFile {
-                relative_path: path.clone(),
-                content: file.bytes.clone(),
-                executable: file.executable,
-            })
-            .collect()
-    }
-}
-
-/// Where a pack is written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Layout {
-    /// A built marketplace: packs under the harness's own tree, beside its
-    /// marketplace manifest, every emitted body marked as generated.
-    Marketplace,
-    /// A destination: the pack in the harness's skills directory.
-    Destination,
 }
 
 /// One harness's way of writing the marketplace model.
-pub trait HarnessTranslator: Sync {
+pub(crate) trait HarnessTranslator: Sync {
     /// The harness's row.
     fn profile(&self) -> &'static HarnessProfile;
 
-    /// The harness's plugin format. Only a harness with one has a translator
-    /// that writes packs.
+    /// The harness's plugin format.
     fn format(&self) -> &'static PluginFormat {
         self.profile().format()
     }
 
-    /// Does this member publish here? Its kind has a place in the pack, and
-    /// its `targets` names this harness.
+    /// Does this pack carry this member? Its kind has a place in the pack.
     fn admits(&self, component: &Component) -> bool {
-        admits(&component.discovered, self.profile())
+        kind_carried(&component.discovered, self.profile())
     }
 
     /// The name a skill of `plugin` publishes under: its directory, its
@@ -159,7 +131,7 @@ pub trait HarnessTranslator: Sync {
     /// `refused: published-name-invalid` — a prefixed name the Agent Skills
     /// spec does not admit.
     fn published_name(&self, plugin: &Plugin, skill: &str) -> Result<String, CoreError> {
-        let naming = naming(self.profile(), &plugin.bare_on, &plugin.prefixed_on);
+        let naming = naming(self.profile(), &plugin.bare_on);
         crate::export::published_skill_name(naming, &plugin.name, skill)
     }
 
@@ -173,52 +145,168 @@ pub trait HarnessTranslator: Sync {
         let profile = self.profile();
         render_call(
             call,
-            profile.name,
-            Some(profile.declaration),
-            naming(profile, &call.bare_on, &call.prefixed_on),
+            self.carries_call(call),
+            profile.label,
+            profile.declaration,
+            naming(profile, &call.bare_on),
         )
     }
 
-    /// A resolved body as this harness reads it. `skill_dir` is the folder,
-    /// relative to the pack root, of the skill the body belongs to: on a
-    /// [`CliInvocation::SkillRelativePath`] harness a launcher call is
-    /// written as the launcher's path from there. `None` (a command) leaves
-    /// every launcher call as the vault wrote it.
-    ///
-    /// # Errors
-    ///
-    /// What [`Self::render_call`] refuses.
-    fn render_body(&self, body: &Body, skill_dir: Option<&str>) -> Result<String, CoreError> {
-        let relative = self
-            .profile()
-            .plugin
-            .as_ref()
-            .is_some_and(|f| f.cli_invocation == CliInvocation::SkillRelativePath);
-        write_body(body, skill_dir.filter(|_| relative), |call| {
-            self.render_call(call)
-        })
+    /// Whether this harness's pack contains what `call` names: any skill,
+    /// or a command where the pack has commands.
+    fn carries_call(&self, call: &Call) -> bool {
+        call.skill.kind != EntityKind::Command || self.format().carries_commands
     }
 
-    /// The plugin's hooks file and its gap report, written into `tree` under
-    /// `base`. Returns whether a hooks file was written.
-    ///
-    /// A hook note this harness cannot carry stops the build, rather than
-    /// writing a partial hooks file — unless the note has no `targets` and
-    /// another harness carries it, when it is left off here the way
-    /// `targets` would narrow it. A canonical file's uncarried hooks are
-    /// not a refusal; the gap report says where each went.
+    /// A link of `plugin`, written from where its text lands in this
+    /// harness's pack to where its file lands.
     ///
     /// # Errors
     ///
-    /// Everything [`to_adapt_hook`] and [`project_plugin_hooks`] refuse.
-    fn hooks(
+    /// `refused: link-not-shipped` when this harness's pack does not contain
+    /// the component the link reaches into (spec section 4 rule 6), and what
+    /// naming a skill refuses.
+    fn render_link(&self, plugin: &Plugin, link: &ResolvedRef) -> Result<String, CoreError> {
+        if let Some(component) = &link.component {
+            let members = match component.kind {
+                EntityKind::Skill => plugin.skills.as_slice(),
+                EntityKind::Command => plugin.commands.as_slice(),
+                _ => &[],
+            };
+            let carried = members
+                .iter()
+                .find(|member| member.name == component.name)
+                .is_some_and(|member| self.admits(member));
+            if !carried {
+                return Err(CoreError::refused(
+                    "link-not-shipped",
+                    format!(
+                        "{}: `{}` links to {} `{}`, which the {} pack does not contain \
+                         (section 4 rule 6)",
+                        link.caller,
+                        link.written,
+                        component.kind.as_str(),
+                        component.name,
+                        self.profile().label
+                    ),
+                ));
+            }
+        }
+        let from = self.installed(plugin, &link.from)?;
+        let to = self.installed(plugin, &link.to)?;
+        Ok(link.markdown_at(&from, &to))
+    }
+
+    /// A path in a pack laid out as Claude Code's, `skills/<s>/…`, moved to
+    /// this harness's folder for skill `<s>`.
+    ///
+    /// # Errors
+    ///
+    /// What [`Self::published_name`] refuses.
+    fn installed(&self, plugin: &Plugin, path: &str) -> Result<String, CoreError> {
+        match path
+            .strip_prefix("skills/")
+            .and_then(|rest| rest.split_once('/'))
+        {
+            Some((skill, rest)) => Ok(format!(
+                "skills/{}/{rest}",
+                self.published_name(plugin, skill)?
+            )),
+            None => Ok(path.to_owned()),
+        }
+    }
+
+    /// Every file this harness's pack of `plugin` ships, at its path in a
+    /// pack laid out as Claude Code's.
+    fn shipped(&self, plugin: &Plugin) -> BTreeSet<String> {
+        let format = self.format();
+        let mut out: BTreeSet<String> = plugin.assets.iter().map(|a| a.dest.clone()).collect();
+        out.extend(plugin.references.iter().map(|r| r.path.clone()));
+        for skill in plugin.skills.iter().filter(|c| self.admits(c)) {
+            let base = format!("skills/{}", skill.name);
+            out.insert(format!("{base}/SKILL.md"));
+            if let Some(resolved) = &skill.resolved {
+                out.extend(
+                    resolved
+                        .resources
+                        .iter()
+                        .map(|r| format!("{base}/{}", r.path)),
+                );
+            }
+        }
+        if format.carries_commands {
+            for command in plugin.commands.iter().filter(|c| self.admits(c)) {
+                out.insert(format!("commands/{}.md", command.name));
+            }
+        }
+        if format.carries_hooks && plugin.hooks_file.is_some() {
+            out.insert(PLUGIN_HOOKS_PATH.to_owned());
+        }
+        out
+    }
+
+    /// A `${PLUGIN_ROOT}/<path>` of `plugin`, as this harness writes it
+    /// (spec section 4 rules 18 and 19). `shipped` is [`Self::shipped`].
+    ///
+    /// # Errors
+    ///
+    /// `refused: plugin-root-not-shipped` when the pack does not ship the
+    /// file (rules 17 and 20), and what naming a skill refuses.
+    fn render_plugin_root(
         &self,
         plugin: &Plugin,
-        hooks: &[&Component],
-        base: &str,
-        tree: &mut FileTree,
-    ) -> Result<bool, CoreError> {
-        default_hooks(self.profile(), plugin, hooks, base, tree)
+        shipped: &BTreeSet<String>,
+        root: &PluginRootPath,
+    ) -> Result<String, CoreError> {
+        if !shipped.contains(&root.path) {
+            return Err(crate::hooks_file::not_shipped(
+                &root.caller,
+                &root.written,
+                &root.path,
+                self.profile().label,
+            ));
+        }
+        match self.format().cli_invocation {
+            CliInvocation::PluginRootToken => {
+                Ok(format!("{}/{}", crate::hooks_file::CLAUDE_ROOT, root.path))
+            }
+            CliInvocation::SkillRelativePath => Ok(relative_path(
+                &self.installed(plugin, &root.from)?,
+                &self.installed(plugin, &root.path)?,
+            )),
+        }
+    }
+
+    /// A resolved body of `plugin` as this harness reads it.
+    ///
+    /// # Errors
+    ///
+    /// What [`Self::render_call`], [`Self::render_link`] and
+    /// [`Self::render_plugin_root`] refuse.
+    fn render_body(&self, plugin: &Plugin, body: &Body) -> Result<String, CoreError> {
+        let shipped = std::cell::OnceCell::new();
+        write_body(
+            body,
+            |call| self.render_call(call),
+            |link| self.render_link(plugin, link),
+            |root| {
+                let shipped = shipped.get_or_init(|| self.shipped(plugin));
+                self.render_plugin_root(plugin, shipped, root)
+            },
+        )
+    }
+
+    /// The plugin's hooks file, written into `tree` under `base`. Returns
+    /// whether a hooks file was written.
+    ///
+    /// A hook this harness cannot carry is left out, not refused.
+    ///
+    /// # Errors
+    ///
+    /// `refused: plugin-root-not-shipped` for a hook's path to a file the
+    /// pack does not ship, and what [`project_plugin_hooks`] refuses.
+    fn hooks(&self, plugin: &Plugin, base: &str, tree: &mut FileTree) -> Result<bool, CoreError> {
+        default_hooks(self.profile(), plugin, &self.shipped(plugin), base, tree)
     }
 
     /// The pack manifest, `skills` the names of the skills this harness
@@ -252,18 +340,16 @@ pub trait HarnessTranslator: Sync {
     /// # Errors
     ///
     /// What writing any member refuses.
-    fn translate(&self, market: &Marketplace, ns: &Namespace) -> Result<FileTree, CoreError> {
+    fn translate(&self, market: &Marketplace) -> Result<FileTree, CoreError> {
         let format = self.format();
-        refuse_prefixed_collisions(self, market)?;
+        refuse_name_collisions(self, market)?;
         let mut tree = FileTree::default();
         let mut listed: Vec<(&str, Vec<&str>)> = Vec::new();
         for (name, plugin) in &market.plugins {
             let Some(skills) = self.write_pack(
                 plugin,
                 &market.config,
-                &format!("{}/{name}", packs_of(&market.config, self.profile())),
-                Layout::Marketplace,
-                ns,
+                &format!("{}/{name}", self.format().packs),
                 &mut tree,
             )?
             else {
@@ -279,54 +365,13 @@ pub trait HarnessTranslator: Sync {
         Ok(tree)
     }
 
-    /// One plugin as a pack at a destination, paths relative to the
-    /// destination root.
-    ///
-    /// # Errors
-    ///
-    /// What writing any member refuses.
-    fn translate_pack(&self, pack: &Pack, ns: &Namespace) -> Result<FileTree, CoreError> {
-        let mut tree = FileTree::default();
-        let base = format!("{}/{}", self.format().skills_dir, pack.plugin.name);
-        self.write_pack(
-            &pack.plugin,
-            &pack.config,
-            &base,
-            Layout::Destination,
-            ns,
-            &mut tree,
-        )?;
-        Ok(tree)
-    }
-
-    /// One note published on its own, paths relative to the destination root.
-    ///
-    /// # Errors
-    ///
-    /// What the runtime's renderer refuses.
-    fn translate_component(
-        &self,
-        component: &Component,
-        ns: &Namespace,
-    ) -> Result<FileTree, CoreError> {
-        let profile = self.profile();
-        write_component(
-            component,
-            &Destination {
-                canonical: profile.name,
-                runtime: profile.runtime,
-                calls: Some(profile.declaration),
-            },
-            ns,
-        )
-    }
-
     /// One plugin's pack into `tree` under `base`: its skills, its commands
     /// where the pack has a place for one, its hooks, its assets and its
     /// manifest. Returns the carried skills' names, or `None` when this
-    /// harness carries nothing of the plugin — a plugin whose every member is
-    /// narrowed away is absent entirely: no directory, no manifest, no
-    /// listing.
+    /// harness carries nothing of the plugin — a plugin whose every member's
+    /// kind this pack has no place for is absent entirely: no directory, no
+    /// manifest, no listing. A plugin with no member is carried, as its
+    /// manifest alone, by every harness built.
     ///
     /// # Errors
     ///
@@ -336,24 +381,31 @@ pub trait HarnessTranslator: Sync {
         plugin: &'p Plugin,
         config: &MarketplaceConfig,
         base: &str,
-        layout: Layout,
-        ns: &Namespace,
         tree: &mut FileTree,
     ) -> Result<Option<Vec<&'p str>>, CoreError> {
         let skills: Vec<&Component> = plugin.skills.iter().filter(|c| self.admits(c)).collect();
         let commands: Vec<&Component> = plugin.commands.iter().filter(|c| self.admits(c)).collect();
-        let hooks: Vec<&Component> = plugin.hooks.iter().filter(|c| self.admits(c)).collect();
-        if skills.is_empty() && commands.is_empty() && hooks.is_empty() {
+        if !plugin.carried_by(|c| self.admits(c)) {
             return Ok(None);
         }
-        let siblings: BTreeSet<&str> = plugin.skills.iter().map(|s| s.name.as_str()).collect();
         for skill in &skills {
-            self.write_pack_skill(plugin, skill, &siblings, base, layout, ns, tree)?;
+            self.write_pack_skill(plugin, skill, base, tree)?;
         }
         for command in &commands {
-            self.write_pack_command(command, base, layout, ns, tree)?;
+            self.write_pack_command(plugin, command, base, tree)?;
         }
-        let wrote_hooks = self.hooks(plugin, &hooks, base, tree)?;
+        for reference in &plugin.references {
+            let bytes = match &reference.content {
+                ResourceContent::Body { body } => self.render_body(plugin, body)?.into_bytes(),
+                ResourceContent::Bytes { bytes } => bytes.clone(),
+            };
+            tree.insert(
+                &format!("{base}/{}", reference.path),
+                bytes,
+                reference.executable,
+            );
+        }
+        let wrote_hooks = self.hooks(plugin, base, tree)?;
         for asset in &plugin.assets {
             tree.insert(
                 &format!("{base}/{}", asset.dest),
@@ -376,34 +428,22 @@ pub trait HarnessTranslator: Sync {
     /// # Errors
     ///
     /// `refused: published-name-invalid`, and what rendering refuses.
-    #[allow(clippy::too_many_arguments)]
     fn write_pack_skill(
         &self,
         plugin: &Plugin,
         skill: &Component,
-        siblings: &BTreeSet<&str>,
         base: &str,
-        layout: Layout,
-        ns: &Namespace,
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
         let format = self.format();
         let published = self.published_name(plugin, &skill.name)?;
-        let skill_dir = format!("skills/{published}");
-        let mut projection = projection_of(skill, |body| self.render_body(body, Some(&skill_dir)))?;
+        let mut projection = projection_of(skill, |body| self.render_body(plugin, body))?;
         projection.content.name = published.clone();
-        if naming(profile, &plugin.bare_on, &plugin.prefixed_on) == SkillNaming::PluginPrefixed {
-            projection.content.body =
-                rewrite_sibling_paths(&projection.content.body, &plugin.name, siblings);
-        }
-        if layout == Layout::Marketplace {
-            mark_generated(&mut projection, &skill.path);
-        }
+        mark_generated(&mut projection, &skill.path);
         let (files, redundant) = project_skill_reporting(
             &projection,
             &[profile.runtime.to_owned()],
-            ns,
             Some(profile.name),
         )?;
         tree.redundant_overrides.extend(redundant);
@@ -447,23 +487,19 @@ pub trait HarnessTranslator: Sync {
     /// What rendering refuses.
     fn write_pack_command(
         &self,
+        plugin: &Plugin,
         command: &Component,
         base: &str,
-        layout: Layout,
-        ns: &Namespace,
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
-        let mut projection = projection_of(command, |body| self.render_body(body, None))?;
-        if layout == Layout::Marketplace {
-            mark_generated(&mut projection, &command.path);
-        }
+        let mut projection = projection_of(command, |body| self.render_body(plugin, body))?;
+        mark_generated(&mut projection, &command.path);
         // A command projects to exactly one file, so the file's own name is
         // all that travels onto `commands/`.
         let files = project_command(
             &projection,
             &[profile.runtime.to_owned()],
-            ns,
             Some(profile.name),
         )?;
         let closures = &command
@@ -493,184 +529,84 @@ pub trait HarnessTranslator: Sync {
     }
 }
 
-/// A destination a single note is published to, named by any spelling — a
-/// harness's row, or a runtime name no row holds, which renders through as
-/// given.
-#[derive(Debug, Clone, Copy)]
-pub struct Destination<'a> {
-    /// The canonical name, or the name as requested when no row holds it.
-    pub canonical: &'a str,
-    /// The runtime the note renders through.
-    pub runtime: &'a str,
-    /// The runtime whose syntax a call is written in. `None` writes a call as
-    /// the skill's bare name.
-    pub calls: Option<RuntimeId>,
-}
-
-/// One note on its own at `destination`, through the renderer for its kind.
-///
-/// # Errors
-///
-/// What the runtime's renderer refuses, and what writing a call refuses.
-pub fn write_component(
-    component: &Component,
-    destination: &Destination<'_>,
-    ns: &Namespace,
-) -> Result<FileTree, CoreError> {
-    let projection = projection_of(component, |body| {
-        // A skill published on its own has no plugin, so a call to another
-        // skill is the runtime's form without a namespace.
-        write_body(body, None, |call| {
-            render_call(
-                call,
-                destination.canonical,
-                destination.calls,
-                SkillNaming::Bare,
-            )
-        })
-    })?;
-    let runtime = [destination.runtime.to_owned()];
-    let mut tree = FileTree::default();
-    let files = match component.kind {
-        EntityKind::Command => {
-            project_command(&projection, &runtime, ns, Some(destination.canonical))?
-        }
-        EntityKind::Agent => project_agent(&projection, &runtime, ns)?,
-        _ => {
-            let (files, redundant) =
-                project_skill_reporting(&projection, &runtime, ns, Some(destination.canonical))?;
-            tree.redundant_overrides = redundant;
-            files
-        }
-    };
-    for file in files {
-        tree.insert(&file.relative_path, file.content, file.executable);
-    }
-    Ok(tree)
-}
-
-/// A call at `canonical`, written in `runtime`'s syntax, a skill of a plugin
-/// named by `naming`. A mention is the skill's name as that harness
-/// qualifies it, with no call sigil.
+/// A call in the pack of the harness `label`, written in `runtime`'s syntax,
+/// a skill of a plugin named by `naming`. `shipped` says whether the pack
+/// contains what the call names.
 fn render_call(
     call: &Call,
-    canonical: &str,
-    runtime: Option<RuntimeId>,
+    shipped: bool,
+    label: &str,
+    runtime: RuntimeId,
     naming: SkillNaming,
 ) -> Result<String, CoreError> {
-    call.check_shipped(targets_name(call.targets.as_deref(), canonical), canonical)?;
-    let Some(runtime) = runtime else {
-        return Ok(call.skill.name.clone());
-    };
-    let rendered = match &call.skill.plugin {
-        Some(plugin) => {
-            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)?
-        }
-        None => crate::export::checked_skill_call(runtime, None, &call.skill.name)?,
-    };
-    if !call.mention {
-        return Ok(rendered);
-    }
-    let prefix = runtime.skill_call_syntax().prefix;
-    match rendered.strip_prefix(prefix) {
-        Some(name) => Ok(name.to_owned()),
-        None => Err(CoreError::refused(
-            "skill-call-invalid",
-            format!("the {runtime:?} call `{rendered}` does not start with `{prefix}`"),
-        )),
-    }
+    call.check_shipped(shipped, label)?;
+    crate::export::rendered_skill_call(runtime, naming, &call.skill.plugin, &call.skill.name)
 }
 
 /// How a harness names a published skill of a plugin that is bare on the
-/// harnesses in `bare_on` and prefixed on those in `prefixed_on`, or else the
-/// profile's default; [`SkillNaming::Bare`] for a row with no plugin format,
-/// where no skill has a plugin.
-fn naming<S: AsRef<str>>(
-    profile: &HarnessProfile,
-    bare_on: &[S],
-    prefixed_on: &[S],
-) -> SkillNaming {
-    let lists = |names: &[S]| names.iter().any(|name| name.as_ref() == profile.name);
-    if lists(bare_on) {
+/// harnesses in `bare_on`, or else the profile's default.
+fn naming(profile: &HarnessProfile, bare_on: &[String]) -> SkillNaming {
+    if bare_on.iter().any(|name| name == profile.name) {
         return SkillNaming::Bare;
     }
-    if lists(prefixed_on) {
-        return SkillNaming::PluginPrefixed;
-    }
-    profile
-        .plugin_format()
-        .map_or(SkillNaming::Bare, |f| f.naming)
+    profile.format().naming
 }
 
-/// A body's segments as text: each call through `call`, each link as its
-/// markdown, and each launcher call as the launcher's path from `skill_dir`,
-/// or as the vault wrote it when `skill_dir` is `None`.
+/// A body's segments as text: each call through `call`, each link through
+/// `link`, each plugin-root path through `root`.
 fn write_body(
     body: &Body,
-    skill_dir: Option<&str>,
     call: impl Fn(&Call) -> Result<String, CoreError>,
+    link: impl Fn(&ResolvedRef) -> Result<String, CoreError>,
+    root: impl Fn(&PluginRootPath) -> Result<String, CoreError>,
 ) -> Result<String, CoreError> {
     let mut out = String::new();
     for segment in &body.segments {
         match segment {
-            Segment::Text { text } => out.push_str(text),
-            Segment::Link { target } => out.push_str(&target.markdown()),
+            Segment::Text { text } | Segment::Literal { text } => out.push_str(text),
+            Segment::Link { target } => out.push_str(&link(target)?),
             Segment::Call { call: site } => out.push_str(&call(site)?),
-            Segment::LauncherCall { launcher } => match skill_dir {
-                Some(dir) => out.push_str(&relative_path(dir, launcher)),
-                None => {
-                    out.push_str("${CLAUDE_PLUGIN_ROOT}/");
-                    out.push_str(launcher);
-                }
-            },
+            Segment::PluginRoot { path } => out.push_str(&root(path)?),
         }
     }
     Ok(out)
 }
 
-/// `to` as a path relative to the directory `from`. Both are relative to one
-/// root and forward-slashed; empty and `.` segments are ignored.
+/// The path from the folder of the file `from` to `to`, both `/`-separated
+/// and relative to one root. A file's path to itself is its name.
 pub(crate) fn relative_path(from: &str, to: &str) -> String {
-    let segments = |path: &str| -> Vec<String> {
-        path.split('/')
-            .filter(|s| !s.is_empty() && *s != ".")
-            .map(str::to_owned)
-            .collect()
-    };
-    let (from, to) = (segments(from), segments(to));
-    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
-    let mut out = vec!["..".to_owned(); from.len() - common];
-    out.extend_from_slice(&to[common..]);
+    let from: Vec<&str> = from.split('/').filter(|s| !s.is_empty()).collect();
+    let folder = &from[..from.len().saturating_sub(1)];
+    let to: Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();
+    let shared = folder.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut out: Vec<&str> = vec![".."; folder.len() - shared];
+    out.extend(&to[shared..]);
+    if out.is_empty() {
+        return to.last().copied().unwrap_or_default().to_owned();
+    }
     out.join("/")
 }
 
-/// Refuses two skills that publish under one name on a harness with no plugin
-/// namespace, when a prefixed name is involved.
+/// Refuses two skills of different plugins that publish under one name on a
+/// harness with no plugin namespace (spec section 8 rule 6).
 ///
-/// A prefixed name is an opt-in to uniqueness, so it must be unique on its
-/// harness. `<plugin>-<skill>` is not injective (`a` + `b-c` and `a-b` + `c`
-/// are both `a-b-c`), and a plugin's prefixed name can meet another plugin's
-/// bare one. Where the profile prefixes by default (Pi), every duplicate is
-/// refused, bare ones too. Where it is bare (Cursor), two bare duplicates stay
-/// allowed: the harness lists both. The load refuses a collision inside one
+/// `<plugin>-<skill>` is not injective (`a` + `b-c` and `a-b` + `c` are both
+/// `a-b-c`), a plugin's prefixed name can meet another plugin's bare one, and
+/// two bare names can be equal. The load refuses a collision inside one
 /// plugin; this refuses one across plugins.
 ///
 /// # Errors
 ///
 /// `refused: path-collision`, and what [`HarnessTranslator::published_name`]
 /// refuses.
-fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
+fn refuse_name_collisions<T: HarnessTranslator + ?Sized>(
     translator: &T,
     market: &Marketplace,
 ) -> Result<(), CoreError> {
     let profile = translator.profile();
-    let default = translator.format().naming;
-    if default == SkillNaming::HostNamespaced {
+    if translator.format().naming == SkillNaming::HostNamespaced {
         return Ok(());
     }
-    let prefixed = |plugin: &Plugin| {
-        naming(profile, &plugin.bare_on, &plugin.prefixed_on) == SkillNaming::PluginPrefixed
-    };
     let mut published: BTreeMap<String, (&Plugin, &Component)> = BTreeMap::new();
     for group in market.plugins.values() {
         for skill in group.skills.iter().filter(|c| translator.admits(c)) {
@@ -679,16 +615,13 @@ fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
                 published.insert(name, (group, skill));
                 continue;
             };
-            if default != SkillNaming::PluginPrefixed && !prefixed(first_group) && !prefixed(group)
-            {
-                continue;
-            }
-            let why = collision_reason(profile, market, [group, first_group]);
+            let why = collision_reason(profile, [group, first_group]);
             return Err(CoreError::refused(
                 "path-collision",
                 format!(
-                    "`{}` and `{}` both publish as {} skill `{name}`: {why}",
-                    first.path, skill.path, profile.label
+                    "`{}` (plugin `{}`) and `{}` (plugin `{}`) both publish as {} skill \
+                     `{name}`: {why}",
+                    first.path, first_group.name, skill.path, group.name, profile.label
                 ),
             ));
         }
@@ -696,50 +629,25 @@ fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
     Ok(())
 }
 
-/// Why two skills of one published name on `profile` are refused: the
-/// `naming: prefixed` of one of `plugins`, and where it was set; else the
-/// profile's prefixing default; else, both names bare, `naming: bare`.
-fn collision_reason(
-    profile: &HarnessProfile,
-    market: &Marketplace,
-    plugins: [&Plugin; 2],
-) -> String {
+/// Why two skills of one published name on `profile` are refused: both
+/// names bare through `naming: bare`, or the profile's prefixing default.
+fn collision_reason(profile: &HarnessProfile, plugins: [&Plugin; 2]) -> String {
     let harness = profile.name;
     let label = profile.label;
-    let Some(plugin) = plugins
+    let bare = plugins
         .into_iter()
-        .find(|g| g.prefixed_on.iter().any(|h| h == harness))
-    else {
-        let prefixed = plugins
-            .into_iter()
-            .any(|g| naming(profile, &g.bare_on, &g.prefixed_on) == SkillNaming::PluginPrefixed);
-        if !prefixed {
-            return format!(
-                "`{harness}.naming: bare` names both bare, and {label} has no plugin namespace, \
-                 so no two skills may take one name. Rename one"
-            );
-        }
-        return format!(
-            "{label} has no plugin namespace and names a skill `<plugin>-<skill>` by default, \
+        .all(|g| naming(profile, &g.bare_on) == SkillNaming::Bare);
+    if bare {
+        format!(
+            "`{harness}.naming: bare` names both bare, and {label} has no plugin namespace, \
              so no two skills may take one name. Rename one"
-        );
-    };
-    let p = &plugin.name;
-    let own = market
-        .config
-        .plugins
-        .get(p)
-        .and_then(|o| o.blocks.get(harness))
-        .is_some_and(|block| block.contains_key(NAMING_KEY));
-    let source = if own {
-        format!("on plugin `{p}` makes its names")
+        )
     } else {
-        format!("on the marketplace makes plugin `{p}`'s names")
-    };
-    format!(
-        "`{harness}.naming: prefixed` {source} unique on {label}, so no other skill may take \
-         one. Rename one, or set `{harness}.naming: bare` on plugin `{p}`"
-    )
+        format!(
+            "{label} has no plugin namespace and names a skill `<plugin>-<skill>` unless \
+             `{harness}.naming: bare` is set, so no two skills may take one name. Rename one"
+        )
+    }
 }
 
 /// A resolved component as a projection: its content, its body and
@@ -781,112 +689,38 @@ fn mark_generated(projection: &mut SkillProjection, path: &str) {
     );
 }
 
-/// Rewrites `${CLAUDE_PLUGIN_ROOT}/skills/<name>` to
-/// `${CLAUDE_PLUGIN_ROOT}/skills/<plugin>-<name>` for each `<name>` in
-/// `siblings`, so a body that addresses a skill's files through the plugin
-/// root still finds them under [`SkillNaming::PluginPrefixed`]. Any other
-/// name, and any `skills/` path not after the token, is left alone.
-pub(crate) fn rewrite_sibling_paths(body: &str, plugin: &str, siblings: &BTreeSet<&str>) -> String {
-    const NEEDLE: &str = "${CLAUDE_PLUGIN_ROOT}/skills/";
-    let mut out = String::with_capacity(body.len());
-    let mut rest = body;
-    while let Some(offset) = rest.find(NEEDLE) {
-        let (head, tail) = rest.split_at(offset + NEEDLE.len());
-        out.push_str(head);
-        let end = tail
-            .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_')))
-            .unwrap_or(tail.len());
-        if siblings.contains(&tail[..end]) {
-            out.push_str(plugin);
-            out.push('-');
-        }
-        rest = tail;
-    }
-    out.push_str(rest);
-    out
-}
-
-/// A body's `${CLAUDE_PLUGIN_ROOT}/<launcher>` calls written as the
-/// launcher's path from `skill_dir` — the load's split and a
-/// [`CliInvocation::SkillRelativePath`] harness's writing, end to end.
-#[cfg(test)]
-pub(crate) fn rewrite_launcher_calls(body: &str, launcher: &str, skill_dir: &str) -> String {
-    let body = crate::model::segments(body, &Default::default(), Some(launcher));
-    write_body(&body, Some(skill_dir), |_| unreachable!()).expect("a body with no calls writes")
-}
-
-/// [`HarnessTranslator::hooks`]'s shared body: every hook note projected,
-/// plus the hooks from the plugin's canonical file this harness carries,
-/// each localized ([`crate::hooks_file::localize`]; notes are not), written
-/// as the single `hooks/hooks.json` the plugin format defines.
-///
-/// A hook is not a file: a harness reads one hooks document per plugin, so
-/// the members render together or the second one overwrites the first. No
-/// provenance marker, and no transclusion — the body is a script or a prompt
-/// inside a JSON string, and a comment or an embed would change what runs.
+/// [`HarnessTranslator::hooks`]'s shared body: the hooks from the plugin's
+/// `hooks/hooks.json` this harness carries, each localized
+/// ([`crate::hooks_file::localize`]), written as the single
+/// `hooks/hooks.json` the plugin format defines.
 fn default_hooks(
     profile: &HarnessProfile,
     plugin: &Plugin,
-    hooks: &[&Component],
+    shipped: &BTreeSet<String>,
     base: &str,
     tree: &mut FileTree,
 ) -> Result<bool, CoreError> {
+    let Some(file) = &plugin.hooks_file else {
+        return Ok(false);
+    };
+    if !profile.format().carries_hooks {
+        return Ok(false);
+    }
     let runtime = parse_runtime_target(profile.runtime)?;
-    let mut rendered = Vec::with_capacity(hooks.len());
-    for hook in hooks {
-        let projection = SkillProjection {
-            content: hook.content.clone().expect("an admitted hook was read"),
-            resources: hook.source.clone().unwrap_or_default(),
-        };
-        let adapted = to_adapt_hook(&projection, Some(profile.name))?;
-        if hook.targets.is_none()
-            && agent_adapt::render::hook_refusal(&adapted, runtime).is_some()
-            && carried_elsewhere(&projection, profile)?
-        {
-            continue;
-        }
-        rendered.push(adapted);
-    }
-    if let Some(file) = &plugin.hooks_file {
-        tree.insert(
-            &format!("{base}/{}", crate::hooks_file::GAP_REPORT_PATH),
-            file.gap_report.clone().into_bytes(),
-            false,
-        );
-        if profile.format().carries_hooks {
-            let var = profile.format().plugin_root_var.map(|var| var.name);
-            rendered.extend(
-                crate::hooks_file::carried_hooks(&file.hooks, runtime)
-                    .into_iter()
-                    .map(|hook| crate::hooks_file::localize(hook, profile.name, var)),
-            );
-        }
-    }
+    let var = profile.format().plugin_root_var.map(|var| var.name);
+    let carried = crate::hooks_file::carried_hooks(&file.hooks, runtime);
+    crate::hooks_file::check_hook_paths(&carried, &file.path, profile.label, |path| {
+        shipped.contains(path)
+    })?;
+    let rendered: Vec<_> = carried
+        .into_iter()
+        .map(|hook| crate::hooks_file::localize(hook, profile.name, var))
+        .collect();
     let Some(bytes) = project_plugin_hooks(&rendered, profile.runtime)? else {
         return Ok(false);
     };
     tree.insert(&format!("{base}/{PLUGIN_HOOKS_PATH}"), bytes, false);
     Ok(true)
-}
-
-/// Does some hooks-carrying harness other than `profile` carry this hook
-/// note? Every harness counts, selected or not, so the answer does not depend
-/// on what a build selects.
-fn carried_elsewhere(
-    projection: &SkillProjection,
-    profile: &HarnessProfile,
-) -> Result<bool, CoreError> {
-    for other in super::with_plugin_format() {
-        if other.name == profile.name || !other.format().carries_hooks {
-            continue;
-        }
-        let hook = to_adapt_hook(projection, Some(other.name))?;
-        let runtime = parse_runtime_target(other.runtime)?;
-        if agent_adapt::render::hook_refusal(&hook, runtime).is_none() {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 // --- The harnesses -----------------------------------------------------------
@@ -908,7 +742,7 @@ impl HarnessTranslator for Claude {
     ) -> Option<String> {
         Some(claude_marketplace_manifest(
             listed,
-            packs_of(config, self.profile()),
+            self.format().packs,
             name,
             config,
         ))
@@ -932,7 +766,7 @@ impl HarnessTranslator for Codex {
     ) -> Option<String> {
         Some(codex_marketplace_manifest(
             listed,
-            packs_of(config, self.profile()),
+            self.format().packs,
             name,
             config,
         ))
@@ -956,7 +790,7 @@ impl HarnessTranslator for Cursor {
     ) -> Option<String> {
         Some(cursor_marketplace_manifest(
             listed,
-            packs_of(config, self.profile()),
+            self.format().packs,
             name,
             config,
         ))
@@ -984,37 +818,14 @@ impl HarnessTranslator for Pi {
     }
 }
 
-/// A destination with no plugin format — Amp, Antigravity, Copilot,
-/// OpenCode, the portable layout. It takes a note published on its own and
-/// nothing else, so every default it uses is the profile's.
-pub struct Standard(pub &'static HarnessProfile);
-
-impl HarnessTranslator for Standard {
-    fn profile(&self) -> &'static HarnessProfile {
-        self.0
-    }
-}
-
-static STANDARD: [Standard; 5] = [
-    Standard(&super::profile::PROFILES[4]),
-    Standard(&super::profile::PROFILES[5]),
-    Standard(&super::profile::PROFILES[6]),
-    Standard(&super::profile::PROFILES[7]),
-    Standard(&super::profile::PROFILES[8]),
-];
-
-/// The translator for a harness, by any of its spellings.
-pub fn translator_for(name: &str) -> Option<&'static dyn HarnessTranslator> {
-    let profile = super::profile_for(name)?;
-    Some(match profile.name {
+/// The translator for a harness name.
+pub(crate) fn translator_for(name: &str) -> Option<&'static dyn HarnessTranslator> {
+    Some(match name {
         "claude" => &Claude,
         "codex" => &Codex,
         "cursor" => &Cursor,
         "pi" => &Pi,
-        other => STANDARD
-            .iter()
-            .find(|t| t.0.name == other)
-            .map(|t| t as &dyn HarnessTranslator)?,
+        _ => return None,
     })
 }
 
@@ -1023,67 +834,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn naming_reads_both_override_lists_then_the_default() {
+    fn naming_reads_the_bare_list_then_the_default() {
         use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
-        let none: [&str; 0] = [];
         for (profile, default) in [
             (&CLAUDE, SkillNaming::HostNamespaced),
             (&CODEX, SkillNaming::HostNamespaced),
-            (&CURSOR, SkillNaming::Bare),
+            (&CURSOR, SkillNaming::PluginPrefixed),
             (&PI, SkillNaming::PluginPrefixed),
         ] {
-            let name = [profile.name];
-            assert_eq!(naming(profile, &none, &none), default, "{}", profile.name);
+            assert_eq!(naming(profile, &[]), default, "{}", profile.name);
+            let name = [profile.name.to_owned()];
             assert_eq!(
-                naming(profile, &name, &none),
+                naming(profile, &name),
                 SkillNaming::Bare,
                 "{}",
                 profile.name
             );
-            assert_eq!(
-                naming(profile, &none, &name),
-                SkillNaming::PluginPrefixed,
-                "{}",
-                profile.name
-            );
-            let other = ["elsewhere"];
-            assert_eq!(naming(profile, &other, &other), default, "{}", profile.name);
+            let other = ["elsewhere".to_owned()];
+            assert_eq!(naming(profile, &other), default, "{}", profile.name);
         }
     }
 
     #[test]
     fn every_profile_has_a_translator_answering_with_it() {
         for profile in &super::super::PROFILES {
-            for spelling in profile.spellings {
-                let translator = translator_for(spelling).expect("a translator");
-                assert_eq!(translator.profile().name, profile.name);
-            }
+            let translator = translator_for(profile.name).expect("a translator");
+            assert_eq!(translator.profile().name, profile.name);
         }
     }
 
     #[test]
     fn a_host_namespaced_harness_writes_the_plugin_into_every_call() {
-        // A pack at a destination used to spell its calls from the runtime's
-        // own `namespaced` flag; a build spells them from the profile's
-        // naming. The two agree, or packs and builds would call differently.
+        // A build spells calls from the profile's naming. It must agree with
+        // the runtime's own `namespaced` flag, or a call would not match how
+        // the runtime names the skill.
         for profile in super::super::with_plugin_format() {
             let namespaced = profile.declaration.skill_call_syntax().namespaced;
             if profile.format().naming == SkillNaming::HostNamespaced {
                 assert!(namespaced, "{}", profile.name);
             }
         }
-    }
-
-    #[test]
-    fn sibling_paths_take_the_plugin_prefix_only_for_siblings() {
-        let siblings = BTreeSet::from(["a"]);
-        assert_eq!(
-            rewrite_sibling_paths(
-                "${CLAUDE_PLUGIN_ROOT}/skills/a/x ${CLAUDE_PLUGIN_ROOT}/skills/b/y",
-                "p",
-                &siblings
-            ),
-            "${CLAUDE_PLUGIN_ROOT}/skills/p-a/x ${CLAUDE_PLUGIN_ROOT}/skills/b/y"
-        );
     }
 }

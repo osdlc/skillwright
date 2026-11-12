@@ -1,5 +1,4 @@
 ---
-name: pr-mermaid-comment
 description: |-
   Post or update a GitHub pull request comment (or PR body) that carries
   Mermaid diagrams, and prove the diagrams render before it goes up. Drafts
@@ -20,10 +19,10 @@ trigger: /pr-mermaid-comment
 
 Usage:
 
-- `/[[pr-mermaid-comment]] <PR number> <what to diagram>` — draft, verify, post.
-- `/[[pr-mermaid-comment]] <PR number> --update <comment id>` — rework an
+- /[[pr-mermaid-comment]] `<PR number> <what to diagram>` — draft, verify, post.
+- /[[pr-mermaid-comment]] `<PR number> --update <comment id>` — rework an
   existing comment in place.
-- `/[[pr-mermaid-comment]] --check <file.md>` — only render a Markdown file's
+- /[[pr-mermaid-comment]] `--check <file.md>` — only render a Markdown file's
   mermaid blocks and report.
 
 GitHub renders ```` ```mermaid ```` fences in PR bodies, comments, issues
@@ -60,10 +59,10 @@ Rules that decide whether a diagram renders and reads:
 
 ## 2. Verify with the render script
 
-Run the script that sits next to this skill:
+Run the script in this skill's `scripts/` folder:
 
 ```text
-bun <skill dir>/render_mermaid.mjs <file.md> --github <owner/repo>
+bun <skill dir>/scripts/render_mermaid.mjs <file.md> --github <owner/repo>
 ```
 
 `--github` sends the file through GitHub's Markdown API so the blocks
@@ -110,7 +109,7 @@ private, say that the screenshot is the local render, not GitHub's page.
 
 ## Notes
 
-- **The script** is [[render_mermaid.mjs]] beside this note. It resolves
+- **The script** is [[scripts/render_mermaid.mjs]] in this skill. It resolves
   `mermaid` from any package in the repo that depends on it and
   `playwright` from the repo root, so it runs from the repo root without
   setup. `--out <png>` names the screenshot; `--json` prints the result as

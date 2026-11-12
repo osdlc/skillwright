@@ -22,7 +22,7 @@ changes for a vault built with today's tool is in
 | component | A skill, agent or command (section 3). |
 | container | A marketplace or a plugin. |
 | pack | The folder a harness installs for one plugin (section 9). |
-| an error | The build or check stops and exits non-zero. Nothing is written. |
+| an error | The build or check stops and exits 2. Nothing is written. |
 | an error for a harness | The same: the whole build fails, even though only that harness's output has the problem. The message names the harness. |
 | a warning | Printed. The build goes on and exits 0. |
 
@@ -82,7 +82,6 @@ author: Ada Lovelace            # or {name, email, url}
 license: MIT                    # an SPDX expression
 repository: https://github.com/acme/skills
 homepage: https://acme.dev/skills
-targets: [claude, codex]        # which harnesses get each component; absent means all
 claude: {}                      # harness blocks: fields only that harness reads (section 8)
 codex: {}
 cursor: {}                      # {naming: bare} keeps plain skill names (section 8)
@@ -90,7 +89,7 @@ pi: {}                          # {naming: bare} likewise
 
 # Tool settings.
 build:
-  harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all
+  harnesses: [claude, codex, cursor, pi]   # which harnesses to build by default; absent means all
   bump:
     patch: increment                       # or timestamp (section 10 rule 4)
 ---
@@ -103,8 +102,10 @@ build:
      inherited (section 7 rule 1);
    - `build:`, the tool settings.
 3. A key the key table does not list warns and is ignored, as
-   [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) says. There is one
-   exception: `workspace` is a removed key and is refused (section 11).
+   [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) says. There are two
+   exceptions, both removed keys and refused:
+   - `workspace` (section 11);
+   - `targets`, which is refused at every level (section 6 rule 7).
 4. A key the table lists but does not mark as inherited is refused here. The
    error names the note kinds that accept it:
 
@@ -170,7 +171,8 @@ and `assets/` folders. Relative paths resolve from the skill's folder
    container note is not interpreted and does not ship. It is for the author.
 4. The folder's name is the note's name. The build writes it as the `name`
    each harness reads, such as the `name` in `SKILL.md`. There is no `name`
-   key: a note that sets one is refused, and the error says to delete it.
+   key: a note that sets one, including in a harness block, is refused, and
+   the error says to delete it.
 5. A name follows the Agent Skills `name` rule:
    - lowercase letters `a` to `z`, digits and hyphens;
    - no hyphen at the start or end, and no two hyphens in a row;
@@ -191,7 +193,8 @@ and `assets/` folders. Relative paths resolve from the skill's folder
    report.
 9. A component exists only inside a plugin, and a plugin only inside a
    marketplace. A `skills/`, `plugins/` or other kind folder anywhere else is
-   an error (section 11).
+   an error (section 11), except below a `references/`, `scripts/`, `assets/`
+   or never-ship folder, where it is an ordinary folder (rule 17).
 10. One skill may be copied into two marketplaces. Each copy is its own
     component. There is no shared folder across plugins.
 11. `check` warns when a plugin's `version` has no entry in its `CHANGELOG.md`.
@@ -211,7 +214,7 @@ Some entries are skipped everywhere, and one is an error:
 
 | Folder | May hold |
 |---|---|
-| The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone and not read, except the refused names of section 11 case 4. |
+| The root | `skillwright.md`, `marketplaces/`, `dist/`. These three may not be symlinks. Anything else is left alone and not read, except the refused names of section 11 case 4. |
 | `marketplaces/` | Marketplace folders only. |
 | `marketplaces/<m>/` | `<m>.md`, `plugins/`. |
 | `plugins/` | Plugin folders only. |
@@ -277,8 +280,9 @@ So a `README.md` in `marketplaces/` or in `skills/` is an error.
 
     `scripts/tool.js` ships as `<pack>/scripts/tool.js`. Section 4 rules 15 to
     26 write the skill's `${PLUGIN_ROOT}/scripts/tool.js` for each harness.
-17. Files inside `references/`, `scripts/` and `assets/` may be laid out in any
-    folders below them. `scripts/` keeps each file's exec bit.
+17. Files inside `references/`, `scripts/`, `assets/` and the never-ship
+    folders may be laid out in any folders below them, including folders with
+    the structure names of rule 6. `scripts/` keeps each file's exec bit.
 
 ## 4. Links, embeds and containment
 
@@ -292,7 +296,7 @@ The syntax decides what a token is, not its target:
 | `[text](https://…)`, `<https://…>`, `mailto:` and any other URL with a scheme | An external link | Ships as written, not checked |
 | `[text](#heading)` | A link within the same file | Ships as written, not checked |
 | `[text](/abs/path)` or `[text](file:…)` | A path outside the vault | Refused |
-| `${PLUGIN_ROOT}/<path>` | A plugin-root path (rules 15 to 26) | Checks the file ships, rewrites per harness, inside code too |
+| `${PLUGIN_ROOT}/<path>` | A plugin-root path (rules 15 to 26) | Checks the file ships, rewrites per harness, inside code and link destinations too |
 | Anything in a code span or fenced block | Literal (rule 12) | Ships as written, with two exceptions (rule 12) |
 
 A plugin-root path is interpreted inside code, because a command in a code
@@ -354,13 +358,30 @@ marketplace (rule 8, decision D2).
 
      | Step | Matches |
      |---|---|
-     | 1 | a file at any depth in the linking file's component folder |
+     | 1 | a file at any depth in the linking file's component folder, outside its never-ship folders |
      | 2 | a file at any depth in the plugin's shared `references/`, `scripts/` and `assets/`, and another component by its name only |
 
+   - Neither step searches a never-ship folder, such as `docs/` (section 3 rule 15).
+     A name in both `references/` and `docs/` resolves to `references/`. A
+     name whose only match is in the component's or the plugin's own
+     never-ship folder is refused by rule 10.
    - A file inside another component's folder is never found by name. Link it
      with a path (rule 4), such as `[[../setup/references/notes.md]]`.
-   - `[[guide]]` matches `guide.md`. A name with an extension,
-     `[[run.sh]]`, matches that exact file name.
+   - How a name matches a file name:
+     - A name with no extension matches the file of that name or that name
+       plus `.md`. `[[guide]]` matches `guide.md`.
+     - A name with an extension matches only the file of that name.
+       `[[run.sh]]` matches `run.sh`, never `run.sh.md`. An extension is a
+       dot at the end of the name followed by letters and digits, at least
+       one a letter, such as `.sh` or `.mp3`. So `[[v1.2 notes]]` has none
+       and matches `v1.2 notes.md`.
+     - Case is ignored. A link that matches only by ignoring case, such as
+       `[[Guide]]` for `guide.md`, works and warns (`link-case`). The warning
+       names the linking file, the link and the file it matched.
+     - Two files whose names differ only in case, such as `guide.md` and
+       `Guide.md`, both match `[[guide]]`. That is two matches, an error.
+     - The same holds for a wikilink with a path (rule 4): a path with no
+       extension may leave out `.md`, and one with an extension may not.
    - `[[setup]]` matches the component `setup` in step 2.
    - A file that belongs to no component, such as one in the plugin's shared
      `references/`, has no step 1. It starts at step 2.
@@ -450,8 +471,7 @@ marketplace (rule 8, decision D2).
 
      | Call to | Claude Code | Codex, Cursor, Pi |
      |---|---|---|
-     | a skill the pack contains | the call string above | the call string above |
-     | a skill the pack does not contain (`targets`) | an error for that harness | an error for that harness |
+     | a skill | the call string above | the call string above |
      | a command | `` `/tools:deploy` `` | an error: their packs contain no commands |
      | an agent | an error: no pack contains agents | an error |
    - A call string written by hand in prose is an error that says to write
@@ -493,12 +513,18 @@ marketplace (rule 8, decision D2).
     |---|---|
     | `${PLUGIN_ROOT}/<path>` | Rewritten (rule 15) |
     | `${CLAUDE_PLUGIN_ROOT}` | An error (rule 22) |
+
+    A link, embed or call inside an HTML comment, `<!-- … -->`, is skipped
+    too. It ships as written, and the leftover check of rule 13 skips it.
 13. After the build, no unescaped `[[` may remain in prose.
     - Write `\[[` to keep the brackets as text: `\[[x]]` is not interpreted
-      and ships as `[[x]]`.
+      and ships as `[[x]]`. `\![[x]]` likewise ships as `![[x]]`.
     - A leftover `[[` is an error that names the file and the text.
     - Code spans and fenced blocks are not checked. Neither is text an escape
       produced.
+    - The build marks escapes and other text internally with the Unicode
+      noncharacters U+FDD0, U+FDD1 and U+FDD2. A Markdown body or an
+      embedded file that holds one is refused (`noncharacter`).
 14. Every error in this section names the linking file, the link as written and
     the rule it broke.
 
@@ -518,6 +544,13 @@ harness's own form (decision D9).
       `![[run.sh]]`, is not interpreted (section 5 rule 9).
 
     Only the braced form is interpreted. `$PLUGIN_ROOT` is text.
+
+    It is interpreted wherever it appears, a Markdown link destination
+    included. `[the tool](${PLUGIN_ROOT}/scripts/tool)` ships as
+    `[the tool](${CLAUDE_PLUGIN_ROOT}/scripts/tool)` on Claude Code and
+    `[the tool](../../scripts/tool)` on the others, from a skill's note. Such
+    a destination is checked by rule 17, not again as a relative link
+    (rule 4).
 16. The path runs to the first character that cannot continue a path. A
     letter, digit, `.`, `_`, `-` or `/` continues it. A `.` at the end of the
     path is not part of it, so a full stop after a path is punctuation:
@@ -580,7 +613,8 @@ harness's own form (decision D9).
 21. `${PLUGIN_ROOT}` with no `/<path>` after it is an error in Markdown. It
     cannot be rewritten to a path for Codex, Cursor or Pi, and a vault writes
     one text for all harnesses.
-22. `${CLAUDE_PLUGIN_ROOT}` in interpreted text, code included, is an error
+22. `${CLAUDE_PLUGIN_ROOT}` in interpreted text, code and link destinations
+    included, is an error
     that says to write `${PLUGIN_ROOT}`. Interpreted text is the files of rule
     15 (a component's note, the Markdown in its own and the plugin's
     `references/`, and text a note embed inlines) and `hooks/hooks.json`. A
@@ -594,7 +628,7 @@ harness's own form (decision D9).
     |---|---|---|
     | Claude Code | Yes | `${CLAUDE_PLUGIN_ROOT}` |
     | Codex | Yes | `${PLUGIN_ROOT}`, unchanged |
-    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. It warns only when it builds that plugin's Cursor pack: Cursor is in `build.harnesses` and in the plugin's `targets`. | nothing |
+    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. It warns only when it builds that plugin's Cursor pack: Cursor is among the harnesses built (section 10 rule 7). | nothing |
     | Pi | No: Pi has no shell hooks | nothing |
 
     - A hook runs as a shell command from the project folder, where a
@@ -744,7 +778,9 @@ fenced block whose info string comes from its extension (rule 10).
 12. Inside a list item, every line of the block is indented to the item's
     content, so the block stays in the item.
 13. A file that is not valid UTF-8 is binary, and embedding it is refused. A
-    fragment on a non-note file, such as `![[run.sh#main]]`, is refused.
+    fragment on an embed that is not a note, whether a file inlined or an
+    image included, is refused: `![[run.sh#main]]` and `![[logo.png#x]]`
+    both are.
 14. A plain `[[run.sh]]` is not an embed. It stays a file link to the file's
     installed path.
 
@@ -782,6 +818,11 @@ fenced block whose info string comes from its extension (rule 10).
 6. Malformed frontmatter, such as an unclosed `---` or invalid YAML, is an
    error that names the note. This holds for every note, and for a note that
    is embedded (section 5 rule 4).
+7. `targets` is a removed key. A root file, marketplace, plugin or component
+   note that sets it is refused. The error says to pick the harnesses with
+   `build.harnesses` in the root file or with `--harness` (section 10 rule
+   7). No note narrows which harnesses get it: every component is built for
+   every harness built whose pack takes its kind.
 
 ## 7. The cascade
 
@@ -793,13 +834,32 @@ flowchart LR
 ```
 
 1. A key inherits only if the key table marks it as inherited. Those keys are
-   `author`, `license`, `repository`, `homepage`, `targets` and the harness
+   `author`, `license`, `repository`, `homepage` and the harness
    blocks. They are the root file's shared defaults (section 2). Harness
    blocks inherit key by key.
 2. The order for an inherited key is component, then plugin, then marketplace,
    then root. Each container is matched by folder.
 3. Inheritance applies to every component a build reads.
-4. A block a component inherits cannot set the component's `description`.
+4. Some keys in a container's harness block stay with the container. A member
+   never takes them, even where its kind accepts them, and this rule wins over
+   rule 1. They are, per harness:
+   - in a plugin's or marketplace's block, the keys of that harness's plugin
+     manifest and of its marketplace entry for a plugin. A skill or command
+     never takes them;
+   - in a marketplace's block, the keys of that harness's marketplace
+     manifest, such as Codex's `interface` and Claude Code's `metadata`, and
+     `description`, `version`, `displayName` and `source`. A plugin never
+     takes them;
+   - in any block, a key the member's kind does not accept.
+
+   The keys use the harness's own spelling, so a block holds `displayName`,
+   not `display_name`. The manifest, entry and marketplace key lists of each
+   harness are closed. The field reference lists the keys that stay, per
+   harness, in its "kept" lines (`docs/reference/fields.md`, "Harness
+   blocks"): "Plugin, kept from skills and commands" and "Marketplace, kept
+   from plugins". So a block a component inherits cannot set its
+   `description` or `version`. `name` is not among these keys: section 3
+   rule 4 refuses it in a harness block too.
 5. For an inherited key (rule 1) that a harness reads on a component, the
    build takes the first value in this order:
    1. the note's own harness block;
@@ -808,13 +868,12 @@ flowchart LR
       frontmatter;
    4. a generated value.
 
-   An example. The plugin note sets `author: Ada` and `claude: {author: Bob}`,
-   and the skill sets neither. The skill's Claude Code `author` is `Bob`, and
-   its Codex `author` is `Ada`. A key that is not inherited, such as
-   `description`, comes only from the note itself.
-6. A key in an inherited block must be one the member's kind accepts. If it is
-   not, it stays with the container.
-7. Versions:
+   An example. The plugin note sets `author: Ada` and `claude: {author: Bob}`.
+   The plugin's Claude Code manifest names `Bob` as its author, and its Codex
+   manifest names `Ada`. A skill takes no `author`: it is a plugin key (rule
+   4). A key that is not inherited, such as `description`, comes only from the
+   note itself.
+6. Versions:
    - A plugin's `version` is its note's. Without one it is `0.1.0`, with a
      warning.
    - A marketplace's `version` is its note's. Without one, the marketplace
@@ -890,16 +949,17 @@ flowchart LR
    └── .pi/packs/tools/             Pi has no marketplace manifest
    ```
 
-3. Which packs contain a component is decided in two steps:
-   1. `build.harnesses` picks which harness trees are written.
-   2. A component's `targets` picks which of those harnesses get it.
-
-   A harness's pack contains a component only when both name the harness, and
-   the harness takes its kind (the pack table below). A link, call or
+3. The harnesses built (section 10 rule 7) pick which harness trees are
+   written. Each of those harnesses' packs contains every component whose
+   kind it takes (the pack table below). A plugin with no component, or
+   only agents, is built for every harness built, as its manifest alone. A link, call or
    plugin-root path to a component a pack does not contain is an error for
    that harness (Appendix A5).
 4. A build replaces only what skillwright owns in `dist/<m>/`: each harness's
-   packs folder and the manifests it writes.
+   packs folder and the manifests it writes. When a harness's owned paths
+   hold a file this build does not produce and no file there carries
+   skillwright's generated-file marker, `build` and `check` refuse
+   (`foreign-tree`) and write nothing.
 5. Output is never written inside `marketplaces/`, and it is never read as
    source. Since only `marketplaces/` is read, this needs no check.
 6. The build stops at `dist/`. Copying the output to a repository root,
@@ -953,8 +1013,9 @@ pack folder from the table above.
 10. A file keeps its exec bit. A file in `scripts/` that is meant to run must
     be executable in the source; the build does not set the bit.
 11. A pack holds no symlinks. Every shipped file is a copy.
-12. `targets` and `build.harnesses` accept only `claude`, `codex`, `cursor`
-    and `pi`. Any other value is refused, and the error names the four.
+12. `build.harnesses` and `--harness` accept only `claude`, `codex`, `cursor`
+    and `pi`. Any other value is refused (for `--harness`, a usage error),
+    and the error names the four.
 
 ### Install keeps a pack whole
 
@@ -1017,6 +1078,7 @@ does not say the command was removed.
    |---|---|---|
    | `--vault <path>` | `build`, `check`, `bump` | Names the root (section 1 rule 2). |
    | `--marketplace <m>` | `build`, `check`, `bump` | Picks one marketplace (rules 2 to 4). |
+   | `--harness <name>` | `build`, `check`, `bump` | Picks a harness to build: `claude`, `codex`, `cursor` or `pi`. Repeat it for several (rule 7). Any other name is a usage error, exit 3. |
    | `--json` | `build`, `check`, `bump` | Writes the report to stdout as one JSON document. |
    | `--quiet` | `build`, `check`, `bump` | Drops progress and the tally from stderr. |
    | `--dry-run` | `build`, `bump` | Reports what would be written, and writes nothing. |
@@ -1028,6 +1090,20 @@ does not say the command was removed.
 6. `build` and `bump` print what they will write and ask before they write.
    `--yes` skips the question. Without a terminal and without `--yes`, they
    stop with a usage error, exit 3, and write nothing.
+7. The harnesses built are those `--harness` names, or the core request's
+   `harnesses` list, when given; else the root file's `build.harnesses`;
+   else all four. A list given for a run replaces the root file's, and may
+   name a harness the root file leaves out. The root file's list is only the
+   default. `bump --changed-since` builds and compares the same harnesses.
+8. The exit codes:
+
+   | Code | Means |
+   |---|---|
+   | 0 | The run did what it was asked. A warning does not change this. |
+   | 1 | `check` found drift, and nothing else. |
+   | 2 | Refused: any vault error, including a `--vault` that is not a root and a `--marketplace` the vault does not hold. Also `init` over an existing file, a version `bump` refuses, a failed write and a declined prompt. |
+   | 3 | A usage error. |
+   | 4 | No root at or above the working directory, and no `--vault`. |
 
 ## 11. A vault not in this layout
 
@@ -1059,6 +1135,8 @@ It is refused when:
 4. A kind folder (`skills/`, `agents/`, `commands/`), a `hooks/` folder or a
    `plugins/` folder is directly in the root, or anywhere in `marketplaces/`
    other than its place in section 3, such as directly in a marketplace.
+   Below a `references/`, `scripts/`, `assets/` or never-ship folder it is
+   an ordinary folder, as any folder is there (section 3 rule 17).
 
    ```text
    <root>/
@@ -1067,7 +1145,10 @@ It is refused when:
        ├── skills/                  refused: directly in a marketplace
        └── plugins/tools/skills/    accepted
    ```
-5. A `marketplaces/` folder is anywhere inside `marketplaces/`.
+5. A `marketplaces/` folder is inside `marketplaces/`, other than below a
+   `references/`, `scripts/`, `assets/` or never-ship folder. There it is an
+   ordinary folder, so a plugin's `tests/fixtures/` may hold a whole test
+   vault. Nothing in it is read as part of the vault.
 6. A component's note is not `<name>/<name>.md`, such as `skills/x.md` or
    `skills/x/SKILL.md`.
 
@@ -1213,7 +1294,7 @@ error that names the missing path. `init` writes the note.
 - Every plugin has one file that holds its settings and its `version`.
 - `bump` needs a note to write the version to.
 - A note without a `version` still builds as `0.1.0`, with a warning
-  (section 7 rule 7). The warning points at the one file to fix.
+  (section 7 rule 6). The warning points at the one file to fix.
 
 ### D7. `.mcp.json`
 
@@ -1394,12 +1475,14 @@ Each case gives an input and the result.
    - Input: `[[layout]]`, with `references/design/layout.md` in the skill.
    - Result: it matches, at any depth. If `references/old/layout.md` also
      exists, it is an error that names both.
-5. **A component left out by `targets`.**
-   - Input: skill `deploy` sets `targets: [claude]`. Skill `review`, shipped
-     everywhere, contains `/[[deploy]]`.
+5. **A component a pack does not contain.**
+   - Input: `deploy` is a command. Skill `review`, shipped everywhere,
+     contains `/[[deploy]]`.
    - Result: Claude Code renders `` `/tools:deploy` ``. The build fails for
-     Codex, Cursor and Pi, naming `review.md` and the call.
-   - Fix: give `review` the same `targets`, or move the call out of it.
+     Codex, Cursor and Pi, whose packs contain no commands, naming
+     `review.md` and the call.
+   - Fix: make `deploy` a skill, or build only Claude Code with
+     `--harness claude`.
 6. **A plugin and a marketplace with one name.**
    - Input: marketplace `osdlc` holds plugin `osdlc`.
    - Result: `bump osdlc` bumps the plugin. `bump --marketplace osdlc` bumps

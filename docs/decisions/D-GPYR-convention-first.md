@@ -1,22 +1,22 @@
-# D-GPYR: Structure comes from convention first
+# D-GPYR: Structure comes from convention
 
 Accepted 2026-11-05. [Review](https://github.com/osdlc/skillwright/issues/4).
 
 ## Decision
 
-A vault's API has three layers:
+A vault's API has two layers:
 
-1. **Convention.** A known folder shape builds with no settings. Folders alone
-   decide kind and plugin. The `kind` and `plugin` keys are removed.
-2. **Patterns.** `skillwright.md` adds globs and exclusions for layouts that
-   differ. This layer is experimental.
-3. **Frontmatter.** Notes carry the fields harness manifests need.
+1. **Convention.** One fixed folder layout builds with no settings. Position
+   alone decides kind, plugin and marketplace. The `kind` and `plugin` keys
+   are removed. There are no globs, patterns or exclusions.
+2. **Frontmatter.** Notes carry the fields harness manifests need.
 
-`skillwright.md` is the only configuration file. Its top-level keys are the
-marketplace's fields and `build:` holds tool settings. There is no machine file.
-Only `author`, `license`, `repository`, `homepage`, `targets` and the harness
-blocks inherit. The output folder is required, so nothing builds into a vault
-unless asked.
+`skillwright.md` is the only configuration file. It holds the shared defaults
+and `build:`, the tool settings. A marketplace's fields go in its own note,
+`marketplaces/<m>/<m>.md`. There is no machine file. Only `author`, `license`,
+`repository`, `homepage` and the harness blocks inherit. Output is
+fixed at `dist/<m>/` beside `skillwright.md`, and never inside
+`marketplaces/`, which is the only folder read as source.
 
 ## Why
 
@@ -30,9 +30,10 @@ from the tree.
 - Keep `kind` and `plugin` as overrides of the folder. Two sources for one fact is
   the problem being fixed.
 - A separate YAML config beside a marketplace note.
-- A default output folder. A build could then land in the vault by accident.
+- A patterns layer of globs and exclusions for layouts that differ. It made
+  the layout hard to predict, and no vault needed it.
+- A settable output folder. A fixed `dist/<m>/` cannot land among the sources.
 
 ## Reopen if
 
-Most vaults need patterns. Then the convention is wrong, or patterns should
-become stable.
+Many vaults cannot fit the fixed layout.

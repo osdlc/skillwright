@@ -2,7 +2,7 @@
 
 Status: current.
 
-One plugin as written for one harness: its directory, its plugin manifest and its skills, under that harness's tree (for example `.claude-plugin/packs/skillwright/`).
+One plugin as written for one harness: its directory, its plugin manifest and its skills, under that harness's tree in `dist/<m>/` (for example `.claude-plugin/packs/skillwright/`).
 
 ## In code
 

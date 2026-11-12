@@ -1,0 +1,4 @@
+---
+description: A fixture plugin.
+version: 0.1.0
+---

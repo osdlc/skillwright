@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "${PLUGIN_ROOT}/bin/tool session end",
+            "command": "${PLUGIN_ROOT}/scripts/tool session end",
             "type": "command"
           }
         ]
@@ -14,7 +14,7 @@
       {
         "hooks": [
           {
-            "command": "${PLUGIN_ROOT}/bin/tool session start",
+            "command": "${PLUGIN_ROOT}/scripts/tool session start",
             "timeout": 5,
             "type": "command"
           }
@@ -25,7 +25,7 @@
       {
         "hooks": [
           {
-            "command": "${PLUGIN_ROOT}/bin/tool session stop --harness codex --event Stop",
+            "command": "${PLUGIN_ROOT}/scripts/tool session stop --harness codex --event Stop",
             "timeout": 10,
             "type": "command"
           }
@@ -36,7 +36,7 @@
       {
         "hooks": [
           {
-            "command": "${PLUGIN_ROOT}/bin/tool session received",
+            "command": "${PLUGIN_ROOT}/scripts/tool session received",
             "timeout": 5,
             "type": "command"
           }

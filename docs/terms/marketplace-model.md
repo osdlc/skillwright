@@ -2,11 +2,11 @@
 
 Status: current.
 
-The in-memory object graph a vault loads into: marketplace → plugins → skills, commands, hooks, assets. Harness-neutral, validated, and exported to wasm and `--json`. Every verb works from it ([D-COMG](../decisions/D-COMG-marketplace-model-and-translators.md)).
+The in-memory object graph a vault loads into: marketplace → plugins → skills, commands, hooks, assets. Harness-neutral and validated. `build` and `check` work from it ([D-COMG](../decisions/D-COMG-marketplace-model-and-translators.md)).
 
 ## In code
 
-`Marketplace`, `Plugin` and `Component` in `model/mod.rs`. `skillwright list --model` prints it, and the wasm export `loadMarketplace` returns it.
+`Marketplace`, `Plugin` and `Component` in `model/mod.rs`. The wasm export `loadMarketplace` returns a narrow view of it.
 
 ## Not to be confused with
 

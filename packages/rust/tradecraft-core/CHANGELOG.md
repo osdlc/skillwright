@@ -11,25 +11,58 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 API:
 
+- The core reads one fixed vault layout (structure v2) and builds every marketplace into `<root>/dist/<m>/`. See skillwright's changelog for the vault rules.
+- The modules `adopt`, `authoring`, `corpus`, `manifest`, `namespace`, `patterns`, `publish`, `scan` and `source_view` are removed, with everything they exported: publishing to a destination, adopting, status, the authoring edits, namespaces and folder patterns. `field_edit` keeps `read_version` and `set_version`. `layout` is added.
+- The harness table holds only `claude`, `codex`, `cursor` and `pi`. The Amp, Antigravity, Copilot, OpenCode and portable rows, the `claude-code` and `codex-cli` spellings, `profile_for`, `canonical_target`, `kind_has_renderer`, `plugin_format_carries_commands` and `plugin_format_carries_hooks` are removed. `HarnessProfile::plugin` is a plain `PluginPolicy`; `plugin_format()`, `InstallCli` and `install_cli()` are removed.
+- `harness::write_component`, `harness::Destination` and `harness::Layout` are removed. Every pack is written into a built marketplace.
+- `ReasonToken`, `reason_token()`, `CoreError::Conflict` and `CoreError::SkillNotFound` are removed.
+- `RootFile` holds `defaults: SharedDefaults` and `build`. `MarketplaceFields`, `parse_marketplace_note` and `VaultMarketplace::fields` are removed. `BuildSettings` loses `out`, `namespace`, `launcher_path`, `destinations`, `scan_locations`, `assets`, `hooks`, `exclude` and `patterns`; each is now a refused key.
+- `build_vault` is the one public build and check entry point. `export_skills`, `ExportRequest`, `export_in`, `plan_in`, `ExportPlan` and `LoadedVault::export_request` are no longer public. `LoadedVault::vault_request` gives the request for one marketplace. `LoadRequest` and `DiscoverRequest` lose `out_root`, `skills_root`, `namespace`, `assets` and `hooks`. `VaultRequest` and `LoadRequest` refuse unknown keys. `HookSetting`, `HookFileSpec`, `AssetSetting`, `AssetSpec`, `DestinationSetting` and `FolderPatterns` are removed.
+- `discover_roster` is removed. `DiscoveryWarning::is_error` no longer counts `path-collision`: a collision is always a refusal.
+- `projection::project_agent` is removed: no pack holds an agent. The projection functions take only the four harnesses' runtime names, `claude-code`, `codex-cli`, `cursor` and `pi`.
+- `EntityKind::Hook` is removed, with hook notes: `Plugin::hooks`, `Component::source` and `DiscoveredComponent::hook`. Hooks come from a plugin's `hooks/hooks.json`.
+- `KindSource`, `ResolvedKind`, `KindHints` and `resolve_kind` are removed, with `DiscoveredComponent::kind_source` and `folder_kind`. The layout alone decides a note's kind.
+- `layout::classify`, `walk::in_plugin_assets`, `folder_assets` and `EXCLUDED_BUNDLE_DIRECTORIES` are removed. `rewrite_sibling_paths` is removed.
+- `model::Segment` gains `Literal` and `PluginRoot`. `SkillId` gains `kind`. A plain link to a skill is a `Link`, not a mention.
+- `SkillId::plugin` and `IndexedSkill::plugin` are `String`, not `Option<String>`: every component sits in a plugin. A call id is always `plugin:name`.
+- The `model` types no longer implement `Serialize`, except `Asset` and `SkillId`. `SkillContent`, `SkillProjection`, `VaultNote` and `VaultFrontmatter` no longer implement `Serialize` or `Deserialize`.
+- `Closure::hash` is removed.
+- `VaultNote` holds `content: SkillContent` in place of `projection`; the build reads a note's folder in the compile pass only. `compile_projection`, `vault::bundle_root`, `related_of`, `RelatedSplit` and `SkillSource` are removed, and `CallContext::skills` is a `&SkillIndex`. `model::read_notes` is removed; call `discover::discover_in`. `ContainerIdentity::is_silent`, `Marketplace::skill_at`, `Layout::links_into_never_ship` and `HarnessProfile::agent_override_keys` are removed.
+- `owned_paths` takes the parsed `RootFile` and a request's `harnesses`, and reads nothing.
 - `Shape` gains `Words`, `AgentTools`, `Hint` and `Flag`, the types the check already took for `allowed-tools`, `tools`, `argument-hint`, `user-invocable` and `disable-model-invocation`. `Shape` is an exhaustive public enum, so a match on it needs the new arms.
 - `Shape::StringMap` is renamed `Shape::Mapping`, and accepts any mapping, as `metadata` always did.
 - `tools` is two `KEYS` rows: `Words` on a skill and a command, `AgentTools` on an agent.
 - `settings::MARKETPLACE_KEYS` is removed. `settings::marketplace_keys()` yields the key table's marketplace rows, less the harness blocks, in table order.
 - `PluginPolicy` gains `naming_choice` and `agent_only_overrides`. `PluginFormat` gains the same two fields and a private one, so neither can be built with a struct literal outside the crate.
-- `model::Plugin` and `model::Call` gain `prefixed_on`. The serialized model and the generated TS types are unchanged for a vault that sets no `naming`: the field is skipped when empty.
-- The identity fields of `MarketplaceFields`, `MarketplaceConfig` and `PluginOverrides` (`owner`, `author`, `display_name`, `license`, `keywords`, `category`, `version`, `repository`, `homepage`) move under `.identity: ContainerIdentity`, flattened on the wire, so the JSON stays flat. Write `config.identity.license`, not `config.license`. `ContainerIdentity` gains `fill_unset_from` and `overlay`, and every inheritance step goes through them and the key table. `keys::identity_keys` is added: the key table's rows a container's identity holds. ([#75](https://github.com/osdlc/skillwright/issues/75))
-- An unset identity field is left out of the JSON instead of written as `null`. This holds for every component's `identity` in a `DiscoveryReport`, so a skill's is `{}`, and for `MarketplaceConfig`, `PluginOverrides` and `MarketplaceFields`. In the generated TS, `ContainerIdentity`'s fields become optional (`display_name?: string`, not `display_name: string | null`), `MarketplaceConfig` and `MarketplaceFields` list `keywords?` and `category?`, and `PluginOverrides` lists `owner?`, because they share the struct; these keys are refused, not read (see below), the identity fields take `ContainerIdentity`'s doc comments, and their order follows the Rust declaration. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- `LoadRequest::config` is removed, and `new` takes only the vault root. The core reads the root file's shared defaults and `build.harnesses` from `skillwright.md` itself; a request that names `defaults` or `config` is refused. `MarketplaceConfig`, `PluginOverrides`, `Cascade`, `HarnessTranslator` and `translator_for` are no longer public. `RootFile::to_config`, `settings::root_file_config` and `ContainerIdentity::check_read_by` are removed. The root file is the one channel besides the notes: a host cannot set a plugin's `version` or a marketplace's `owner`.
+- A request's `harnesses` replaces the root file's `build.harnesses` for that run, and may name a harness the root file leaves out. The root file's list is only the default.
+- `MarketplaceInputs`, `marketplace_inputs` and `LoadedVault::inputs` are removed.
+- A container's identity fields (`owner`, `author`, `display_name`, `license`, `keywords`, `category`, `version`, `repository`, `homepage`) live in `ContainerIdentity`. `ContainerIdentity` gains `fill_unset_from` and `overlay`, and every inheritance step goes through them and the key table. `keys::identity_keys` is added: the key table's rows a container's identity holds. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- An unset identity field is left out of the JSON instead of written as `null`. This holds for every component's `identity` in a `DiscoveryReport`, so a skill's is `{}`. In the generated TS, `ContainerIdentity`'s fields are optional (`display_name?: string`, not `display_name: string | null`). ([#75](https://github.com/osdlc/skillwright/issues/75))
+
+Behaviour:
+
+- Links resolve inside their plugin. A link that leaves it, reaches a never-ship folder or names nothing is an error. A plain `[[skill]]` is a file link with a warning.
+- A call names a skill or command of the marketplace. A shared name, a fragment and a call to an agent are errors. Code spans and fenced blocks are literal. A hand-written call string in prose is an error. `\[[x]]` ships as `[[x]]`.
+- An embed of a text file ships as a fenced code block. An embed of a binary file is refused.
+- `${PLUGIN_ROOT}/<path>` is checked against what each pack ships and written per harness. `${CLAUDE_PLUGIN_ROOT}` in a note or a hooks file is an error.
+- Cursor names a plugin's skill `<p>-<s>` by default. `cursor: {naming: bare}` keeps plain names.
+- A plugin's `references/`, `scripts/` and `assets/` ship under their own names. The Cursor pack ships no hooks for now, and packs no longer ship `hooks/gap-report.json`.
+- `targets` is removed, with `VaultFrontmatter::targets`, `DiscoveredComponent::targets`, `SharedDefaults::targets`, `model::Plugin::targets`, `model::Component::targets` and `model::Call::targets`. A note or root file that sets it is refused. `Plugin::carried_by` loses its harness argument, and `resolve_body` loses its index argument. The `unknown-target` refusal is gone. `name` is refused on every note, and a prefixed key such as `sw-version` is an unknown key.
+- The build's internal marks are the noncharacters U+FDD0 to U+FDD2, not private-use code points, so private-use text such as icon-font glyphs ships unchanged. A Markdown body or embedded file that holds one of them is refused (`noncharacter`).
 
 ### Added
 
-- `cursor: {naming: bare | prefixed}` on a marketplace or a plugin. `prefixed` publishes that plugin's Cursor skills as `<plugin>-<skill>`, in their folders, their frontmatter `name` and every call and mention of them. The plugin's value overrides the marketplace's. The default stays bare.
+- `build_vault`, with `VaultRequest`, `VaultReport` and `MarketplaceReport`: every marketplace of a vault, or the one `marketplace` names, planned, then all written or none. A failed swap rolls back every marketplace already swapped. A check returns every marketplace's report, and lists each marketplace that refused in `VaultReport::refused` (`MarketplaceRefusal`). `VaultRequest::compare_with` has a check of one marketplace compare with another built folder in place of `dist/<m>/`. `read_root_file` is added.
+- `cursor: {naming: bare | prefixed}` on a marketplace or a plugin. The default is `prefixed`: a plugin's Cursor skills are `<plugin>-<skill>`, in their folders, their frontmatter `name` and every call to them. The plugin's value overrides the marketplace's.
+- `load_vault` normalizes its root.
 - A Cursor catalog entry in `.cursor-plugin/marketplace.json` carries the plugin's `displayName`, right after `name`: its `cursor.displayName`, else its `display_name`. It is absent when neither is set.
 - `HarnessProfile::block_keys(kind)`: the keys a harness's block accepts on a note of `kind`. The check, the field reference, the cascade and the manifest merge all read it.
 - `keys::check_shape` and `keys::ShapeRefusal`: one shape check for a key of ours, shared by a note's read and the root file's.
 
 ### Changed
 
-- The field reference states the types the check accepts. Its harness block lists drop the keys the check warns on, such as `permissionMode` on a `claude:` plugin or marketplace and `description` and `version` on a `codex:`, `cursor:` or `pi:` marketplace. Its component line reads "Skill and command", followed by "Agent: not checked.".
+- The field reference states the types the check accepts. Its harness block lists drop the keys the check warns on, such as `permissionMode` on a `claude:` plugin or marketplace and `description` and `version` on a `codex:`, `cursor:` or `pi:` marketplace. Its component line reads "Skill and command", followed by "Agent: not checked.". It also lists, per harness, the block keys a plugin keeps from its skills and commands and a marketplace keeps from its plugins.
 - A cross-plugin name collision on Cursor or Pi names both notes, the published name, the harness and the `<harness>.naming` setting that prefixed the name. The token stays `path-collision`.
 - The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
 - A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.

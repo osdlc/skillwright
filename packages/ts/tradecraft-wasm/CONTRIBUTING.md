@@ -18,7 +18,7 @@ merged there.
 
 ## Where a change goes
 
-Every decision about a publish, an export, an adoption or a status is made by
+Every decision about an export is made by
 the `tradecraft-core` Rust crate, in `packages/rust/tradecraft-core`.
 `packages/rust/tradecraft-wasm` exposes it to JavaScript. This package is the
 typed wrapper over that, plus the Node filesystem adapter. A change to what

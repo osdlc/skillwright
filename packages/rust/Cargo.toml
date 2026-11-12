@@ -37,8 +37,6 @@ clap = { version = "4.5.40", features = ["derive"] }
 chrono = { version = "0.4.41", default-features = false, features = ["clock", "std"] }
 # js-sys 0.3.103 is the release that pairs with wasm-bindgen 0.2.126.
 js-sys = "0.3.103"
-# The file watcher behind `skillwright build --watch`.
-notify = "8.2"
 # tradecraft-typegen reads Rust source with these.
 quote = "1.0.40"
 # 1.0.220 is the first serde that pins its own serde_derive.
@@ -57,15 +55,10 @@ wasm-bindgen = "=0.2.126"
 
 # The osdlc library crates, from crates.io.
 agent-adapt = "0.19.2"
-etag-write = "0.2.4"
 frontmatter-lossless = "1.1.2"
 markdown-contract = { version = "0.4.1", default-features = false }
-markdown-corpus = "0.2.0"
 markdown-link = "0.8.0"
-markdown-relink = "0.3.0"
-markdown-vault-fs = { version = "0.5.0", default-features = false }
 path-guard = "0.3.3"
-tiered-dirs = "0.3.7"
 typed-git = "0.4.0"
 vfs-seam = { version = "0.2.0", default-features = false }
 vfs-walk = "0.2.0"

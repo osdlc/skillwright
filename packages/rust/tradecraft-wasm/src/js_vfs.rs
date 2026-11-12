@@ -1,6 +1,6 @@
 //! `tradecraft_core::Vfs`, implemented over a JavaScript object.
 //!
-//! tradecraft-core reads a vault and writes a destination, and on
+//! tradecraft-core reads a vault and writes `dist/<m>/`, and on
 //! `wasm32-unknown-unknown` there is no filesystem: every `std::fs` call
 //! compiles cleanly and then fails at runtime. The core's answer is to take
 //! its I/O as a `&dyn Vfs` parameter; this module is the host
@@ -87,11 +87,11 @@
 //! They map to `Vfs::canonicalize`, `Vfs::read_link` and `Vfs::is_symlink`,
 //! which `path-guard`'s containment checks and discovery's symlink refusal
 //! use. [`JsVfs::adopt`] checks for all three once. With all three,
-//! `Vfs::sees_links` is `true`, and the core takes the narrowed rails that
+//! `Vfs::sees_links` is `true`, and the core runs the narrowed checks that
 //! need an honest answer about links. With fewer, the bridge uses none of
 //! them: `canonicalize` folds `.` and `..` and asks nothing, `is_symlink`
 //! answers `false`, `sees_links` is `false`, and the core keeps its strict
-//! rails. A host with part of the set gets the strict answer, never a mix.
+//! checks. A host with part of the set gets the strict answer, never a mix.
 //!
 //! # A thrown exception is an error, never a panic
 //!
@@ -202,7 +202,7 @@ impl JsVfs {
     /// methods (see the module doc). The seven required methods are resolved
     /// at call time by the `structural` imports, so a host missing one fails
     /// on the operation that needed it, with the path in the message, rather
-    /// than failing the whole publish before anything is attempted.
+    /// than failing the whole build before anything is attempted.
     pub fn adopt(value: JsValue) -> Result<Self, CoreError> {
         if !value.is_object() {
             return Err(CoreError::Refused(
@@ -407,8 +407,8 @@ fn as_str(path: &Path) -> Cow<'_, str> {
 /// `readFile`'s return value as owned bytes.
 ///
 /// `ArrayBuffer` is accepted alongside `Uint8Array` because some hosts hand
-/// one back, and mis-reading one as the other shows up as an empty file at the
-/// destination.
+/// one back, and mis-reading one as the other shows up as an empty file in
+/// the output.
 fn to_bytes(path: &Path, value: &JsValue) -> Result<Vec<u8>, VfsError> {
     if let Some(bytes) = value.dyn_ref::<js_sys::Uint8Array>() {
         return Ok(bytes.to_vec());

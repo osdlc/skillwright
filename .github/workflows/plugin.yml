@@ -1,7 +1,8 @@
 # Checks that the committed skillwright plugin under plugin/ is what its vault
 # builds to. It builds the vault with the skillwright CLI from this commit
 # (`cargo run -p skillwright`), then fails if the build changed, added or
-# removed any file under plugin/.
+# removed any file under plugin/, including the built trees in
+# plugin/dist/osdlc/.
 #
 # The CLI comes from this repository's source, not a released binary. That
 # keeps the check independent of a release, and a CLI change that alters the
@@ -64,7 +65,7 @@ jobs:
 
       - name: Build the plugin
         working-directory: packages/rust
-        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.md
+        run: cargo run --locked -p skillwright -- build --yes --vault ../../plugin
 
       - name: The build matches what is committed
         run: |
@@ -78,4 +79,4 @@ jobs:
 
       - name: Check
         working-directory: packages/rust
-        run: cargo run --locked -p skillwright -- check --config ../../plugin/skillwright.md
+        run: cargo run --locked -p skillwright -- check --vault ../../plugin

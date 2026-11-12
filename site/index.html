@@ -6,7 +6,7 @@
     <title>skillwright</title>
     <meta
       name="description"
-      content="Write each coding-agent skill once, as a markdown note. skillwright publishes it to Claude Code, Codex, Cursor and Pi, and checks for drift."
+      content="Write each coding-agent skill once, as a markdown note. skillwright builds it into plugin marketplaces for Claude Code, Codex, Cursor and Pi, and checks for drift."
     />
     <meta name="color-scheme" content="light dark" />
     <style>
@@ -597,7 +597,7 @@
           <div>
             <p class="kicker rise d1">Open source &middot; part of osdlc</p>
             <h1 class="rise d2">Write a skill once.<br /><em>Ship it to every agent.</em></h1>
-            <p class="lede rise d3">skillwright is a command-line tool for coding-agent skills. You keep each skill as a markdown note in a vault. skillwright publishes the notes into the formats of Claude Code, Codex, Cursor and Pi, and tells you when the output has drifted.</p>
+            <p class="lede rise d3">skillwright is a command-line tool for coding-agent skills. You keep each skill as a markdown note in a vault. skillwright builds the notes into plugin marketplaces for Claude Code, Codex, Cursor and Pi, and tells you when the output has drifted.</p>
             <div class="install rise d4" role="group" aria-label="Install command">
               <span class="ps" aria-hidden="true">$</span>
               <code>brew install osdlc/tap/skillwright</code>
@@ -606,25 +606,29 @@
           </div>
 
           <div class="term rise d3" aria-label="Example terminal session">
-            <div class="bar"><i></i><i></i><i></i><b>my-project</b></div>
-<pre><span class="c"># one note in a vault</span>
-<span class="p">$ </span>cat my-vault/skills/code-review.md
+            <div class="bar"><i></i><i></i><i></i><b>my-skills</b></div>
+<pre><span class="p">$ </span>skillwright init house tools
+<span class="o">wrote skillwright.md
+wrote marketplaces/house/house.md
+wrote marketplaces/house/plugins/tools/tools.md</span>
+
+<span class="c"># one skill: a folder with a note of the same name</span>
+<span class="p">$ </span>cat marketplaces/house/plugins/tools/skills/code-review/code-review.md
 <span class="o">---
 description: Reviews a diff for correctness bugs.
 ---
 Read the diff. Report each bug with the line and a fix.</span>
 
-<span class="p">$ </span>skillwright list --vault my-vault
-<span class="o">skills/code-review.md  skill  code-review  -  every destination · Reviews a diff for correctness bugs.
-1 skill</span>
+<span class="p">$ </span>skillwright build --yes
+<span class="o">claude/tools  written · 1 skill
+codex/tools  written · 1 skill
+cursor/tools  written · 1 skill
+pi/tools  written · 1 skill
+...</span>
+<span class="ok">7 checked — 7 written</span>
 
-<span class="p">$ </span>skillwright publish skills/code-review.md \
-    --vault my-vault --to my-project \
-    --target claude-code --yes
-<span class="o">publishing skills/code-review.md -> /path/to/my-project (claude-code)
-.skillwright/manifest.json  written
-.claude/skills/code-review/SKILL.md  written · first-write</span>
-<span class="ok">2 written</span></pre>
+<span class="p">$ </span>skillwright check
+<span class="ok">7 checked — 7 ok</span></pre>
           </div>
         </div>
 
@@ -641,17 +645,17 @@ Read the diff. Report each bug with the line and a fix.</span>
               <div class="step">
                 <div class="n">VAULT</div>
                 <h3>Write notes</h3>
-                <p>A vault is a folder of markdown notes. Each skill, plugin or marketplace is a note with frontmatter. <code>new</code>, <code>adopt</code>, <code>move</code> and <code>rename</code> author and reorganise the vault; <code>rename</code> rewrites every link to the renamed note.</p>
+                <p>A vault is a folder of markdown notes in one fixed layout. Each marketplace, plugin and skill is a folder with a note of the same name. <code>init</code> writes the first marketplace and plugin.</p>
               </div>
               <div class="step">
                 <div class="n">BUILD</div>
                 <h3>Render per harness</h3>
-                <p><code>publish</code> writes notes to their destinations. <code>build</code> renders the vault into its marketplace roots and swaps them into place. <code>--dry-run</code> shows the plan first.</p>
+                <p><code>build</code> renders each marketplace into <code>dist/</code>, one tree per harness, and swaps it into place. <code>--dry-run</code> shows the plan first. <code>bump</code> raises a plugin&rsquo;s version.</p>
               </div>
               <div class="step">
                 <div class="n">CHECK</div>
                 <h3>Catch drift</h3>
-                <p><code>check</code> reports the marketplace's drift against the vault. It writes nothing and exits 1 on drift, so it fits in CI. <code>status</code> shows each note's state at each destination.</p>
+                <p><code>check</code> reports the drift between the vault and <code>dist/</code>. It writes nothing and exits 1 on drift, so it fits in CI.</p>
               </div>
             </div>
 
@@ -705,17 +709,17 @@ Read the diff. Report each bug with the line and a fix.</span>
             <div class="tbl">
               <table>
                 <thead>
-                  <tr><th>Harness</th><th>Publish &amp; build</th><th>Hooks</th><th><code>harness install</code></th></tr>
+                  <tr><th>Harness</th><th>Skills</th><th>Commands</th><th>Hooks</th></tr>
                 </thead>
                 <tbody>
                   <tr><td>Claude Code</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td></tr>
-                  <tr><td>Codex</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td></tr>
-                  <tr><td>Cursor</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td></tr>
+                  <tr><td>Codex</td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="y">yes</span></td></tr>
+                  <tr><td>Cursor</td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="n">not yet</span></td></tr>
                   <tr><td>Pi</td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="n">no</span></td></tr>
                 </tbody>
               </table>
             </div>
-            <p class="note">Hooks are written once as a Claude Code <code>hooks.json</code>. <code>build</code> renders them in each harness's shape and writes a gap report of anything a harness cannot carry. <code>harness install</code> registers the built marketplace through the harness's own <code>plugin</code> command.</p>
+            <p class="note">Hooks are written once, in a plugin's <code>hooks/hooks.json</code>. <code>build</code> renders them in each harness's shape and leaves out what a harness cannot carry. The build stops at <code>dist/</code>: commit or copy it where a harness installs from.</p>
           </div>
         </section>
 
@@ -749,10 +753,10 @@ cargo binstall skillwright</pre>
               </div>
               <div class="ch long">
                 <header><strong>install.sh</strong><span>GitHub Release</span></header>
-<pre>curl -fsSL https://github.com/osdlc/osdlc/releases/download/skillwright/v0.3.7/install.sh | sh</pre>
+<pre>curl -fsSL https://github.com/osdlc/skillwright/releases/download/skillwright/v0.11.0/install.sh | sh</pre>
               </div>
             </div>
-            <p class="note"><code>install.sh</code> checks the binary against the release's <code>SHA256SUMS</code> and installs to <code>~/.local/bin</code>, or to the folder given with <code>--to</code>. The tool was renamed from <code>tradecraft</code> in 0.3.7; the release notes list what to rename.</p>
+            <p class="note"><code>install.sh</code> checks the binary against the release's <code>SHA256SUMS</code> and installs to <code>~/.local/bin</code>, or to the folder given with <code>--to</code>.</p>
           </div>
         </section>
 
@@ -767,8 +771,7 @@ cargo binstall skillwright</pre>
           <div class="body">
             <ul class="soon">
               <li><strong>Skill plugin</strong><span>A skill plugin that teaches coding agents to use skillwright.</span></li>
-              <li><strong>Marketplace targeting</strong><span>Choose which marketplace a note is published to.</span></li>
-              <li><strong>Marketplace site generator</strong><span>A static website for a marketplace, built from a vault.</span></li>
+                            <li><strong>Marketplace site generator</strong><span>A static website for a marketplace, built from a vault.</span></li>
               <li><strong>Web UI</strong><span>Served by <code>skillwright ui</code> from the binary.</span></li>
               <li><strong>Editor plugins</strong><span>VS Code and IntelliJ. Obsidian is under consideration.</span></li>
               <li><strong>Harness reference</strong><span>How the harnesses differ, versioned over time.</span></li>
@@ -785,7 +788,7 @@ cargo binstall skillwright</pre>
           <li><a href="https://crates.io/crates/skillwright">crates.io</a></li>
           <li><a href="https://www.npmjs.com/package/@osdlc/skillwright">npm</a></li>
           <li>
-            <a href="https://github.com/osdlc/osdlc/releases?q=skillwright">Releases</a>
+            <a href="https://github.com/osdlc/skillwright/releases?q=skillwright">Releases</a>
           </li>
         </ul>
         <p>skillwright is part of osdlc. Licensed under MIT or Apache-2.0, at your option.</p>

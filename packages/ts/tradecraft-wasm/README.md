@@ -1,15 +1,13 @@
 # @osdlc/tradecraft-wasm
 
 The Tradecraft core, built to WebAssembly, for Node.js and Bun. skillwright
-keeps agent skills as Markdown notes in a vault and publishes them to the
-layout each agent expects: Claude Code, Codex, Cursor, Copilot, OpenCode and
-others. This package lets a JavaScript program do that without the
-`skillwright` command-line tool: publish a note, report what a publish would
-do, scan a vault, render or check a marketplace, and adopt published skills
-back into a vault.
+keeps agent skills as Markdown notes in a vault and builds them into the
+layout each agent expects: Claude Code, Codex, Cursor and Pi. This package lets a JavaScript program do that without the
+`skillwright` command-line tool: scan a vault, and render or check a
+marketplace.
 
 The package decides nothing itself. Parsing a note, resolving links, choosing
-a target's layout and deciding whether a destination file may be overwritten
+a target's layout and deciding whether an output file may be overwritten
 all happen in the `tradecraft-core` Rust crate. This package passes JSON across
 the boundary, turns a thrown core error into a typed one, and supplies the
 filesystem the core is handed.
@@ -30,23 +28,24 @@ ESM only. Node.js 22 or later, or Bun.
 ## Quick start
 
 ```ts
-import { createNodeVfs, publishSkill, statusOf } from '@osdlc/tradecraft-wasm'
+import { buildVault, createNodeVfs } from '@osdlc/tradecraft-wasm'
 
 const vfs = createNodeVfs()
-const request = {
-  skill_path: '/work/vault/skills/review/review.md', // absolute
-  destination_root: '/work/project', // absolute
-  target: 'claude',
-  skills_root: '/work/vault', // the whole vault
-}
-
-const report = publishSkill(vfs, request) // writes .claude/skills/review/SKILL.md
-console.log(report.files.map((f) => `${f.status} ${f.path}`))
-
-console.log(statusOf(vfs, request).state) // 'current'
+const report = buildVault(vfs, {
+  vault_root: '/work/vault', // absolute: holds skillwright.md and marketplaces/
+  marketplace: 'house', // marketplaces/house/, built into dist/house/
+  mode: 'build', // 'check' reports drift and writes nothing
+})
+console.log(report.marketplaces[0]?.report.changed)
 ```
 
-More in `examples/`.
+Leave `marketplace` out to build every marketplace. A build writes all of
+them or none. The core reads the
+shared defaults and `build.harnesses` from `skillwright.md` itself, and
+everything else from the vault's notes; a request carries no configuration.
+`harnesses` picks some of `'claude'`, `'codex'`, `'cursor'` and `'pi'`, and
+replaces the root file's list for that call. The root file's list is only
+the default.
 
 ## API
 
@@ -55,23 +54,16 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 
 | Export                        | Does                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------- |
-| `publishSkill(vfs, request)`  | Writes one note to one destination for one target. `mode: 'dry-run'` writes nothing. |
-| `statusOf(vfs, request)`      | One note's state at one destination: `never-published`, `current`, `stale`, `conflict` or `unknown`. |
-| `discoverComponents(vfs, request)` | Scans a vault for publishable notes, and reports the notes it could not read. With `out_root`, it leaves out what a build owns there. |
-| `loadMarketplace(vfs, request)` | Loads the vault as a marketplace model and writes nothing. With `out_root`, it leaves out what a build owns there. |
-| `exportSkills(vfs, request)`  | Renders the vault into one marketplace tree per agent. `mode: 'check'` reports drift and writes nothing. |
-| `adoptSkills(vfs, request)`   | Imports published `SKILL.md` bundles into a vault. `mode: 'dry-run'` previews it. |
-| `knownTargets()`              | The target names the core accepts.                                              |
-| `canonicalTarget(name)`       | The one destination a target name folds onto, or `null`.                        |
-| `publishableKinds()`          | The entity kinds a publish has a projection for.                                |
-| `validateNamespace(stem)`     | Throws `InvalidNamespaceError` when `stem` cannot be a frontmatter namespace.   |
+| `discoverComponents(vfs, request)` | Scans a vault's `marketplaces/` for components, and reports the notes it could not read. |
+| `loadMarketplace(vfs, request)` | Loads one marketplace of the vault and writes nothing: its plugins, and each component's description, harness blocks, calls and files. The rendered bodies do not cross. |
+| `buildVault(vfs, request)`    | Renders every marketplace, or the one `marketplace` names, into its `<vault_root>/dist/<m>/`, one tree per agent, and writes all of them or none. `mode: 'check'` reports drift and writes nothing. |
+| `parseRootFile(text)`         | Reads the text of `skillwright.md`: its shared defaults, its `build` settings and a warning per unknown key. |
+| `knownTargets()`              | The target names the core accepts: the `Target` type's four names.              |
 | `createNodeVfs(options?)`     | The `Vfs` over `node:fs`.                                                       |
 | `toCorePath`, `toHostPath`    | Convert a host path to the core's `/` form and back. They matter on Windows.    |
 
-A call that the core refuses as a whole throws `CoreError`. Its `coreName` is
-the core's error variant, such as `Refused` or `PathEscapesRoot`. A refusal of
-one file comes back inside the report with `status: 'refused'`. A request
-whose `namespace` the core rejects throws `InvalidNamespaceError` instead.
+A call that the core refuses throws `CoreError`. Its `coreName` is the core's
+error variant, such as `Refused` or `PathEscapesRoot`.
 
 The request and report types are exported too. They are generated from the
 Rust source, so they cannot drift from it.
@@ -79,11 +71,10 @@ Rust source, so they cannot drift from it.
 ## Behaviour
 
 - All paths in a request are absolute. The core reads no current directory.
-- A publish never writes outside the destination root, and never writes into
-  the vault.
-- The package fixes the `.skillwright/manifest.json` manifest and the
-  `Generated by skillwright` marker in generated files. The frontmatter keys
-  are bare unless a request sets a `namespace`.
+- A build writes only under `<vault_root>/dist/<m>/`, through the `Vfs` it is
+  given. It never writes the vault's notes.
+- Generated files carry the `Generated by skillwright` marker. Frontmatter
+  keys carry no prefix.
 
 ## Runtimes and platforms
 

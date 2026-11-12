@@ -1,6 +1,6 @@
 # skillwright
 
-A command-line tool that publishes a vault of markdown skill notes into the formats of coding-agent tools (Claude Code, Codex, Cursor and Pi), checks them for drift, and authors and reorganises the vault.
+A command-line tool that builds a vault of markdown skill notes into plugin marketplaces for coding-agent tools (Claude Code, Codex, Cursor and Pi), and checks the output for drift.
 
 ## Install
 
@@ -9,6 +9,17 @@ brew install osdlc/tap/skillwright
 npm i -g @osdlc/skillwright
 cargo install skillwright
 ```
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `init <marketplace> <plugin>` | Write a new vault in the current folder |
+| `build` | Build every marketplace into `dist/<m>/` |
+| `check` | Compare the vault with `dist/<m>/`; exit 1 on drift |
+| `bump [plugin]` | Raise a plugin's or a marketplace's `version` |
+
+See the [CLI README](packages/rust/skillwright/README.md) for options and exit codes.
 
 ## What is here
 
@@ -23,7 +34,7 @@ cargo install skillwright
 - [Getting started](docs/guide/getting-started.md)
 - [`skillwright.md` reference](docs/reference/skillwright-md.md)
 - [Field reference](docs/reference/fields.md), for each kind of note
-- [Structure spec](docs/spec/structure-v1.md), versioned
+- [Structure spec](docs/spec/structure-v2.md), versioned
 
 Releases are built from this repository. See
 [RELEASING.md](packages/rust/skillwright/RELEASING.md).
