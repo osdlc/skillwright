@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::error::CoreError;
 use crate::export::{ExportMode, VaultRequest};
 use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
+use crate::refusal;
 use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
 
@@ -152,7 +153,7 @@ pub fn load_vault(
         && !layout.marketplaces.iter().any(|m| m == name)
     {
         return Err(CoreError::refused(
-            "unknown-marketplace",
+            refusal::UNKNOWN_MARKETPLACE,
             format!(
                 "no marketplace `{name}` in {}: it holds {}",
                 root.display(),
@@ -206,13 +207,10 @@ pub fn read_root_file(vfs: &dyn Vfs, root: &Path) -> Result<RootFile, CoreError>
     parse_root_file(&text).map_err(|err| malformed_root(&file, &err.to_string()))
 }
 
-/// The reason a root file cannot be read.
-const MALFORMED_ROOT_FILE_REASON: &str = "malformed-root-file";
-
 /// The refusal for a root file at `file` that cannot be read.
 fn malformed_root(file: &Path, detail: &str) -> CoreError {
     CoreError::refused(
-        MALFORMED_ROOT_FILE_REASON,
+        refusal::MALFORMED_ROOT_FILE,
         format!("{}: {detail}. Nothing was written", file.display()),
     )
 }

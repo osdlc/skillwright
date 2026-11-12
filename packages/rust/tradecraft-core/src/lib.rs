@@ -26,7 +26,8 @@
 //! | [`vfs`] | The filesystem seam every I/O-touching function takes |
 //! | [`model`] | The marketplace model: a vault loaded once, every body resolved |
 //! | [`hooks_file`] | A plugin's `hooks/hooks.json`, parsed and localized per harness |
-//! | [`error`] | The crate's error type and its refusal tokens |
+//! | [`error`] | The crate's error type |
+//! | [`refusal`] | Every refusal token |
 //! | [`semver`] | The semver-bump arithmetic |
 //!
 //! # Specs named in comments
@@ -71,6 +72,7 @@ pub mod layout;
 pub mod model;
 pub mod paths;
 pub mod projection;
+pub mod refusal;
 pub mod semver;
 pub mod settings;
 pub mod skill;
@@ -83,8 +85,8 @@ pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, S
 pub use compile::{CallContext, IndexedSkill, SkillIndex};
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{
-    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, MISSING_DESCRIPTION_REASON,
-    SkippedNote, UNKNOWN_KEY_REASON, default_name, discover_components, refuse_undescribed,
+    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, UNKNOWN_KEY_REASON,
+    default_name, discover_components, refuse_undescribed,
 };
 pub use error::*;
 pub use export::{

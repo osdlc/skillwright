@@ -22,18 +22,11 @@ pub fn split_frontmatter(source: &str) -> (&str, &str) {
         .unwrap_or(("", source))
 }
 
-/// Reads a markdown file as UTF-8, keeping the path in the error.
-///
-/// `Io`/`InvalidData` is the variant because it is the one that already
-/// carries the path a UI has to name.
+/// Reads a markdown file as UTF-8. Bytes that are not UTF-8 are
+/// [`CoreError::unreadable`].
 pub(crate) fn read_utf8(vfs: &dyn Vfs, path: &Path) -> Result<String, CoreError> {
     let bytes = vfs.read_file(path)?;
-    String::from_utf8(bytes).map_err(|e| {
-        CoreError::io(
-            path,
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-        )
-    })
+    String::from_utf8(bytes).map_err(|e| CoreError::unreadable(path, format!("not UTF-8: {e}")))
 }
 
 /// Renders a relative path with forward slashes, so ids are stable across

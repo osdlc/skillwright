@@ -18,6 +18,7 @@ use agent_adapt::RuntimeId;
 
 use crate::content::SkillProjection;
 use crate::error::CoreError;
+use crate::refusal;
 
 /// One file projection wants on disk, relative to a pack root.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,7 +83,7 @@ pub fn project_skill(
 fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
     match error {
         agent_adapt::Error::UnsafePath { path, reason } => CoreError::refused(
-            "unsafe-path",
+            refusal::UNSAFE_PATH,
             format!(
                 "{target}: `{path}` would not stay inside the skill directory — {reason}. \
                  Nothing was rendered, and nothing was written"
@@ -123,7 +124,7 @@ pub fn project_command(
         let command = to_adapt_command(snapshot, id, overrides_target)?;
         let runtime = agent_adapt::runtimes::command_renderer_for(id).ok_or_else(|| {
             CoreError::refused(
-                "no-renderer",
+                refusal::NO_RENDERER,
                 format!("{target} has no command layout, so a command cannot be published there"),
             )
         })?;
@@ -167,7 +168,7 @@ pub fn project_plugin_hooks(
     let target = id.as_str();
     let Some(renderer) = agent_adapt::runtimes::hook_renderer_for(id) else {
         return Err(CoreError::refused(
-            "no-renderer",
+            refusal::NO_RENDERER,
             format!("{target} has no hooks layout, so a hook cannot be published there"),
         ));
     };
@@ -211,7 +212,7 @@ fn to_adapt_command(
     let content = &snapshot.content;
     let slug = agent_adapt::naming::slugify_skill_name(&content.name).map_err(|e| {
         CoreError::refused(
-            "unsafe-path",
+            refusal::UNSAFE_PATH,
             format!("`{}` cannot become a command file name: {e}", content.name),
         )
     })?;
@@ -549,7 +550,10 @@ mod tests {
             let err = project_skill(&snap, &[RuntimeId::ClaudeCode], None).unwrap_err();
             let message = err.to_string();
 
-            assert!(matches!(err, CoreError::Refused(_)), "{escape}: {message}");
+            assert!(
+                matches!(err, CoreError::Refused { .. }),
+                "{escape}: {message}"
+            );
             assert!(
                 message.starts_with("refused: unsafe-path: "),
                 "{escape}: {message}"
@@ -603,7 +607,10 @@ mod tests {
         let snap = snapshot("ship", vec![]);
         for target in [RuntimeId::Cursor, RuntimeId::Pi] {
             let err = project_command(&snap, &[target], None).unwrap_err();
-            assert!(matches!(err, CoreError::Refused(_)), "{target:?}: {err}");
+            assert!(
+                matches!(err, CoreError::Refused { .. }),
+                "{target:?}: {err}"
+            );
             assert!(err.to_string().contains("no-renderer"), "{target:?}: {err}");
         }
     }

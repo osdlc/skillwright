@@ -15,6 +15,11 @@ API:
 
 - `prompt::ask` is removed.
 
+### Changed
+
+- `build --json` and `check --json` over several marketplaces list each refusal with `token` and `detail` in place of `error`.
+- A note that is not UTF-8 or whose frontmatter does not parse is no longer reported as `reading <path>: <what>`. It is `<path>: <what>` in the list of skipped notes, and `unreadable-note: <path>: <what>` on its own.
+
 ## [0.12.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.1...skillwright/v0.12.0) - 2026-11-12
 
 0.11.1 shipped these changes by mistake under a patch version and was yanked.

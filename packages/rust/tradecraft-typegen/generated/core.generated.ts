@@ -280,11 +280,8 @@ export interface SkippedNote {
   path: string;
 
   /**
-   * A closed-set reason token. The refusals that already carry one keep it
-   * (`malformed`); everything else — frontmatter that will not parse,
-   * a name the Agent Skills spec does not admit, an unreadable file — is
-   * `unreadable-note`, the vocabulary's entry for "this note does not
-   * parse".
+   * The refusal's token, from [`crate::refusal`]. An error with no token,
+   * such as a file that cannot be read, is `unreadable-note`.
    */
   reason: string;
 
@@ -514,8 +511,11 @@ export interface MarketplaceRefusal {
   /** The marketplace's folder name. */
   marketplace: string;
 
-  /** What refused it, as the error reads. */
-  error: string;
+  /** The refusal's token, or `None` for an error that is not a refusal. */
+  token: string | null;
+
+  /** What refused it, after the token: [`CoreError::detail`]. */
+  detail: string;
 }
 
 /**

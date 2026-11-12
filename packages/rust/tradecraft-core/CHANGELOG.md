@@ -21,6 +21,14 @@ API:
 - `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId` and `Marketplace::folder` is a `String`.
 - `keys::field_reference` is no longer public.
 
+### Changed
+
+- `CoreError::Refused` is `{ token, message }`. The token is a `refusal::Token`, and the new `refusal` module lists every one. `CoreError::token()`, `detail()` and `reason()` read a refusal without parsing its message.
+- `CoreError::RootNotFound` is removed, and messages say "vault root" in place of "corpus root".
+- `CoreError::malformed` is renamed `unreadable` and refuses with `unreadable-note`. A note that is not UTF-8 is refused the same way, not reported as `Io`.
+- `MarketplaceRefusal` has `token` and `detail` in place of `error`.
+- `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
+
 ## [0.50.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.1...tradecraft-core/v0.50.0) - 2026-11-12
 
 0.49.1 shipped these changes by mistake under a patch version and was yanked.

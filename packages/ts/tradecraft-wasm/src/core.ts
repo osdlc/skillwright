@@ -113,7 +113,6 @@ export type LoadRequest = Omit<GeneratedLoadRequest, 'harnesses'> & {
  * set to one of these by `packages/rust/tradecraft-wasm/src/lib.rs::variant_name`.
  */
 export type CoreErrorName =
-  | 'RootNotFound'
   | 'PathEscapesRoot'
   | 'Io'
   | 'Refused'
@@ -126,7 +125,6 @@ export type CoreErrorName =
   | 'SwapFailed'
 
 const CORE_ERROR_NAMES: ReadonlySet<string> = new Set<CoreErrorName>([
-  'RootNotFound',
   'PathEscapesRoot',
   'Io',
   'Refused',
@@ -142,11 +140,14 @@ const CORE_ERROR_NAMES: ReadonlySet<string> = new Set<CoreErrorName>([
  */
 export class CoreError extends Error {
   readonly coreName: CoreErrorName | 'Unknown'
+  /** A `Refused` error's reason token, such as `unsafe-path`. */
+  readonly token: string | undefined
 
-  constructor(message: string, coreName: CoreErrorName | 'Unknown') {
+  constructor(message: string, coreName: CoreErrorName | 'Unknown', token?: string) {
     super(message)
     this.name = 'CoreError'
     this.coreName = coreName
+    this.token = token
   }
 }
 
@@ -155,7 +156,8 @@ function toCoreError(raw: unknown): CoreError {
     const coreName: CoreErrorName | 'Unknown' = CORE_ERROR_NAMES.has(raw.name)
       ? (raw.name as CoreErrorName)
       : 'Unknown'
-    return new CoreError(raw.message, coreName)
+    const token = 'token' in raw && typeof raw.token === 'string' ? raw.token : undefined
+    return new CoreError(raw.message, coreName, token)
   }
   return new CoreError(String(raw), 'Unknown')
 }

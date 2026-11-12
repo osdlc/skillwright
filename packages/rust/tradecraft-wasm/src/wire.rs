@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use tradecraft_core::model::load::{LoadRequest, load as core_load};
 use tradecraft_core::model::{Asset, Component, Marketplace, Plugin, Segment, SkillId};
+use tradecraft_core::refusal;
 use tradecraft_core::{CoreError, DiscoveryWarning, EntityKind, KNOWN_TARGETS, Vfs};
 
 /// A harness name: one of `KNOWN_TARGETS`.
@@ -52,7 +53,7 @@ impl Target {
             .find(|t| t.as_str() == name)
             .ok_or_else(|| {
                 CoreError::refused(
-                    "unknown-target",
+                    refusal::UNKNOWN_TARGET,
                     format!("`{name}` is not one of {KNOWN_TARGETS:?}"),
                 )
             })
