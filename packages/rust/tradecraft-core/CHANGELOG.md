@@ -49,6 +49,7 @@ API:
 - Messages say "vault root" in place of "corpus root".
 - A name that is not a harness is refused one way, in a request and in `build.harnesses`: `` `<name>` is not a harness. The harnesses are `claude`, `codex`, `cursor` and `pi` ``, with `unknown-harness` on a request. Of several unknown names, the first is named.
 - `UnitStatus` is `Same` or `Differs` in place of `Ok`, `Drift`, `Written` and `Unchanged`. A report's `mode` gives the verb: a check reads `same` as ok and `differs` as drift, a build reads them as unchanged and written.
+- A symlink in the layout walk whose marketplace folder, or a folder above it, the host cannot resolve is refused with `unsafe-path`, not reported as `Io`.
 - `VaultPlan::commit` re-reads each `dist/<m>/` and refuses with the new `output-changed` token, writing nothing, when an owned path changed since `plan` read it. A build that rendered again after its prompt had the same protection.
 
 ## [0.50.2](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.1...tradecraft-core/v0.50.2) - 2026-11-28
