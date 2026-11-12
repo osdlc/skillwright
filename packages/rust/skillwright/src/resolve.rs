@@ -11,7 +11,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    LoadedVault, NativeVfs, VaultMarketplace, check_vault_root, find_vault_root, load_vault,
+    BuildScope, LoadedVault, NativeVfs, VaultMarketplace, check_vault_root, find_vault_root,
+    load_vault,
 };
 
 use crate::config::{print_warnings, resolve_against_cwd};
@@ -80,7 +81,8 @@ pub fn resolve_at(
     marketplace: Option<&str>,
     err: &mut dyn Write,
 ) -> Result<ResolvedRun, i32> {
-    let loaded = load_vault(&NativeVfs, vault, marketplace)
+    let scope = BuildScope::from(marketplace.map(str::to_owned));
+    let loaded = load_vault(&NativeVfs, vault, &scope)
         .map_err(|problem| refused(err, &problem.to_string()))?;
     print_warnings(&loaded.settings, &loaded.root_file, err);
     Ok(ResolvedRun {

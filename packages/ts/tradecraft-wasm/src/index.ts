@@ -26,6 +26,7 @@ export type {
   MarketplaceRefusal,
   MarketplaceReport,
   Plugin,
+  Position,
   ExportMode,
   ExportReport,
   ExportUnit,

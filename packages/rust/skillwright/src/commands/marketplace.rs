@@ -101,9 +101,9 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     let writes = verb == ExportVerb::Build && !flags.dry_run;
     let request = |mode: ExportMode| {
         let mut request = VaultRequest::new(run.loaded.root.clone());
-        request.marketplace.clone_from(&flags.marketplace);
-        request.harnesses.clone_from(&flags.harnesses);
-        request.mode = mode;
+        request.scope = flags.marketplace.clone().into();
+        request.options.harnesses.clone_from(&flags.harnesses);
+        request.options.mode = mode;
         request
     };
     // Every run checks first. A build writes only when every marketplace

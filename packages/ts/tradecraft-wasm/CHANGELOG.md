@@ -24,6 +24,7 @@
 - `CoreErrorName` loses `RootNotFound`, which the core never threw.
 - A note that is not UTF-8 or whose frontmatter does not parse throws `Refused` (`unreadable-note`), not `Io`: a caller that branches on `coreName === 'Io'` sees a refusal instead.
 - `ExportUnit`'s `root` is typed as `Harness`, not `string`, and `knownTargets()` is typed as `Harness[]` in `WasmResponses` too.
+- `DiscoveredComponent` carries `Position`; the TS types are regenerated. Its `position` (`at`, `marketplace`, and `plugin`, `kind` and `name` where the note has them) replaces `name`, `kind`, `plugin` and `marketplace`. `Position` is exported.
 
 ### Changed
 

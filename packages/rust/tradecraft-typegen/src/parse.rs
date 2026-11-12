@@ -57,6 +57,8 @@ pub struct SerdeAttrs {
     pub skip: bool,
     /// `#[serde(tag = "...")]` — an internally tagged enum.
     pub tag: Option<String>,
+    /// `#[serde(from = "...")]` — the type the wire carries in its place.
+    pub from: Option<String>,
 }
 
 /// One named field of a struct or a struct variant.
@@ -435,6 +437,7 @@ fn serde_attrs(attrs: &[syn::Attribute]) -> SerdeAttrs {
                 "rename_all" => out.rename_all = meta_str(&meta),
                 "rename_all_fields" => out.rename_all_fields = meta_str(&meta),
                 "tag" => out.tag = meta_str(&meta),
+                "from" => out.from = meta_str(&meta),
                 _ => {}
             }
             // Consume any `= "..."` this key carried, so parsing continues.

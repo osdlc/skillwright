@@ -68,7 +68,7 @@ fn without_hooks() -> MemVfs {
 
 fn request(mode: ExportMode) -> VaultRequest {
     let mut request = VaultRequest::new("/vault");
-    request.mode = mode;
+    request.options.mode = mode;
     request
 }
 
@@ -199,7 +199,7 @@ fn claude_plugin_root_in_a_hooks_file_is_refused() {
 fn the_cursor_warning_needs_cursor_in_the_build() {
     let vfs = vault(&canonical());
     let mut request = request(ExportMode::Build);
-    request.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
+    request.options.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
     let report = export(&vfs, &request).unwrap();
     assert!(cursor_warnings(&report).is_empty(), "{:?}", report.warnings);
 }
@@ -321,7 +321,7 @@ fn each_hook_a_harness_cannot_carry_is_a_warning() {
         }}"#,
     );
     let mut request = request(ExportMode::Build);
-    request.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
+    request.options.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
     let report = export(&vfs, &request).unwrap();
     let left_out: Vec<_> = report
         .warnings

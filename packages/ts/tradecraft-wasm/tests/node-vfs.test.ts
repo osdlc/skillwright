@@ -113,10 +113,10 @@ describe('a host without stat', () => {
   test('discovers the same components as one with it', () => {
     const { vault } = repoWithVault('no-stat')
     const { stat: _stat, ...withoutStat } = createNodeVfs()
-    const names = (vfs: Vfs) =>
-      discoverComponents(vfs, { vault_root: vault }).components.map((c) => c.name)
-    expect(names(withoutStat)).toEqual(names(createNodeVfs()))
-    expect(names(withoutStat)).toContain('review')
+    const paths = (vfs: Vfs) =>
+      discoverComponents(vfs, { vault_root: vault }).components.map((c) => c.vault_relative_path)
+    expect(paths(withoutStat)).toEqual(paths(createNodeVfs()))
+    expect(paths(withoutStat)).toContain('marketplaces/house/plugins/tools/skills/review/review.md')
   })
 
   test('the vault walk asks stat, and a malformed answer fails it', () => {
