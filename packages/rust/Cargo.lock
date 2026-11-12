@@ -941,7 +941,6 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "thiserror",
- "unicode-normalization",
  "vfs-seam",
  "vfs-walk",
  "yaml-splice",
@@ -1025,9 +1024,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vfs-seam"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23639d4340fded7ca3c23a53ef8e8d6bdd4c97880d6863e952d7e1eb6aae6891"
+checksum = "962c534c3d406e4288918237b1791eef8f23aa5d4783131eb199d699b67c731b"
 dependencies = [
  "thiserror",
 ]

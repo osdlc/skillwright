@@ -153,7 +153,7 @@ pub enum ExportMode {
     /// Render, and swap any drifted root into place.
     #[default]
     Build,
-    /// Render into the overlay, compare, write nothing — under any outcome.
+    /// Render and compare, and write nothing under any outcome.
     Check,
 }
 
@@ -300,17 +300,6 @@ pub enum StaleKind {
     File,
     /// A directory holding nothing, invisible to a file comparison.
     EmptyDir,
-}
-
-impl StaleKind {
-    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Plugin => "plugin",
-            Self::File => "file",
-            Self::EmptyDir => "empty-dir",
-        }
-    }
 }
 
 /// One unit's outcome. `check` speaks `ok`/`drift`; `build` speaks
@@ -735,10 +724,7 @@ fn plan_with(
     let warnings = market.warnings.clone();
     let out = match &request.compare_with {
         Some(path) => normalize(path),
-        None => crate::paths::dist_dir(
-            &normalize(&request.vault_root),
-            market.folder.as_deref().unwrap_or(&market.name),
-        ),
+        None => crate::paths::dist_dir(&normalize(&request.vault_root), &market.folder),
     };
 
     // One tree per harness, translated from the one model, at the final
@@ -749,20 +735,7 @@ fn plan_with(
     for spec in &roots {
         let translator = translator_for(spec.name).expect("every harness translates");
         let tree = translator.translate(&market)?;
-        rendered.push(
-            tree.files
-                .into_iter()
-                .map(|(path, file)| {
-                    (
-                        path,
-                        PreviewWrite {
-                            bytes: file.bytes,
-                            executable: file.executable,
-                        },
-                    )
-                })
-                .collect(),
-        );
+        rendered.push(tree.files);
         translators.push(translator);
     }
 
@@ -860,7 +833,8 @@ struct DestState {
     /// Directories holding nothing — invisible to a file diff, removed by the
     /// swap, so the report has to carry them.
     empty_dirs: Vec<String>,
-    /// Immediate directories under `plugins/`, for the stale-plugin sweep.
+    /// Immediate directories under the packs folder, for the stale-plugin
+    /// sweep.
     plugin_dirs: Vec<String>,
 }
 
@@ -2539,7 +2513,7 @@ mod tests {
         );
     }
 
-    // `read_vault_skill` never fills `SkillContent::arguments` — the load has
+    // `read_vault_note` never fills `SkillContent::arguments` — the load has
     // to call `apply_arguments`, or a marketplace-published skill would carry
     // no hint and no section at all.
     #[test]
@@ -3935,7 +3909,7 @@ mod tests {
         assert!(err.contains("ambiguous-marketplace"), "{err}");
         assert!(err.contains("`acme`"), "{err}");
         assert!(err.contains("`beta`"), "{err}");
-        // The refusal is the rail: nothing was rendered on the way to it.
+        // Nothing was rendered on the way to the refusal.
         assert!(paths_under(&vfs, Path::new("/vault/dist/house")).is_empty());
     }
 

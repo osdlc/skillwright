@@ -8,7 +8,7 @@
 //!
 //! # The strip, again
 //!
-//! [`crate::vault::read_vault_skill`] lifts skillwright's keys out of a
+//! [`crate::vault::read_vault_note`] lifts skillwright's keys out of a
 //! note's frontmatter before a [`crate::SkillContent`] exists. But
 //! `SkillContent` is a public type with a public `annotations` map, and
 //! `agent-adapt` emits `annotations` verbatim, so `skill_metadata` drops
@@ -37,60 +37,15 @@ pub struct ProjectedFile {
 /// target this build cannot render is a configuration error, and skipping
 /// would ship less, silently.
 ///
-/// Carries no per-target override block: the callers that hold one render
-/// through [`project_skill_reporting`], which takes the harness to look one
-/// up by.
-pub fn project_skill(
-    snapshot: &SkillProjection,
-    targets: &[String],
-) -> Result<Vec<ProjectedFile>, CoreError> {
-    project_skill_reporting(snapshot, targets, None).map(|(files, _)| files)
-}
-
-/// One harness block key that changed nothing in the render for the harness
-/// it was written for.
-///
-/// A diagnostic, never a refusal: the note builds exactly as it would
-/// have, and the report says the key is spending an author's attention on
-/// something the projection already emits.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RedundantOverride {
-    /// The harness, canonically named.
-    pub target: String,
-    /// The key, spelled as the block spells it.
-    pub key: String,
-}
-
-impl std::fmt::Display for RedundantOverride {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "`{}` for `{}` is what the projection already writes",
-            self.key, self.target
-        )
-    }
-}
-
-/// [`project_skill`], plus the redundant-override diagnostics the render
-/// produced.
-///
-/// Two entry points rather than one because the diagnostic is not a file and
-/// most callers want files. Whichever is called, the render happens once.
-///
 /// `overrides_target` is the canonical harness whose harness block this
 /// render applies, which need not be the runtime target it renders with.
 /// `None` renders no override block.
-///
-/// # Errors
-///
-/// Every one [`project_skill`] raises.
-pub fn project_skill_reporting(
+pub fn project_skill(
     snapshot: &SkillProjection,
     targets: &[String],
     overrides_target: Option<&str>,
-) -> Result<(Vec<ProjectedFile>, Vec<RedundantOverride>), CoreError> {
+) -> Result<Vec<ProjectedFile>, CoreError> {
     let mut out = Vec::new();
-    let mut redundant = Vec::new();
     for target in targets {
         let id = parse_runtime_target(target)?;
         let skill = to_adapt_skill(snapshot, overrides_target);
@@ -99,14 +54,6 @@ pub fn project_skill_reporting(
         let files = runtime
             .render_skill(&skill)
             .map_err(|e| refusal(target, e))?;
-        // The renderer applies the block; this asks the same render what it
-        // changed. `render_skill_md` and its reporting sibling produce the
-        // same bytes, so the report cannot describe a different file.
-        let keys = redundant_override_keys(snapshot, target, overrides_target)?;
-        redundant.extend(keys.into_iter().map(|key| RedundantOverride {
-            target: overrides_target.unwrap_or(target).to_owned(),
-            key,
-        }));
         for file in files {
             out.push(ProjectedFile {
                 relative_path: forward_slashed(&file.path),
@@ -116,37 +63,7 @@ pub fn project_skill_reporting(
         }
     }
     out.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    Ok((out, redundant))
-}
-
-/// Which of one snapshot's override keys for `target` the render already
-/// writes byte for byte.
-///
-/// Empty when the note carries no block for this harness, which is the
-/// ordinary note, and empty when the runtime renders no skills — there is no
-/// render for a key to be redundant against.
-///
-/// `target` is a runtime target name, the vocabulary [`project_skill`] takes;
-/// `overrides_target` is the canonical harness whose block to score, or
-/// `None` for a snapshot that carries none.
-///
-/// # Errors
-///
-/// An unknown target name, and the refusal a render raises.
-pub fn redundant_override_keys(
-    snapshot: &SkillProjection,
-    target: &str,
-    overrides_target: Option<&str>,
-) -> Result<Vec<String>, CoreError> {
-    let id = parse_runtime_target(target)?;
-    let skill = to_adapt_skill(snapshot, overrides_target);
-    if skill.overrides.is_empty() {
-        return Ok(Vec::new());
-    }
-    match agent_adapt::runtimes::redundant_skill_overrides(id, &skill) {
-        None => Ok(Vec::new()),
-        Some(report) => report.map_err(|e| refusal(target, e)),
-    }
+    Ok(out)
 }
 
 /// A render failure, as the variant that says what actually happened.
@@ -158,8 +75,8 @@ pub fn redundant_override_keys(
 /// so an attempted path escape logged as a generic render failure is an
 /// attempted path escape nobody will ever notice.
 ///
-/// The token is `unsafe-path`, the same one
-/// [`crate::guard::resolve_write_path`] refuses under: two layers apply one
+/// The token is `unsafe-path`, the same one [`crate::guard::within`]
+/// refuses under: two layers apply one
 /// rule, so they answer in one word. Everything else `agent-adapt` can fail
 /// with is a projection error, unchanged.
 fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
@@ -525,7 +442,7 @@ mod tests {
             ("codex-cli", ".agents/skills/alpha/SKILL.md"),
         ];
         for (target, expected) in cases {
-            let files = project_skill(&snap, &[target.to_owned()]).unwrap();
+            let files = project_skill(&snap, &[target.to_owned()], None).unwrap();
             assert_eq!(files.len(), 1, "{target}");
             assert_eq!(files[0].relative_path, expected, "{target}");
         }
@@ -540,7 +457,7 @@ mod tests {
                 ("helper.ts".to_owned(), b"export {}\n".to_vec(), false),
             ],
         );
-        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let files = project_skill(&snap, &["claude-code".to_owned()], None).unwrap();
         let paths: Vec<_> = files.iter().map(|f| f.relative_path.as_str()).collect();
         assert_eq!(
             paths,
@@ -568,7 +485,7 @@ mod tests {
             content: c,
             resources: vec![],
         };
-        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let files = project_skill(&snap, &["claude-code".to_owned()], None).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         let close = text.find("\n---\n").expect("closing fence");
@@ -594,13 +511,13 @@ mod tests {
             "sorted key order"
         );
         // Rendering twice with the same input is byte-stable.
-        let again = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let again = project_skill(&snap, &["claude-code".to_owned()], None).unwrap();
         assert_eq!(files[0].content, again[0].content);
     }
 
     #[test]
     fn our_keys_are_stripped_at_emit_whatever_route_they_arrived_by() {
-        // `read_vault_skill` never puts one of our keys in `annotations`, but
+        // `read_vault_note` never puts one of our keys in `annotations`, but
         // `SkillContent` is public and a caller can build one from anywhere,
         // so the emit seam checks too. A prefixed key is not ours.
         let mut c = content("alpha");
@@ -615,7 +532,7 @@ mod tests {
             resources: vec![],
         };
 
-        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
+        let files = project_skill(&snap, &["claude-code".to_owned()], None).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         assert!(!text.contains("ours"), "{text}");
@@ -636,7 +553,7 @@ mod tests {
             "C:\\Windows\\evil.md",
         ] {
             let snap = snapshot("alpha", vec![(escape.to_owned(), b"x".to_vec(), true)]);
-            let err = project_skill(&snap, &["claude-code".to_owned()]).unwrap_err();
+            let err = project_skill(&snap, &["claude-code".to_owned()], None).unwrap_err();
             let message = err.to_string();
 
             assert!(matches!(err, CoreError::Refused(_)), "{escape}: {message}");
@@ -655,7 +572,7 @@ mod tests {
         // A name with no legal slug is refused by the renderer too, and it is
         // not a path escape — so the `unsafe-path` mapping must not swallow it.
         let snap = snapshot("!!!", vec![]);
-        let err = project_skill(&snap, &["claude-code".to_owned()]).unwrap_err();
+        let err = project_skill(&snap, &["claude-code".to_owned()], None).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)), "{err}");
     }
 
@@ -665,7 +582,7 @@ mod tests {
         // `opencode` is a runtime agent-adapt renders, but not a harness
         // skillwright builds.
         for target in ["windsurf", "opencode"] {
-            let err = project_skill(&snap, &[target.to_owned()]).unwrap_err();
+            let err = project_skill(&snap, &[target.to_owned()], None).unwrap_err();
             assert!(matches!(err, CoreError::Projection(_)), "{target}: {err}");
         }
     }
@@ -673,8 +590,12 @@ mod tests {
     #[test]
     fn multi_target_projection_renders_every_target_once() {
         let snap = snapshot("alpha", vec![("h.ts".to_owned(), b"x".to_vec(), false)]);
-        let files =
-            project_skill(&snap, &["claude-code".to_owned(), "codex-cli".to_owned()]).unwrap();
+        let files = project_skill(
+            &snap,
+            &["claude-code".to_owned(), "codex-cli".to_owned()],
+            None,
+        )
+        .unwrap();
         assert_eq!(files.len(), 4);
         assert!(
             files

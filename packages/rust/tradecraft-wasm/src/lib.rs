@@ -67,7 +67,7 @@ use tradecraft_core::settings::parse_root_file as core_parse_root_file;
 use wasm_bindgen::prelude::*;
 use wire::marketplace as wire_marketplace;
 
-pub use js_vfs::{HostVfs, JsVfs};
+use js_vfs::JsVfs;
 
 /// Every name `build.harnesses` and a request's `harnesses` accept, in report order:
 /// `tradecraft_core::harness::KNOWN_TARGETS`, verbatim.

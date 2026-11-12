@@ -19,7 +19,6 @@ use super::{
 use crate::compile::{
     CallContext, CompileSource, IndexedSkill, Recorded, SkillIndex, compile_note,
 };
-use crate::content::SkillContent;
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, discover_in,
     refuse_undescribed,
@@ -225,12 +224,12 @@ pub(crate) fn load_for(
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing to build rather than that it is not there.
     let market = resolve_marketplace(&discovered, marketplace)?;
-    let cascade = Cascade::over(&discovered, Some(&market), defaults);
+    let cascade = Cascade::over(&discovered, &market, defaults);
     // Before members inherit a block, so a wrong value names its container.
     crate::harness::manifest::check_block_values(&cascade.config)?;
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
-        .filter(|component| belongs_to(component, Some(&market)))
+        .filter(|component| belongs_to(component, &market))
         .collect();
     // Only this marketplace's notes: another marketplace's gap neither
     // refuses this build nor appears in its report.
@@ -323,16 +322,14 @@ pub(crate) fn load_for(
             let mut note = read_vault_note(vfs, &component.discovered.entry_path, component.kind)?;
             cascade.apply(&mut note, component.kind, Some(&plugin_name));
             component.extensions = extensions(&note.frontmatter, &component.discovered)?;
-            let (resolved, content) = resolve_body(
+            component.resolved = Some(resolve_body(
                 vfs,
                 layout,
                 &component.discovered,
                 note,
                 component.kind,
                 &calls,
-            )?;
-            component.content = Some(content);
-            component.resolved = Some(resolved);
+            )?);
         }
         plugin.references = shared_references(vfs, layout, &market, &plugin_name, &calls)?;
     }
@@ -346,7 +343,7 @@ pub(crate) fn load_for(
 
     Ok(Marketplace {
         name,
-        folder: Some(market),
+        folder: market,
         config: cascade.config,
         plugins,
         uncarried,
@@ -372,7 +369,7 @@ pub fn resolve_body(
     note: VaultNote,
     kind: EntityKind,
     calls: &CallContext<'_>,
-) -> Result<(Resolved, SkillContent), CoreError> {
+) -> Result<Resolved, CoreError> {
     let record = calls
         .record
         .expect("a load compiles through a recording context");
@@ -421,12 +418,12 @@ pub fn resolve_body(
             }
         })
         .collect();
-    let resolved = Resolved {
+    Ok(Resolved {
+        content,
         body,
         resources,
         closures: compiled.closures,
-    };
-    Ok((resolved, content))
+    })
 }
 
 /// The components a call may name.
@@ -486,7 +483,7 @@ fn hand_written_forms(
                 .filter(|_| root.format().carries_commands);
             for member in plugin.skills.iter().chain(commands) {
                 if let Ok(form) = crate::export::rendered_skill_call(
-                    root.declaration,
+                    root.runtime,
                     naming,
                     &plugin.name,
                     &member.name,
@@ -583,7 +580,6 @@ fn unread(component: &DiscoveredComponent) -> Component {
         name: component.name.clone(),
         path: component.vault_relative_path.clone(),
         extensions: Extensions::default(),
-        content: None,
         resolved: None,
         discovered: component.clone(),
     }
@@ -647,7 +643,7 @@ fn missing_versions(
 ) -> Vec<DiscoveryWarning> {
     discovered
         .iter()
-        .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, Some(market)))
+        .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
         .filter(|c| plugins.contains_key(c.folder()))
         .filter(|c| {
             config
@@ -943,9 +939,8 @@ fn load_hooks_files(
             if !group.carried_by(|c| kind_carried(&c.discovered, root)) {
                 continue;
             }
-            let runtime = crate::projection::parse_runtime_target(root.runtime)?;
             for hook in &hooks {
-                if let Some(why) = agent_adapt::render::hook_refusal(hook, runtime) {
+                if let Some(why) = agent_adapt::render::hook_refusal(hook, root.runtime) {
                     warnings.push(DiscoveryWarning {
                         path: file.rel.clone(),
                         reason: "hook-left-out".to_owned(),
