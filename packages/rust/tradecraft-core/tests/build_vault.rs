@@ -366,6 +366,48 @@ fn output_changed_between_plan_and_commit_is_refused_and_kept() {
     }
 }
 
+/// An edit that keeps the size, a delete and an execute-bit flip of a built
+/// file are each refused, and leave `dist/` as the change left it.
+#[test]
+fn a_built_file_changed_between_plan_and_commit_is_refused() {
+    let changes: [fn(&MemVfs, &Path); 3] = [
+        |vfs, path| {
+            let mut bytes = vfs.read_file(path).unwrap();
+            bytes[0] ^= 1;
+            vfs.write_file(path, &bytes).unwrap();
+        },
+        |vfs, path| vfs.remove(path).unwrap(),
+        |vfs, path| {
+            let flipped = !vfs.is_executable(path);
+            vfs.set_executable(path, flipped).unwrap();
+        },
+    ];
+    for (n, change) in changes.into_iter().enumerate() {
+        let vfs = vault("", &["acme"]);
+        build_vault(&vfs, &VaultRequest::new("/v")).unwrap();
+        let skill = files_under(&vfs, Path::new("/v/dist/acme/.agents/packs"))
+            .into_keys()
+            .find(|path| path.ends_with("SKILL.md"))
+            .unwrap();
+        let mut after_change = None;
+        let err = build_with_a_wait(&vfs, || {
+            change(&vfs, &skill);
+            after_change = Some(files_under(&vfs, Path::new("/v/dist")));
+        })
+        .unwrap_err();
+        assert_eq!(
+            err.token(),
+            Some(refusal::OUTPUT_CHANGED),
+            "change {n}: {err}"
+        );
+        assert_eq!(
+            Some(files_under(&vfs, Path::new("/v/dist"))),
+            after_change,
+            "change {n}"
+        );
+    }
+}
+
 #[test]
 fn an_unchanged_destination_commits_after_the_wait() {
     let vfs = vault("", &["acme"]);
