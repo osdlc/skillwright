@@ -89,9 +89,9 @@ pub use discover::{
 };
 pub use error::*;
 pub use export::{
-    ExportMode, ExportReport, ExportUnit, MarketplaceRefusal, MarketplaceReport, SkillNaming,
-    StaleKind, UnitStatus, VaultReport, VaultRequest, build_vault, owned_paths,
-    published_skill_name, rendered_skill_call,
+    BuildOptions, ExportMode, ExportReport, ExportUnit, MarketplaceRefusal, MarketplaceReport,
+    SkillNaming, StaleKind, UnitStatus, VaultPlan, VaultReport, VaultRequest, build_vault,
+    owned_paths, plan, published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};

@@ -24,16 +24,16 @@ use tradecraft_core::discover::discover_in;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
     BumpLevel, CoreError, DiscoveredComponent, EntityKind, ExportMode, ExportReport, ExportUnit,
-    Harness, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest, Vfs,
-    build_vault, dist_dir, is_vault_root, next_version, owned_paths, parse_semver, read_version,
-    refusal, set_version,
+    Harness, LoadedVault, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, VaultReport, VaultRequest,
+    Vfs, build_vault, dist_dir, is_vault_root, next_version, owned_paths, parse_semver,
+    read_version, refusal, set_version,
 };
 
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, failed, refused, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::{dry_run_notice, print_json};
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_at, resolve_run};
+use crate::resolve::{CommonFlags, resolve_at, resolve_run};
 
 /// The resolved flags of `skillwright bump`.
 pub struct BumpFlags {
@@ -192,16 +192,16 @@ fn write_bump(planned: &Planned, new: &str) -> Result<(), String> {
 
 /// Run `skillwright bump` and return the exit code.
 pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
-    let run = match resolve_run(
+    let loaded = match resolve_run(
         &flags.common,
         flags.marketplace.as_deref(),
         &ctx.cwd,
         ctx.err,
     ) {
-        Ok(run) => run,
+        Ok(loaded) => loaded,
         Err(code) => return code,
     };
-    let scan = match discover_in(&NativeVfs, &run.loaded.layout) {
+    let scan = match discover_in(&NativeVfs, &loaded.layout) {
         Ok(scan) => scan,
         Err(err) => {
             return refused(
@@ -216,11 +216,10 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         .iter()
         .filter(|c| {
             c.position.kind() == EntityKind::Plugin
-                && run.loaded.marketplace(c.position.marketplace()).is_some()
+                && loaded.marketplace(c.position.marketplace()).is_some()
         })
         .collect();
-    let scheme = run
-        .loaded
+    let scheme = loaded
         .settings
         .build
         .bump
@@ -233,11 +232,11 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
             Ok(note) => run_one(flags, ctx, plugin, note, scheme),
             Err(message) => usage_error(ctx.err, &message),
         },
-        (None, None) => match (flags.marketplace.as_deref(), run.marketplaces()) {
+        (None, None) => match (flags.marketplace.as_deref(), loaded.marketplaces.as_slice()) {
             (Some(_), [market]) => {
                 let note = VersionNote {
                     path: market.note.clone(),
-                    rel: vault_relative(&run.vault, &market.note),
+                    rel: vault_relative(&loaded.root, &market.note),
                 };
                 run_one(flags, ctx, &market.name, note, scheme)
             }
@@ -246,7 +245,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 "bump takes a plugin name, --marketplace or --changed-since",
             ),
         },
-        (None, Some(since)) => run_changed(flags, ctx, &run, &plugins, since, scheme),
+        (None, Some(since)) => run_changed(flags, ctx, &loaded, &plugins, since, scheme),
         _ => usage_error(
             ctx.err,
             "bump takes a plugin name or --changed-since, and not both",
@@ -459,23 +458,23 @@ fn one_report(report: Result<VaultReport, CoreError>) -> Result<ExportReport, St
 fn run_changed(
     flags: &BumpFlags,
     ctx: &mut CommandContext<'_>,
-    run: &ResolvedRun,
+    loaded: &LoadedVault,
     plugins: &[&DiscoveredComponent],
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
     // Each request compares with its baseline once that resolves.
-    let requests: Vec<(&str, VaultRequest)> = run
-        .marketplaces()
+    let requests: Vec<(&str, VaultRequest)> = loaded
+        .marketplaces
         .iter()
         .map(|m| {
-            let mut request = VaultRequest::for_marketplace(&run.loaded.root, &m.name);
+            let mut request = VaultRequest::for_marketplace(&loaded.root, &m.name);
             request.options.mode = ExportMode::Check;
             request.options.harnesses.clone_from(&flags.harnesses);
             (m.name.as_str(), request)
         })
         .collect();
-    let baseline = match Baseline::resolve(since, run, &flags.harnesses, ctx) {
+    let baseline = match Baseline::resolve(since, loaded, &flags.harnesses, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
@@ -484,7 +483,7 @@ fn run_changed(
     let mut rows: Vec<Row> = Vec::new();
     for (market, mut request) in requests {
         request.options.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<Harness> = match owned_paths(&run.loaded.settings, &flags.harnesses) {
+        let mut roots: Vec<Harness> = match owned_paths(&loaded.settings, &flags.harnesses) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return refused(ctx.err, &err.reason()),
         };
@@ -528,7 +527,7 @@ fn run_changed(
             {
                 let verdict = verdicts.entry(name.as_str()).or_default();
                 verdict.bump |= version_bump_suggestion.is_some();
-                verdict.drift |= *status == UnitStatus::Drift;
+                verdict.drift |= *status == UnitStatus::Differs;
                 verdict.roots.push(*root);
             }
         }
@@ -799,13 +798,13 @@ impl Baseline {
     /// A directory holds one marketplace, so a run over several is refused.
     fn resolve(
         since: &str,
-        run: &ResolvedRun,
+        loaded: &LoadedVault,
         harnesses: &BTreeSet<String>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<Baseline, i32> {
         let as_dir = crate::config::resolve_against_cwd(since, &ctx.cwd);
         if as_dir.is_dir() {
-            if let [_, _, ..] = run.marketplaces() {
+            if let [_, _, ..] = loaded.marketplaces.as_slice() {
                 return Err(usage_error(
                     ctx.err,
                     &format!(
@@ -815,7 +814,7 @@ impl Baseline {
             }
             return Ok(Baseline::Dir(as_dir));
         }
-        BuiltRef::build(since, run, harnesses, ctx).map(Baseline::Built)
+        BuiltRef::build(since, loaded, harnesses, ctx).map(Baseline::Built)
     }
 }
 
@@ -845,7 +844,7 @@ struct BuiltRef {
 impl BuiltRef {
     fn build(
         since: &str,
-        run: &ResolvedRun,
+        loaded: &LoadedVault,
         harnesses: &BTreeSet<String>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<BuiltRef, i32> {
@@ -855,7 +854,7 @@ impl BuiltRef {
                 &format!("--changed-since `{since}`: {why}"),
             ))
         };
-        let root = run.vault.canonicalize().unwrap_or(run.vault.clone());
+        let root = loaded.root.canonicalize().unwrap_or(loaded.root.clone());
         let repo = match typed_git::git()
             .dir(&root)
             .args(&["rev-parse", "--show-toplevel"])
@@ -937,24 +936,23 @@ impl BuiltRef {
         // The ref's refusal names the temporary checkout, so it is said as
         // this flag's failure.
         let mut said: Vec<u8> = Vec::new();
-        let base_run = match resolve_at(base_root, None, &mut said) {
-            Ok(base_run) => base_run,
+        let base = match resolve_at(base_root, None, &mut said) {
+            Ok(base) => base,
             Err(_) => {
                 let said = String::from_utf8_lossy(&said);
                 return fail(ctx, format!("building it failed: {}", said.trim_end()));
             }
         };
-        for market in run.marketplaces() {
+        for market in &loaded.marketplaces {
             let out = dist_dir(base_root, &market.name);
             // A marketplace the ref does not hold has an empty baseline.
-            let Some(base_market) = base_run.loaded.marketplace(&market.name) else {
+            let Some(base_market) = base.marketplace(&market.name) else {
                 if let Err(err) = std::fs::create_dir_all(&out) {
                     return fail(ctx, format!("cannot create {}: {err}", out.display()));
                 }
                 continue;
             };
-            let mut request =
-                VaultRequest::for_marketplace(&base_run.loaded.root, &base_market.name);
+            let mut request = VaultRequest::for_marketplace(&base.root, &base_market.name);
             request.options.harnesses.clone_from(harnesses);
             if let Err(err) = build_vault(&NativeVfs, &request) {
                 return fail(ctx, format!("building it failed: {}", err.reason()));

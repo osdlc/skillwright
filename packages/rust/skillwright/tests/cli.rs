@@ -1194,11 +1194,15 @@ fn json_emits_the_cores_own_report_mode_and_all() {
     // a marketplace (every one but Pi's).
     assert_eq!(units.iter().filter(|u| u["unit"] == "plugin").count(), 4);
     assert_eq!(units.iter().filter(|u| u["unit"] == "manifest").count(), 3);
+    // The status says whether the unit differed; `mode` gives the verb.
+    assert!(units.iter().all(|u| u["status"] == "differs"), "{report}");
 
     let checked = check_market(&vault, &["--json"]);
     assert_eq!(checked.code, 0, "{}", checked.stderr);
     let report: serde_json::Value = serde_json::from_str(&checked.stdout).unwrap();
     assert_eq!(report["mode"], "check");
+    let units = report["units"].as_array().unwrap();
+    assert!(units.iter().all(|u| u["status"] == "same"), "{report}");
 }
 
 #[test]

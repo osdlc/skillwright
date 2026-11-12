@@ -112,30 +112,7 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
             ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => *status,
             _ => continue,
         };
-        let word = match status {
-            UnitStatus::Written => "written",
-            _ => status.as_str(),
-        };
-        assert_eq!(word, "written");
-    }
-}
-
-#[test]
-fn each_unit_status_as_str_is_the_serialized_word() {
-    fn wire<T: serde::Serialize>(value: T) -> String {
-        serde_json::to_value(value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_owned()
-    }
-    for status in [
-        UnitStatus::Ok,
-        UnitStatus::Drift,
-        UnitStatus::Written,
-        UnitStatus::Unchanged,
-    ] {
-        assert_eq!(status.as_str(), wire(status));
+        assert_eq!(status, UnitStatus::Differs);
     }
 }
 

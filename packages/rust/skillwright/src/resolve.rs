@@ -8,11 +8,10 @@
 //! exit codes.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tradecraft_core::{
-    BuildScope, LoadedVault, NativeVfs, VaultMarketplace, check_vault_root, find_vault_root,
-    load_vault,
+    BuildScope, LoadedVault, NativeVfs, check_vault_root, find_vault_root, load_vault,
 };
 
 use crate::config::{print_warnings, resolve_against_cwd};
@@ -25,27 +24,9 @@ pub struct CommonFlags {
     pub vault: Option<String>,
 }
 
-/// What a run resolved to.
-#[derive(Debug, Clone)]
-pub struct ResolvedRun {
-    /// The vault as the core loaded it: the root file and the marketplaces
-    /// this run covers.
-    pub loaded: LoadedVault,
-    /// The vault root.
-    pub vault: PathBuf,
-}
-
-impl ResolvedRun {
-    /// The marketplaces this run covers: every one, or the one
-    /// `--marketplace` names.
-    pub fn marketplaces(&self) -> &[VaultMarketplace] {
-        &self.loaded.marketplaces
-    }
-}
-
 /// Find the vault root and load it, writing any failure
 /// to `err` and handing back the exit code it earned. `marketplace` limits
-/// the run to that marketplace.
+/// the run's marketplaces to that one.
 ///
 /// No root at or above `cwd` is exit 4, nothing supplied. A `--vault` that is
 /// not a root, a layout error, a bad root file and an unknown marketplace are
@@ -55,7 +36,7 @@ pub fn resolve_run(
     marketplace: Option<&str>,
     cwd: &Path,
     err: &mut dyn Write,
-) -> Result<ResolvedRun, i32> {
+) -> Result<LoadedVault, i32> {
     let vault = match &flags.vault {
         Some(flag) => {
             let dir = resolve_against_cwd(flag, cwd);
@@ -80,15 +61,12 @@ pub fn resolve_at(
     vault: &Path,
     marketplace: Option<&str>,
     err: &mut dyn Write,
-) -> Result<ResolvedRun, i32> {
+) -> Result<LoadedVault, i32> {
     let scope = BuildScope::from(marketplace.map(str::to_owned));
     let loaded = load_vault(&NativeVfs, vault, &scope)
         .map_err(|problem| refused(err, &problem.to_string()))?;
     print_warnings(&loaded.settings, &loaded.root_file, err);
-    Ok(ResolvedRun {
-        loaded,
-        vault: vault.to_path_buf(),
-    })
+    Ok(loaded)
 }
 
 #[cfg(test)]
@@ -129,9 +107,13 @@ mod tests {
         vault(dir.path());
         let cwd = dir.path().join("marketplaces/acme/plugins/tools");
         let mut err: Vec<u8> = Vec::new();
-        let run = resolve_run(&CommonFlags::default(), None, &cwd, &mut err).unwrap();
-        assert_eq!(run.vault, dir.path());
-        let names: Vec<&str> = run.marketplaces().iter().map(|m| m.name.as_str()).collect();
+        let loaded = resolve_run(&CommonFlags::default(), None, &cwd, &mut err).unwrap();
+        assert_eq!(loaded.root, dir.path());
+        let names: Vec<&str> = loaded
+            .marketplaces
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect();
         assert_eq!(names, ["acme"]);
     }
 }

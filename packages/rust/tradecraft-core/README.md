@@ -83,11 +83,11 @@ The CLI does the same steps.
    file as `settings` and one `VaultMarketplace` per marketplace.
 3. `build_vault(&vfs, &VaultRequest::new(root))` builds every marketplace
    into its `<root>/dist/<m>/`, or checks them with `options.mode` set to
-   `ExportMode::Check`. It is the one build and check entry point. It plans
-   every marketplace before it writes any, and writes all of them or none: a
-   failed swap rolls back every marketplace already swapped. A host that asks
-   before it writes runs a check first; `owned_paths` names what a build
-   replaces.
+   `ExportMode::Check`. It plans every marketplace before it writes any, and
+   writes all of them or none: a failed swap rolls back every marketplace
+   already swapped. A host that asks before it writes calls the three steps
+   itself: `plan(&vfs, &loaded, &options)`, then `VaultPlan::report()`, then
+   `VaultPlan::commit(&vfs)`. `owned_paths` names what a build replaces.
 4. `VaultRequest::for_marketplace(root, name)` is the request for one
    marketplace. A check of one marketplace may set `options.compare_with` to
    compare with another built folder in place of `dist/<m>/`.
