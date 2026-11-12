@@ -1,7 +1,7 @@
 //! The code half of a harness: the marketplace model written as one
 //! harness's files (D-FDLQ).
 //!
-//! [`Translator`] does the work every harness shares, reading the harness's
+//! `Translator` does the work every harness shares, reading the harness's
 //! row for what differs as data: admission by kind, how a published skill is
 //! named, how a call is spelled, where a pack's files land, and a skill's
 //! files through `agent-adapt`. What is a harness's own code, its

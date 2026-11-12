@@ -25,7 +25,7 @@
 //! the vault spec states and the failure that motivated it: deriving a live
 //! plugin tree through a model that could not represent it lost 89 of 148
 //! files. An agent or a command, whose model has no annotations, writes them
-//! into its own frontmatter instead — see [`crate::projection`].
+//! into its own frontmatter instead — see the `projection` module.
 //!
 //! Two consequences of the carry rule look like oversights:
 //!
