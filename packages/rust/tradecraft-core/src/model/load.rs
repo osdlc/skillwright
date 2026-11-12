@@ -341,7 +341,7 @@ pub(crate) fn load_for(
 ///
 /// # Errors
 ///
-/// Everything [`crate::compile::compile_note`] refuses. Whether a harness
+/// Everything the compile pass refuses (see [`crate::compile`]). Whether a harness
 /// ships what a call names is asked when the call is written.
 pub fn resolve_body(
     vfs: &dyn Vfs,

@@ -17,7 +17,7 @@ API:
 - `harness::{TreeFile, FileSource}` are removed, and `FileTree` is no longer public. `FileTree::files` holds `vfs::PreviewWrite`.
 - `projection::{project_skill_reporting, redundant_override_keys, RedundantOverride}` and `FileTree::redundant_overrides` are removed. `project_skill` and `project_command` take `&[RuntimeId]` and `project_plugin_hooks` takes a `RuntimeId`, not runtime names.
 - `CallContext::{render, target, record}` and `Component::content` are removed. `Resolved::content` and `resolve_body`'s return type change.
-- `CompileSource` requires `layout` and `calls` and has no `vault_root`. `CompileSource::new` changes to match. `CompiledNote::recorded` is always filled.
+- `compile_note`, `CompileSource`, `CompiledNote`, `compile::Recorded` and `compile::CallSite` are no longer public. A compile now writes each call, link, inlined file and plugin-root path as a mark that only the crate decodes. Compile a component with `model::resolve_body`, which returns the decoded segments.
 - `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId` and `Marketplace::folder` is a `String`.
 - `keys::field_reference` is no longer public.
 - `Harness` is added, one enum for the four harnesses, with `ALL`, `as_str`, `parse`, `profile` and `format`. `PluginDialect`, `keys::HARNESS_BLOCKS`, `PROFILES`, the `CLAUDE`, `CODEX`, `CURSOR` and `PI` rows, `profile_named`, `with_plugin_format`, `HarnessProfile::name` and `PluginPolicy::dialect` are removed. `KNOWN_TARGETS` is a `&[Harness]`.

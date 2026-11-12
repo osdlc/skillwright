@@ -166,7 +166,7 @@ fn plan_bump(
     let VersionNote { path, rel } = note;
     let bytes = NativeVfs.read_file(&path).map_err(|e| e.to_string())?;
     let source = String::from_utf8(bytes)
-        .map_err(|e| CoreError::unreadable(&path, format!("not UTF-8: {e}")).reason())?;
+        .map_err(|e| CoreError::unreadable(&rel, format!("not UTF-8: {e}")).reason())?;
     let found = read_version(&source).map_err(|e| e.reason())?;
     let versioned = found.is_some();
     // No version key in either shape is not a refusal — the core's stated
@@ -1228,6 +1228,29 @@ impl Drop for BuiltRef {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A note that is not UTF-8 fails its bump, named by its vault-relative
+    /// path. Discovery skips such a note, so only a note that changes after
+    /// discovery reaches this read.
+    #[test]
+    fn a_note_that_is_not_utf8_is_named_by_its_vault_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("widget.md");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        let note = VersionNote {
+            path,
+            rel: "marketplaces/acme/plugins/widget/widget.md".to_owned(),
+        };
+        let Err(reason) = plan_bump(note, BumpLevel::Patch, PatchScheme::Increment, 0) else {
+            panic!("a non-UTF-8 note must not plan");
+        };
+        assert!(
+            reason.starts_with(
+                "unreadable-note: marketplaces/acme/plugins/widget/widget.md: not UTF-8"
+            ),
+            "{reason}"
+        );
+    }
 
     /// One run's prune never takes the lock of a claim in progress.
     #[test]
