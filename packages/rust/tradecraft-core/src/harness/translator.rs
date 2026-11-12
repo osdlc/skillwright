@@ -30,8 +30,8 @@ use super::profile::PLUGIN_HOOKS_PATH;
 use super::profile::{CliInvocation, Harness, HarnessProfile, PluginFormat, SkillNaming};
 use crate::content::SkillProjection;
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
+use crate::model::config::MarketplaceConfig;
 use crate::model::{
     Body, Call, Component, Marketplace, Plugin, PluginRootPath, ResolvedRef, ResourceContent,
     Segment,
@@ -93,7 +93,7 @@ impl Translator {
     /// spec does not admit.
     fn published_name(self, plugin: &Plugin, skill: &str) -> Result<String, CoreError> {
         let naming = naming(self.0, &plugin.bare_on);
-        crate::export::published_skill_name(naming, &plugin.name, skill)
+        crate::harness::published_skill_name(naming, &plugin.name, skill)
     }
 
     /// A call, as this harness invokes the skill it names.
@@ -105,7 +105,7 @@ impl Translator {
     fn render_call(self, call: &Call) -> Result<String, CoreError> {
         let profile = self.profile();
         call.check_shipped(self.format().carries(call.skill.kind), profile.label)?;
-        crate::export::rendered_skill_call(
+        crate::harness::rendered_skill_call(
             profile.runtime,
             naming(self.0, &call.bare_on),
             &call.skill.plugin,

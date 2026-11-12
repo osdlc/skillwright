@@ -8,9 +8,11 @@
 pub(crate) mod field_types;
 pub mod knowledge;
 pub mod manifest;
+pub mod naming;
 pub mod profile;
 pub mod translator;
 
+pub use naming::{published_skill_name, rendered_skill_call};
 pub use profile::{
     CliInvocation, Harness, HarnessProfile, KNOWN_TARGETS, PLUGIN_HOOKS_PATH, PluginFormat,
     SkillNaming,

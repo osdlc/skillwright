@@ -22,11 +22,11 @@ use crate::discover::{
     refuse_undescribed,
 };
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{Harness, SkillNaming};
+use crate::model::config::MarketplaceConfig;
 use crate::refusal;
 use crate::settings::{RootFile, SharedDefaults};
 use crate::vault::{VaultNote, read_vault_note};
@@ -452,7 +452,7 @@ fn hand_written_forms(
                 .iter()
                 .filter(|_| root.format().carries(EntityKind::Command));
             for member in plugin.skills.iter().chain(commands) {
-                if let Ok(form) = crate::export::rendered_skill_call(
+                if let Ok(form) = crate::harness::rendered_skill_call(
                     root.profile().runtime,
                     naming,
                     &plugin.name,

@@ -45,11 +45,11 @@ use serde_json::{Map, Value};
 
 use crate::discover::DiscoveredComponent;
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::Harness;
 use crate::harness::manifest::{plugin_block, plugin_identity};
 use crate::keys;
+use crate::model::config::MarketplaceConfig;
 use crate::settings::SharedDefaults;
 use crate::vault::VaultNote;
 
