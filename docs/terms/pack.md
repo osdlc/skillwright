@@ -6,7 +6,7 @@ One plugin as written for one harness: its directory, its plugin manifest and it
 
 ## In code
 
-`PluginFormat::packs` in `harness/profile.rs`; written by `HarnessTranslator::write_pack`.
+`PluginPolicy::packs` in `harness/profile.rs`; written by `Translator::write_pack`.
 
 ## Not to be confused with
 

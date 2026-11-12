@@ -7,4 +7,4 @@ Claude Code and Codex carry hooks; Cursor and Pi do not.
 
 ## In code
 
-`hooks_file.rs`; `PluginFormat::carries_hooks` in `harness/profile.rs`.
+`hooks_file.rs`; `PluginPolicy::carries_hooks` in `harness/profile.rs`.
