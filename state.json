@@ -1,12 +1,101 @@
 {
   "schema": 1,
   "pr": 161,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "204db09d9f6e7ff1c9b7825d7605b4a15ac810a8",
+  "base": "f4a645574a16d818a253df1d6bf1ee804c4b1ccb",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7q2vm",
     "at": "2026-11-12T08:32:11.353Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/ts/tradecraft-wasm/CHANGELOG.md",
+      "line": 24,
+      "title": "wasm CHANGELOG lacks the refusal change the PR says it lists; Target still named in the same Unreleased section",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 695,
+      "title": "Harness::parse used as a membership test; every miss builds a refusal",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 53,
+      "title": "KNOWN_TARGETS doc does not say why the alias of Harness::ALL exists",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 21,
+      "title": "projection now imports harness, while harness::translator imports projection",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "tradecraft-wasm README.md:61 still names the removed Target type",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "docs/terms/README.md:27 roster still says translator is one implementation of a shared trait",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "tradecraft-wasm src/lib.rs:16 still says target name",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "D-QXRN still describes the translator trait, the dialect and profile.format()",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
