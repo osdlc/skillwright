@@ -102,7 +102,7 @@ unbraced, because the build would rewrite the braced form here.
 node $PLUGIN_ROOT/scripts/tool.js --check
 ```
 
-- The braced form is checked and rewritten in prose and in code alike. The path must name a file
+- The braced form is checked and rewritten in prose, code and link destinations alike. The path must name a file
   the plugin ships, or the build fails.
 - Claude Code gets its own variable, `CLAUDE_PLUGIN_ROOT` in braces, then the path. Codex, Cursor
   and Pi get a path relative to the file, such as `../../scripts/tool.js`.
