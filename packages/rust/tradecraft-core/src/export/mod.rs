@@ -110,7 +110,7 @@ use crate::model::{Component, Marketplace};
 use crate::refusal;
 use crate::settings::RootFile;
 use crate::vfs::{PreviewWrite, Vfs, normalize};
-use dest::{admitted_plugins, diff_root};
+use dest::{Snapshot, admitted_plugins, diff_root};
 pub use report::{ExportReport, ExportUnit, StaleKind, UnitStatus, VersionBumpSuggestion};
 use swap::{Swap, commit};
 
@@ -253,6 +253,18 @@ impl MarketplaceRefusal {
     }
 }
 
+/// [`VaultPlan::outcomes`], the reports and the refusals listed apart.
+impl From<Vec<Result<MarketplaceReport, MarketplaceRefusal>>> for VaultReport {
+    fn from(outcomes: Vec<Result<MarketplaceReport, MarketplaceRefusal>>) -> Self {
+        let (marketplaces, refused): (Vec<_>, Vec<_>) =
+            outcomes.into_iter().partition(Result::is_ok);
+        Self {
+            marketplaces: marketplaces.into_iter().flatten().collect(),
+            refused: refused.into_iter().filter_map(Result::err).collect(),
+        }
+    }
+}
+
 /// Every marketplace of a run planned, with nothing written: what [`plan`]
 /// returns. Read it with [`Self::report`], then write it with
 /// [`Self::commit`].
@@ -282,14 +294,9 @@ impl VaultPlan {
             .collect()
     }
 
-    /// [`Self::outcomes`], the reports and the refusals listed apart.
+    /// [`Self::outcomes`] as a [`VaultReport`].
     pub fn report(&self) -> VaultReport {
-        let (marketplaces, refused): (Vec<_>, Vec<_>) =
-            self.outcomes().into_iter().partition(Result::is_ok);
-        VaultReport {
-            marketplaces: marketplaces.into_iter().flatten().collect(),
-            refused: refused.into_iter().filter_map(Result::err).collect(),
-        }
+        self.outcomes().into()
     }
 
     /// Writes a build: stages every marketplace, then swaps them all in. A
@@ -299,7 +306,9 @@ impl VaultPlan {
     /// # Errors
     ///
     /// A build only: the first marketplace's refusal, with nothing written.
-    /// Then [`CoreError::SwapFailed`] and the I/O errors of the swap.
+    /// `refused: output-changed` when an owned path in a `dist/<m>/` changed
+    /// since [`plan`] read it, with nothing written. Then
+    /// [`CoreError::SwapFailed`] and the I/O errors of the swap.
     pub fn commit(self, vfs: &dyn Vfs) -> Result<(), CoreError> {
         if self.mode == ExportMode::Check {
             return Ok(());
@@ -403,14 +412,14 @@ fn plan_with(
     // Load once, for every harness this build renders: the marketplace
     // chosen and validated, every body resolved. Everything a build refuses
     // before it renders, it refuses here.
+    let out = match &options.compare_with {
+        Some(path) => normalize(path),
+        None => market.dist.clone(),
+    };
     let scope = BuildScope::Marketplace(market.name.clone());
     let defaults = &loaded.settings.defaults;
     let market = load_for(vfs, &loaded.layout, scan, &scope, roots, defaults)?;
     let warnings = market.warnings.clone();
-    let out = match &options.compare_with {
-        Some(path) => normalize(path),
-        None => crate::model::vault::dist_dir(&loaded.root, &market.folder),
-    };
 
     // One tree per harness, translated from the one model, at the final
     // destination paths. Both modes read this and nothing else; `build`
@@ -432,6 +441,9 @@ fn plan_with(
             kind: c.kind(),
         })
         .collect();
+    // Taken before the comparison, so `commit` sees a change made after it.
+    let all_owned = roots.iter().flat_map(|spec| spec.owned_paths()).collect();
+    let seen = Snapshot::take(vfs, &out, all_owned)?;
     let mut drifted = Vec::with_capacity(roots.len());
     for (&spec, files) in roots.iter().zip(&rendered) {
         let (root_units, equal) = compare_root(vfs, &out, spec, &market, files)?;
@@ -442,6 +454,7 @@ fn plan_with(
         base: out,
         owned: Vec::new(),
         files: BTreeMap::new(),
+        seen,
     };
     for ((spec, files), drifted) in roots.iter().zip(rendered).zip(drifted) {
         if drifted {

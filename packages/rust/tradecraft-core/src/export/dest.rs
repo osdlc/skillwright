@@ -26,7 +26,7 @@ pub(super) struct RootDiff {
 }
 
 /// What the destination root actually holds.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 struct DestState {
     /// Root-relative file paths → is-symlink. A symlink never matches: the
     /// render emits bytes, and a link that reads the same resolves elsewhere.
@@ -34,6 +34,39 @@ struct DestState {
     /// Directories holding nothing — invisible to a file diff, removed by the
     /// swap, so the report has to carry them.
     empty_dirs: Vec<String>,
+}
+
+/// What `base` holds under `paths`: [`DestState`], and each file's size,
+/// modification time and execute bit.
+#[derive(PartialEq, Eq)]
+pub(super) struct Snapshot {
+    pub(super) paths: Vec<&'static str>,
+    state: DestState,
+    stamps: Vec<Option<(u64, Option<i64>, bool)>>,
+}
+
+impl Snapshot {
+    pub(super) fn take(
+        vfs: &dyn Vfs,
+        base: &Path,
+        paths: Vec<&'static str>,
+    ) -> Result<Self, CoreError> {
+        let state = scan_destination(vfs, base, &paths)?;
+        let stamps = state
+            .files
+            .keys()
+            .map(|relative| {
+                let path = base.join(relative);
+                let meta = vfs.metadata(&path).ok()?;
+                Some((meta.len, meta.modified_ns, vfs.is_executable(&path)))
+            })
+            .collect();
+        Ok(Self {
+            paths,
+            state,
+            stamps,
+        })
+    }
 }
 
 /// Reads `base`, but only the `owned` paths, never the whole directory: what

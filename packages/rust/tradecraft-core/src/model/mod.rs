@@ -63,7 +63,7 @@ pub use load::{LoadRequest, load, resolve_body};
 /// A vault, loaded as the one marketplace a build renders.
 #[derive(Debug, Clone)]
 pub struct Marketplace {
-    /// The name the marketplace publishes under.
+    /// The name the marketplace publishes under: its folder name.
     pub name: String,
     /// The vault's marketplace folder this was loaded from.
     pub folder: String,

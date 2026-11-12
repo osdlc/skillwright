@@ -4,7 +4,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use super::dest::Snapshot;
 use crate::error::CoreError;
+use crate::refusal;
 use crate::vfs::{PreviewWrite, Vfs};
 
 /// Where a build stages and backs up, under the root's own base — created
@@ -24,12 +26,31 @@ pub(super) struct Swap {
     pub(super) base: PathBuf,
     pub(super) owned: Vec<String>,
     pub(super) files: BTreeMap<String, PreviewWrite>,
+    /// Every root's owned paths as the plan saw them, before it compared.
+    pub(super) seen: Snapshot,
 }
 
 /// Stages every swap, then swaps them all into place. A swap that owns
 /// nothing is skipped. A failed swap rolls back every path already swapped,
 /// in every swap's folder.
+///
+/// # Errors
+///
+/// `refused: output-changed` — an owned path changed since the plan, with
+/// nothing written. Then the I/O errors and [`CoreError::SwapFailed`].
 pub(super) fn commit(vfs: &dyn Vfs, swaps: &[Swap]) -> Result<(), CoreError> {
+    for swap in swaps {
+        if Snapshot::take(vfs, &swap.base, swap.seen.paths.clone())? != swap.seen {
+            return Err(CoreError::refused(
+                refusal::OUTPUT_CHANGED,
+                format!(
+                    "{} changed after this build compared it with the vault. Nothing was \
+                     written; run the build again",
+                    swap.base.display()
+                ),
+            ));
+        }
+    }
     let swaps: Vec<&Swap> = swaps.iter().filter(|swap| !swap.owned.is_empty()).collect();
     let stages: Vec<PathBuf> = swaps.iter().map(|swap| swap.base.join(STAGE_DIR)).collect();
     for (swap, stage) in swaps.iter().zip(&stages) {
