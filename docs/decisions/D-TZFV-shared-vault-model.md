@@ -8,15 +8,14 @@ one implementation per vault concept.
 ## Decision
 
 - **skillwright keeps no vault code of its own.** Load reads the vault
-  through osdlc's crates: `vfs-seam` for file access, `vfs-walk` for the
-  walk, `markdown-link` for parsing links, `markdown-contract` for heading
+  through osdlc's crates: `vfs-seam` for file access, `markdown-link` for
+  parsing links, `markdown-contract` for heading
   and block selection, and `path-guard` for containment.
 - **What stays in skillwright is its own:** skill calls (`/[[call]]`) as a
-  layer over `markdown-link`'s tokens, the fixed layout and component
+  layer over `markdown-link`'s tokens, the fixed layout, its walk and the component
   kinds, its frontmatter keys, and the link scope of each plugin.
 - **`tradecraft-core`'s `Vfs` is `vfs-seam`'s,** re-exported.
   `tradecraft-wasm`'s `JsVfs` implements it for JS consumers.
-- **Asset and script walks use `vfs-walk` directly,** without vault rules.
 - **Gaps are fixed upstream, as options,** not worked around here.
 
 ## Why

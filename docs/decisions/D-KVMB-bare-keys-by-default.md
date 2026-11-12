@@ -5,7 +5,7 @@ Replaces the earlier rule that skillwright's keys are always prefixed.
 
 ## Decision
 
-skillwright's keys are bare: `version`, `targets`, `codex:`. There is no
+skillwright's keys are bare: `version`, `license`, `codex:`. There is no
 namespace option and no key prefix. A prefixed key, such as `sw-version` or an
 `sw:` block, is an unknown key. Spec keys are never prefixed.
 
@@ -14,8 +14,8 @@ validation and the generated field reference.
 
 A key outside the table warns and is not refused. On a component it ships
 under `metadata:`; on a container or in the root file it is ignored. There are
-two exceptions: the removed keys `workspace` (in the root file) and `packs` (in
-a harness block) are refused.
+three exceptions: the removed keys `workspace` (in the root file), `targets`
+(on any note) and `packs` (in a harness block) are refused.
 
 A key the table lists is refused where it does not belong:
 

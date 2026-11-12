@@ -15,7 +15,7 @@ then resolve the bodies from the notes already in memory. A call needs the
 target's kind and name, and an embed needs the target's body.
 
 Translators only decide how to write a resolved reference for their harness,
-for example `/skillwright:setup` on Claude and `skillwright-setup` on Pi.
+for example `/skillwright:setup` on Claude and `/skill:skillwright-setup` on Pi.
 
 ## Why
 

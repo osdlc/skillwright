@@ -14,7 +14,7 @@ A vault's API has two layers:
 `skillwright.md` is the only configuration file. It holds the shared defaults
 and `build:`, the tool settings. A marketplace's fields go in its own note,
 `marketplaces/<m>/<m>.md`. There is no machine file. Only `author`, `license`,
-`repository`, `homepage`, `targets` and the harness blocks inherit. Output is
+`repository`, `homepage` and the harness blocks inherit. Output is
 fixed at `dist/<m>/` beside `skillwright.md`, and never inside
 `marketplaces/`, which is the only folder read as source.
 
