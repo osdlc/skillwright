@@ -136,7 +136,8 @@ test('a buildVault check reports every marketplace when one refuses', () => {
   const check = buildVault(createNodeVfs(), { vault_root: vault, mode: 'check' })
   expect(check.marketplaces.map((m) => [m.marketplace, m.report.changed])).toEqual([['labs', true]])
   expect(check.refused?.map((r) => r.marketplace)).toEqual(['acme'])
-  expect(check.refused?.[0]?.error).toMatch(/^refused: /)
+  expect(check.refused?.[0]?.token).toBe('missing-description')
+  expect(check.refused?.[0]?.detail).toContain('review.md')
   expect(existsSync(path.join(vault, 'dist'))).toBe(false)
 })
 
@@ -179,8 +180,9 @@ test('loadMarketplace on a vault of two marketplaces needs a name', () => {
     error = raw
   }
   expect(error).toBeInstanceOf(CoreError)
-  const { message, coreName } = error as CoreError
+  const { message, coreName, token } = error as CoreError
   expect(coreName).toBe('Refused')
+  expect(token).toBe('ambiguous-marketplace')
   expect(message).toContain('`acme`')
   expect(message).toContain('`labs`')
   expect(message).toContain('marketplace')

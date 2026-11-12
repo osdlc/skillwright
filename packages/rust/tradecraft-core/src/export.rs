@@ -109,6 +109,7 @@ use crate::layout::Layout;
 use crate::model::load::{built_harnesses, kind_carried, load_for};
 use crate::model::{Component, Marketplace};
 use crate::paths::{VaultMarketplace, load_vault, read_root_file};
+use crate::refusal;
 use crate::settings::RootFile;
 use crate::skill::forward_slashed;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
@@ -349,7 +350,7 @@ pub fn published_skill_name(
             match name_refusal(&name, "published skill name") {
                 None => Ok(name),
                 Some(why) => Err(CoreError::refused(
-                    "published-name-invalid",
+                    refusal::PUBLISHED_NAME_INVALID,
                     format!("skill `{skill}` of plugin `{plugin}` cannot publish as {why}"),
                 )),
             }
@@ -379,7 +380,7 @@ fn checked_skill_call(
 ) -> Result<String, CoreError> {
     runtime
         .skill_call(namespace, name)
-        .map_err(|err| CoreError::refused("skill-call-invalid", err.to_string()))
+        .map_err(|err| CoreError::refused(refusal::SKILL_CALL_INVALID, err.to_string()))
 }
 
 /// Does `bytes` hold `marker` anywhere?
@@ -549,8 +550,17 @@ pub struct MarketplaceReport {
 pub struct MarketplaceRefusal {
     /// The marketplace's folder name.
     pub marketplace: String,
-    /// What refused it, as the error reads.
-    pub error: String,
+    /// The refusal's token, or `None` for an error that is not a refusal.
+    pub token: Option<String>,
+    /// What refused it, after the token: [`CoreError::detail`].
+    pub detail: String,
+}
+
+impl MarketplaceRefusal {
+    /// What refused it, as [`CoreError::reason`] gives it.
+    pub fn reason(&self) -> String {
+        crate::error::reason(self.token.as_deref(), &self.detail)
+    }
 }
 
 /// Every marketplace of a [`VaultRequest`] planned, with nothing written.
@@ -578,7 +588,8 @@ impl VaultPlan {
                 Ok(plan) => planned.push((market.name, plan)),
                 Err(err) if self.mode == ExportMode::Check => refused.push(MarketplaceRefusal {
                     marketplace: market.name,
-                    error: err.to_string(),
+                    token: err.token().map(|token| token.to_string()),
+                    detail: err.detail(),
                 }),
                 Err(err) => return Err(err),
             }
@@ -617,7 +628,7 @@ impl VaultPlan {
 fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreError> {
     if request.mode == ExportMode::Build && request.compare_with.is_some() {
         return Err(CoreError::refused(
-            "compare-with",
+            refusal::COMPARE_WITH,
             "a build always writes `dist/<m>/`; `compare_with` is for a check. Nothing was \
              written",
         ));
@@ -625,7 +636,7 @@ fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreEr
     let loaded = load_vault(vfs, &request.vault_root, request.marketplace.as_deref())?;
     if request.compare_with.is_some() && loaded.marketplaces.len() > 1 {
         return Err(CoreError::refused(
-            "compare-with",
+            refusal::COMPARE_WITH,
             "`compare_with` names one built marketplace, and this vault holds several; name \
              one with `marketplace`",
         ));
@@ -762,7 +773,7 @@ fn plan_with(
         // say what a build would do.
         if diff.foreign {
             return Err(CoreError::refused(
-                "foreign-tree",
+                refusal::FOREIGN_TREE,
                 format!(
                     "{} already holds `{}`, and it holds files this build does not produce \
                      (and none carries this tool's generated-file marker): rendering `{}` here \
@@ -1448,7 +1459,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::discover::MISSING_DESCRIPTION_REASON;
+    use crate::refusal;
     use crate::vfs::{MemVfs, NativeVfs};
 
     /// Writes `content` at `path`. For a path under a `marketplaces/` folder it
@@ -2397,7 +2408,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .all(|w| w.reason != MISSING_DESCRIPTION_REASON),
+                .all(|w| w.reason != refusal::MISSING_DESCRIPTION),
             "{:?}",
             report.warnings
         );
@@ -3348,7 +3359,7 @@ mod tests {
 
         let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
+        assert!(matches!(err, CoreError::Refused { .. }), "{message}");
         assert!(message.contains("unknown-harness"), "{message}");
         assert!(message.contains("windsurf"), "{message}");
         assert!(!vfs.exists(Path::new("/repo/dist/house/.claude-plugin")));
@@ -3399,7 +3410,7 @@ mod tests {
 
         let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
+        assert!(matches!(err, CoreError::Refused { .. }), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
         assert!(message.contains(".claude-plugin/packs"), "{message}");
         // And it stopped before writing anything.
@@ -3416,7 +3427,7 @@ mod tests {
 
         let err = export_skills(&vfs, &check_of(&request)).unwrap_err();
         let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
+        assert!(matches!(err, CoreError::Refused { .. }), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
         assert_eq!(files_under(&vfs, Path::new("/repo")), before);
     }
@@ -3444,7 +3455,7 @@ mod tests {
 
         let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
+        assert!(matches!(err, CoreError::Refused { .. }), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
         // Not one byte of it moved.
         assert_eq!(
@@ -3580,7 +3591,7 @@ mod tests {
 
         let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
+        assert!(matches!(err, CoreError::Refused { .. }), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
         assert!(vfs.exists(Path::new(stray)));
     }

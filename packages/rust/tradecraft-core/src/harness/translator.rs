@@ -41,6 +41,7 @@ use crate::model::{
     Segment,
 };
 use crate::projection::{project_command, project_plugin_hooks, project_skill};
+use crate::refusal;
 use crate::vfs::PreviewWrite;
 
 /// The provenance marker every `SKILL.md` and command a built marketplace
@@ -138,7 +139,7 @@ pub(crate) trait HarnessTranslator: Sync {
                 .is_some_and(|member| self.admits(member));
             if !carried {
                 return Err(CoreError::refused(
-                    "link-not-shipped",
+                    refusal::LINK_NOT_SHIPPED,
                     format!(
                         "{}: `{}` links to {} `{}`, which the {} pack does not contain \
                          (section 4 rule 6)",
@@ -545,7 +546,7 @@ fn refuse_name_collisions<T: HarnessTranslator + ?Sized>(
             };
             let why = collision_reason(profile, [group, first_group]);
             return Err(CoreError::refused(
-                "path-collision",
+                refusal::PATH_COLLISION,
                 format!(
                     "`{}` (plugin `{}`) and `{}` (plugin `{}`) both publish as {} skill \
                      `{name}`: {why}",

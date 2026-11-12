@@ -761,8 +761,9 @@ fn json_over_several_marketplaces_is_one_document() {
     assert_eq!(document["marketplaces"][0]["marketplace"], "a");
     assert_eq!(document["marketplaces"][0]["report"]["mode"], "check");
     assert_eq!(document["refused"][0]["marketplace"], "b");
+    assert_eq!(document["refused"][0]["token"], "unreadable-note");
     assert!(
-        document["refused"][0]["error"]
+        document["refused"][0]["detail"]
             .as_str()
             .unwrap()
             .contains("broken.md"),

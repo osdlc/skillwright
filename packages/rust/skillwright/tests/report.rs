@@ -168,25 +168,3 @@ mod render_export_tally_tests {
         assert_eq!(render_export_tally(&[]), "nothing to report");
     }
 }
-
-mod normalize_thrown_reason_tests {
-    use skillwright::report::normalize_thrown_reason;
-
-    #[test]
-    fn a_refusals_status_word_is_stripped_and_the_token_leads() {
-        // `CoreError::Refused`'s Display is `refused: <token>: <prose>`, and
-        // the `refused:` is the line's own status column.
-        assert_eq!(
-            normalize_thrown_reason("refused: no-renderer: cursor has no skill layout"),
-            "no-renderer: cursor has no skill layout"
-        );
-    }
-
-    #[test]
-    fn any_other_message_is_left_whole() {
-        assert_eq!(
-            normalize_thrown_reason("reading /tmp/x: permission denied"),
-            "reading /tmp/x: permission denied"
-        );
-    }
-}

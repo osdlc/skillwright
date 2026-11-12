@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Depend on markdown-link 0.9, so an install builds one copy of it.
 
+### Changed
+
+- `CoreError::Refused` is `{ token, message }`. The token is a `refusal::Token`, and the new `refusal` module lists every one. `CoreError::token()`, `detail()` and `reason()` read a refusal without parsing its message.
+- `CoreError::RootNotFound` is removed, and messages say "vault root" in place of "corpus root".
+- `CoreError::malformed` is renamed `unreadable` and refuses with `unreadable-note`. A note that is not UTF-8 is refused the same way, not reported as `Io`.
+- `MarketplaceRefusal` has `token` and `detail` in place of `error`.
+- `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
+
 ## [0.50.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.1...tradecraft-core/v0.50.0) - 2026-11-12
 
 0.49.1 shipped these changes by mistake under a patch version and was yanked.

@@ -7,17 +7,15 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::refusal::{self, Token};
+
 /// Something went wrong reading a vault or building from it.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CoreError {
-    /// A content root does not exist. Returned before anything is read.
-    #[error("corpus root not found: {0}")]
-    RootNotFound(PathBuf),
-
     /// A path escaped its vault root. Always a bug or an attack; never shown
     /// as a routine condition.
-    #[error("path escapes its corpus root: {0}")]
+    #[error("path escapes its vault root: {0}")]
     PathEscapesRoot(PathBuf),
 
     /// Filesystem failure. Carries the path, because a bare
@@ -34,8 +32,13 @@ pub enum CoreError {
     /// A guard said no: a build refusal such as an unreadable root file or an
     /// output path that overlaps the vault. Always the guard working, never a
     /// bug.
-    #[error("refused: {0}")]
-    Refused(String),
+    #[error("refused: {token}: {message}")]
+    Refused {
+        /// The reason, for a host or a test to match on.
+        token: Token,
+        /// The prose after the token: the path and the fix.
+        message: String,
+    },
 
     /// Rendering a skill for a runtime target failed.
     #[error("projection: {0}")]
@@ -66,13 +69,36 @@ impl CoreError {
     /// variant fails to compile here until it is given a name.
     pub fn variant_name(&self) -> &'static str {
         match self {
-            CoreError::RootNotFound(_) => "RootNotFound",
             CoreError::PathEscapesRoot(_) => "PathEscapesRoot",
             CoreError::Io { .. } => "Io",
-            CoreError::Refused(_) => "Refused",
+            CoreError::Refused { .. } => "Refused",
             CoreError::Projection(_) => "Projection",
             CoreError::SwapFailed(_) => "SwapFailed",
         }
+    }
+
+    /// A refusal's token, or `None` for an error that is not a refusal.
+    pub fn token(&self) -> Option<Token> {
+        match self {
+            CoreError::Refused { token, .. } => Some(*token),
+            _ => None,
+        }
+    }
+
+    /// What a report says after the token: a refusal's message, or the whole
+    /// `Display` of any other error.
+    pub fn detail(&self) -> String {
+        match self {
+            CoreError::Refused { message, .. } => message.clone(),
+            other => other.to_string(),
+        }
+    }
+
+    /// The error as a report line gives a reason: `<token>: <detail>`, or the
+    /// detail alone for an error with no token. A refusal's `refused` is the
+    /// line's status, said there.
+    pub fn reason(&self) -> String {
+        reason(self.token().map(Token::as_str), &self.detail())
     }
 
     /// Attach a path to an [`std::io::Error`]. Threading the path through
@@ -84,53 +110,46 @@ impl CoreError {
         }
     }
 
-    /// A *content* problem in a file we read: frontmatter that will not parse,
-    /// or bytes that are not UTF-8. A value of the wrong kind or shape in a
-    /// note that parsed is [`Self::wrong_kind`].
-    ///
-    /// [`CoreError::Io`] rather than a variant of its own, because it is the
-    /// one variant that already carries a path and its `Display` — `reading
-    /// <path>: <what>` — is exactly the sentence a user needs. A caller
-    /// holding a path it believed was a skill has to be told *which* one was
-    /// not.
-    pub fn malformed(path: impl AsRef<Path>, message: impl Into<String>) -> Self {
-        Self::io(
-            path,
-            std::io::Error::new(std::io::ErrorKind::InvalidData, message.into()),
-        )
+    /// A note that cannot be read as one: bytes that are not UTF-8, or
+    /// frontmatter that will not parse.
+    /// `refused: unreadable-note: <path>: <message>`.
+    pub fn unreadable(path: impl AsRef<Path>, message: impl Into<String>) -> Self {
+        Self::refused_at(refusal::UNREADABLE_NOTE, path, message)
     }
 
     /// A note that parsed holds a value of the wrong kind:
-    /// `refused: malformed: <path>: <message>`. Not [`Self::malformed`],
-    /// whose `reading <path>` says the file could not be read.
+    /// `refused: malformed: <path>: <message>`.
     pub fn wrong_kind(path: impl AsRef<Path>, message: impl Into<String>) -> Self {
+        Self::refused_at(refusal::MALFORMED, path, message)
+    }
+
+    /// A refusal about the file at `path`: `refused: <token>: <path>: <message>`.
+    pub(crate) fn refused_at(
+        token: Token,
+        path: impl AsRef<Path>,
+        message: impl Into<String>,
+    ) -> Self {
         Self::refused(
-            "malformed",
+            token,
             format!("{}: {}", path.as_ref().display(), message.into()),
         )
     }
 
-    /// A refusal message split into the token it leads with and the prose
-    /// after it, or `None` when it leads with nothing shaped like a token:
-    /// some refusals carry prose alone.
-    pub(crate) fn split_refusal(message: &str) -> Option<(&str, &str)> {
-        message.split_once(": ").filter(|(token, _)| {
-            !token.is_empty()
-                && token
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        })
+    /// A refusal with its token from [`crate::refusal`]. The message names
+    /// the path and the fix.
+    pub fn refused(token: Token, message: impl Into<String>) -> Self {
+        Self::Refused {
+            token,
+            message: message.into(),
+        }
     }
+}
 
-    /// A refusal prefixed with a reason token, such as `unknown-harness` or
-    /// `path-collision`.
-    ///
-    /// The token leads the message so a report, a test, or a later UI can find
-    /// it without a second field on the variant; the prose after it names the
-    /// path and the fix. Every refusal in this crate goes through here, so a
-    /// report never has to render one as bare prose.
-    pub fn refused(token: &str, message: impl Into<String>) -> Self {
-        Self::Refused(format!("{token}: {}", message.into()))
+/// `<token>: <detail>`, or `detail` alone with no token.
+pub(crate) fn reason(token: Option<&str>, detail: &str) -> String {
+    match token {
+        Some(token) => format!("{token}: {detail}"),
+        None => detail.to_owned(),
     }
 }
 
@@ -142,24 +161,18 @@ mod tests {
     fn display_strings_are_stable() {
         // These reach users verbatim. Changing one is a user-visible change.
         assert_eq!(
-            CoreError::RootNotFound(PathBuf::from("/nope")).to_string(),
-            "corpus root not found: /nope"
-        );
-        assert_eq!(
             CoreError::PathEscapesRoot(PathBuf::from("/etc/passwd")).to_string(),
-            "path escapes its corpus root: /etc/passwd"
+            "path escapes its vault root: /etc/passwd"
         );
     }
 
     #[test]
-    fn a_refusal_leads_with_its_reason_token() {
-        // The token is how a report, a test, or a UI identifies the refusal;
-        // everything after it is prose for a human.
-        assert_eq!(
-            CoreError::refused("mixed-frontmatter-shape", "/vault/a.md: keep one shape")
-                .to_string(),
-            "refused: mixed-frontmatter-shape: /vault/a.md: keep one shape"
-        );
+    fn a_refusal_carries_its_token_beside_the_message() {
+        let err = CoreError::refused(refusal::LAYOUT, "/vault: keep one shape");
+        assert_eq!(err.to_string(), "refused: layout: /vault: keep one shape");
+        assert_eq!(err.token(), Some(refusal::LAYOUT));
+        assert_eq!(err.detail(), "/vault: keep one shape");
+        assert_eq!(err.reason(), "layout: /vault: keep one shape");
     }
 
     #[test]
@@ -169,18 +182,14 @@ mod tests {
             err.to_string(),
             "refused: malformed: /vault/a.md: `model` must be a string, not a list"
         );
-        let message = err.to_string();
-        let (token, _) = CoreError::split_refusal(message.strip_prefix("refused: ").unwrap())
-            .expect("a token leads the refusal");
-        assert_eq!(token, "malformed");
+        assert_eq!(err.token(), Some(refusal::MALFORMED));
     }
 
     #[test]
-    fn malformed_reads_as_a_read_failure_against_the_path() {
+    fn an_unreadable_note_is_a_refusal_naming_the_path() {
         assert_eq!(
-            CoreError::malformed("/vault/a.md", "`sw-kind` must be a string, not a list")
-                .to_string(),
-            "reading /vault/a.md: `sw-kind` must be a string, not a list"
+            CoreError::unreadable("/vault/a.md", "invalid frontmatter").to_string(),
+            "refused: unreadable-note: /vault/a.md: invalid frontmatter"
         );
     }
 
@@ -191,5 +200,8 @@ mod tests {
             std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
         );
         assert_eq!(err.to_string(), "reading /tmp/SKILL.md: permission denied");
+        assert_eq!(err.token(), None);
+        assert_eq!(err.detail(), err.to_string());
+        assert_eq!(err.reason(), err.to_string());
     }
 }

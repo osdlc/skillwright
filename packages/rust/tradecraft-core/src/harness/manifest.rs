@@ -16,6 +16,7 @@ use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides};
 use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::harness::{HarnessProfile, PluginDialect, SkillNaming};
+use crate::refusal;
 
 /// Two-space indentation, stable key order, one trailing newline — the byte
 /// form both manifests share, and the reason `check` can compare bytes.
@@ -120,7 +121,7 @@ pub(crate) fn check_container_blocks(
                 && !ty.accepts(value)
             {
                 return Err(CoreError::refused(
-                    "malformed",
+                    refusal::MALFORMED,
                     format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
                 ));
             }
@@ -152,7 +153,7 @@ pub(crate) fn naming_of(
             Some("bare") => Ok(SkillNaming::Bare),
             Some("prefixed") => Ok(SkillNaming::PluginPrefixed),
             _ => Err(CoreError::refused(
-                "unknown-naming",
+                refusal::UNKNOWN_NAMING,
                 format!(
                     "`{}.{NAMING_KEY}` of plugin `{plugin}` must be `bare` or `prefixed`, not {value}",
                     profile.name

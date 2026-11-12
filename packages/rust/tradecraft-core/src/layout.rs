@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
+use crate::refusal;
 use crate::settings::ROOT_FILE;
 use crate::vfs::Vfs;
 
@@ -93,9 +94,6 @@ pub const EXPECTED_LAYOUT: &str = "\
         ├── <p>.md
         ├── skills/<s>/<s>.md   (also agents/, commands/)
         └── hooks/hooks.json";
-
-/// The reason token of a layout refusal.
-pub const LAYOUT_REASON: &str = "layout";
 
 /// The kind a component folder (`skills`, `agents`, `commands`) holds.
 pub fn kind_dir(name: &str) -> Option<EntityKind> {
@@ -170,7 +168,7 @@ pub fn check_vault_root(vfs: &dyn Vfs, dir: &Path) -> Result<(), CoreError> {
         let path = dir.join(name);
         if vfs.is_symlink(&path) {
             return Err(CoreError::refused(
-                "unsafe-path",
+                refusal::UNSAFE_PATH,
                 format!(
                     "{}: `{name}` may not be a symlink. Replace it with the real file or folder",
                     path.display()
@@ -394,7 +392,7 @@ impl Layout {
 /// rule it breaks. A link and a symlink are refused with the same one
 /// (spec section 4, containment rule 2).
 pub(crate) struct Unreachable {
-    pub(crate) token: &'static str,
+    pub(crate) token: refusal::Token,
     pub(crate) what: String,
     pub(crate) rule: &'static str,
 }
@@ -403,7 +401,7 @@ impl Unreachable {
     /// A path that resolves outside marketplace `market` (containment rule 1).
     pub(crate) fn outside(market: &str) -> Self {
         Unreachable {
-            token: "link-out-of-scope",
+            token: refusal::LINK_OUT_OF_SCOPE,
             what: format!("resolves outside `{MARKETPLACES_DIR}/{market}/`"),
             rule: "section 4 containment rule 1",
         }
@@ -412,7 +410,7 @@ impl Unreachable {
     /// A file no link may reach, such as a plugin's note.
     pub(crate) fn no_link_may_reach(rel: &str) -> Self {
         Unreachable {
-            token: "link-out-of-scope",
+            token: refusal::LINK_OUT_OF_SCOPE,
             what: format!("names {rel}, which no link may reach"),
             rule: "section 4, scope of a link",
         }
@@ -429,7 +427,7 @@ impl Unreachable {
 /// A link error naming `file`, the link as `written`, what is wrong and the
 /// rule it broke (spec section 4 rule 14).
 pub(crate) fn link_refusal(
-    token: &str,
+    token: refusal::Token,
     file: &str,
     written: &str,
     what: impl std::fmt::Display,
@@ -446,7 +444,7 @@ pub(crate) fn reach(market: &str, plugin: Option<&str>, to: &LayoutFile) -> Opti
     }
     if to.plugin.as_deref() != plugin {
         return Some(Unreachable {
-            token: "link-out-of-scope",
+            token: refusal::LINK_OUT_OF_SCOPE,
             what: format!("names a file in another plugin, {}", to.rel),
             rule: "section 4, scope of a link",
         });
@@ -454,7 +452,7 @@ pub(crate) fn reach(market: &str, plugin: Option<&str>, to: &LayoutFile) -> Opti
     match &to.place {
         Place::ComponentNote { .. } | Place::Shared { .. } => None,
         Place::NeverShip { .. } => Some(Unreachable {
-            token: "excluded-link",
+            token: refusal::EXCLUDED_LINK,
             what: format!("links to {}, which never ships", to.rel),
             rule: "section 4 rule 10",
         }),
@@ -594,7 +592,7 @@ impl Problems {
             }
         }
         Err(CoreError::refused(
-            LAYOUT_REASON,
+            refusal::LAYOUT,
             format!("{message}\nThe expected layout:\n{EXPECTED_LAYOUT}"),
         ))
     }
@@ -603,7 +601,7 @@ impl Problems {
 /// A layout refusal that is not a list of problems, with the expected layout.
 fn layout_error(message: String) -> CoreError {
     CoreError::refused(
-        LAYOUT_REASON,
+        refusal::LAYOUT,
         format!("{message}. The expected layout:\n{EXPECTED_LAYOUT}"),
     )
 }
@@ -773,7 +771,7 @@ impl Walk<'_> {
     fn linked(&self, path: &Path) -> Result<bool, CoreError> {
         let refuse = |why: String| {
             CoreError::refused(
-                "unsafe-path",
+                refusal::UNSAFE_PATH,
                 format!(
                     "{}: a symlink {why}. Point it inside its marketplace folder, or replace it \
                      with the real file or folder",

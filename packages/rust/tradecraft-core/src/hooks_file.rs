@@ -23,6 +23,7 @@ use agent_adapt::{Hook, HookType, RuntimeId};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
+use crate::refusal;
 
 /// The variable a hook command names a plugin's installed root by on one
 /// harness, and the page it was read from.
@@ -137,7 +138,7 @@ pub(crate) fn check_hook_paths(
 /// ships.
 pub(crate) fn not_shipped(from: &str, written: &str, path: &str, label: &str) -> CoreError {
     CoreError::refused(
-        "plugin-root-not-shipped",
+        refusal::PLUGIN_ROOT_NOT_SHIPPED,
         format!(
             "{from}: `{written}` names `{path}`, which the {label} pack does not contain \
              (section 4 rules 17 and 20)"
@@ -163,12 +164,12 @@ const PLACEHOLDERS: [&str; 2] = ["harness", "event"];
 pub fn parse_hooks_file(text: &str, from: &str) -> Result<Vec<Hook>, CoreError> {
     if text.contains(CLAUDE_ROOT) {
         return Err(CoreError::refused(
-            "claude-plugin-root",
+            refusal::CLAUDE_PLUGIN_ROOT,
             format!("{from}: `{CLAUDE_ROOT}` is Claude Code's own; write `{CANONICAL_ROOT}`"),
         ));
     }
     let malformed =
-        |what: String| CoreError::refused("malformed-hooks-file", format!("{from}: {what}"));
+        |what: String| CoreError::refused(refusal::MALFORMED_HOOKS_FILE, format!("{from}: {what}"));
     let root: Value = serde_json::from_str(text).map_err(|e| malformed(e.to_string()))?;
     let Some(root) = root.as_object() else {
         return Err(malformed("the file must be a JSON object".into()));
@@ -184,7 +185,7 @@ pub fn parse_hooks_file(text: &str, from: &str) -> Result<Vec<Hook>, CoreError> 
     for (event, groups) in events {
         if !capabilities::hook_events().any(|(known, _)| known == event) {
             return Err(CoreError::refused(
-                "unknown-hook-event",
+                refusal::UNKNOWN_HOOK_EVENT,
                 format!("{from}: `hooks.{event}` is not a hook event any harness documents"),
             ));
         }
@@ -209,7 +210,7 @@ pub fn parse_hooks_file(text: &str, from: &str) -> Result<Vec<Hook>, CoreError> 
                 if let Some(bad) = hook.command.as_deref().and_then(unknown_placeholder) {
                     let known = PLACEHOLDERS.map(|p| format!("`{{{{{p}}}}}`")).join(", ");
                     return Err(CoreError::refused(
-                        "unknown-hook-placeholder",
+                        refusal::UNKNOWN_HOOK_PLACEHOLDER,
                         format!(
                             "{from}: `{at}.command` has `{bad}`; a hook command may use \
                              {known}"

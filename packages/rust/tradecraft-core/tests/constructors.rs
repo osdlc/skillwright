@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use tradecraft_core::model::LoadRequest;
+use tradecraft_core::refusal;
 use tradecraft_core::{
     BuildSettings, CallContext, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportUnit,
     MemVfs, RootFile, SharedDefaults, SkillIndex, UnitStatus, VaultRequest, Vfs, compile_note,
@@ -136,13 +137,13 @@ fn each_unit_status_as_str_is_the_serialized_word() {
 
 #[test]
 fn a_core_error_names_its_variant_and_matches_with_a_wildcard() {
-    let err = CoreError::Refused("no".to_owned());
+    let err = CoreError::refused(refusal::LAYOUT, "no");
     assert_eq!(err.variant_name(), "Refused");
     let refused = match &err {
-        CoreError::Refused(why) => why.as_str(),
-        _ => "",
+        CoreError::Refused { token, message } => (*token, message.as_str()),
+        _ => (refusal::UNSAFE_PATH, ""),
     };
-    assert_eq!(refused, "no");
+    assert_eq!(refused, (refusal::LAYOUT, "no"));
 }
 
 #[test]

@@ -77,6 +77,7 @@ use crate::layout::{
     Layout, LayoutFile, MARKETPLACES_DIR, PLUGINS_DIR, Place, SharedDir, Unreachable, reach,
 };
 use crate::model::{LinkForm, LinkedComponent, PluginRootPath, ResolvedRef};
+use crate::refusal;
 use crate::skill::{forward_slashed, read_utf8};
 use crate::vfs::{Vfs, normalize};
 
@@ -343,8 +344,9 @@ pub fn compile_note(
             .expect("each compiled resource has an output");
         // Emitted markdown is always this pass's own composition, so it is
         // UTF-8 by construction; the fallback only guards the invariant.
-        let text = std::str::from_utf8(bytes)
-            .map_err(|e| CoreError::malformed(Path::new(output_path), format!("not UTF-8: {e}")))?;
+        let text = std::str::from_utf8(bytes).map_err(|e| {
+            CoreError::unreadable(Path::new(output_path), format!("not UTF-8: {e}"))
+        })?;
         let split = frontmatter_lossless::split(text);
         let label = renderer.relative_or_verbatim(source_path);
         validate_no_obsidian_syntax(text, text.len() - split.body.len(), &label)?;
@@ -674,7 +676,7 @@ impl<'a> Renderer<'a> {
         }
         let Some(entry) = layout.file(&entry_path) else {
             return Err(CoreError::refused(
-                "layout",
+                refusal::LAYOUT,
                 format!(
                     "{} is not a component note or a shared file under `{MARKETPLACES_DIR}/`",
                     entry_path.display()
@@ -894,7 +896,7 @@ impl<'a> Renderer<'a> {
                     .map(|(path, fragment)| self.transclusion_label(path, fragment.as_deref()))
                     .collect();
                 return Err(CoreError::refused(
-                    "cycle",
+                    refusal::CYCLE,
                     format!(
                         "circular transclusion in {}: {}",
                         self.skill_name,
@@ -922,7 +924,7 @@ impl<'a> Renderer<'a> {
         let image = IMAGE_EXTENSIONS.contains(&extension.as_str());
         if embed && fragment.is_some() {
             return Err(self.link_error(
-                "embed-fragment",
+                refusal::EMBED_FRAGMENT,
                 source_path,
                 raw,
                 "has a fragment, and only a note's sections can be embedded",
@@ -978,7 +980,7 @@ impl<'a> Renderer<'a> {
         match problem {
             None => Ok(split.body),
             Some(problem) => Err(self.link_error(
-                "embed-frontmatter",
+                refusal::EMBED_FRONTMATTER,
                 from_file,
                 written,
                 format!(
@@ -1004,7 +1006,7 @@ impl<'a> Renderer<'a> {
         let bytes = self.vfs.read_file(file)?;
         let Ok(content) = String::from_utf8(bytes) else {
             return Err(self.link_error(
-                "embed-binary",
+                refusal::EMBED_BINARY,
                 source_path,
                 written,
                 "embeds a file that is not UTF-8 text",
@@ -1033,7 +1035,7 @@ impl<'a> Renderer<'a> {
     ) -> Result<String, CoreError> {
         if token.kind == TokenKind::ClaudeRoot {
             return Err(self.link_error(
-                "claude-plugin-root",
+                refusal::CLAUDE_PLUGIN_ROOT,
                 source_path,
                 written,
                 format_args!("is Claude Code's own; write `{CANONICAL_ROOT}`"),
@@ -1042,7 +1044,7 @@ impl<'a> Renderer<'a> {
         }
         if token.target.is_empty() {
             return Err(self.link_error(
-                "plugin-root-no-path",
+                refusal::PLUGIN_ROOT_NO_PATH,
                 source_path,
                 written,
                 format_args!(
@@ -1088,7 +1090,7 @@ impl<'a> Renderer<'a> {
         }
         if scheme.is_some() || path.starts_with('/') {
             return Err(self.link_error(
-                "unsafe-path",
+                refusal::UNSAFE_PATH,
                 source_path,
                 written,
                 "names a path outside the vault",
@@ -1184,7 +1186,7 @@ impl<'a> Renderer<'a> {
         let written = format!("/[[{}]]", token.destination);
         if token.fragment.is_some() {
             return Err(self.call_error(
-                "skill-call-fragment",
+                refusal::SKILL_CALL_FRAGMENT,
                 source_path,
                 &written,
                 "has a fragment, and a call cannot target a section; link or embed the \
@@ -1194,7 +1196,7 @@ impl<'a> Renderer<'a> {
         let skill = match self.call_context.skills.by_name(&token.target).as_slice() {
             [] => {
                 return Err(self.call_error(
-                    "skill-call-unresolved",
+                    refusal::SKILL_CALL_UNRESOLVED,
                     source_path,
                     &written,
                     format!("names no skill or command in marketplace `{}`", self.market),
@@ -1214,7 +1216,7 @@ impl<'a> Renderer<'a> {
                     })
                     .collect();
                 return Err(self.call_error(
-                    "skill-call-ambiguous",
+                    refusal::SKILL_CALL_AMBIGUOUS,
                     source_path,
                     &written,
                     format!("names {}; rename one", named.join(" and ")),
@@ -1223,7 +1225,7 @@ impl<'a> Renderer<'a> {
         };
         if skill.kind == EntityKind::Agent {
             return Err(self.call_error(
-                "skill-call-not-shipped",
+                refusal::SKILL_CALL_NOT_SHIPPED,
                 source_path,
                 &written,
                 format!("names agent `{}`, and no pack contains agents", skill.name),
@@ -1245,7 +1247,7 @@ impl<'a> Renderer<'a> {
     /// 8.
     fn call_error(
         &self,
-        token: &str,
+        token: refusal::Token,
         source_path: &Path,
         written: &str,
         what: impl std::fmt::Display,
@@ -1274,7 +1276,7 @@ impl<'a> Renderer<'a> {
             return Ok(());
         }
         Err(CoreError::refused(
-            "literal-skill-call",
+            refusal::LITERAL_SKILL_CALL,
             format!(
                 "{} call{} written by hand, which is right for one harness only: {} \
                  (section 4 rule 8)",
@@ -1304,7 +1306,7 @@ impl<'a> Renderer<'a> {
             from_file.to_path_buf()
         } else if target.starts_with('/') {
             return Err(self.link_error(
-                "unsafe-path",
+                refusal::UNSAFE_PATH,
                 from_file,
                 written,
                 "names a path outside the vault",
@@ -1465,7 +1467,7 @@ impl<'a> Renderer<'a> {
             _ => {
                 let named: Vec<&str> = hits.iter().map(|file| file.rel.as_str()).collect();
                 Err(self.link_error(
-                    "link-ambiguous",
+                    refusal::LINK_AMBIGUOUS,
                     from_file,
                     written,
                     format!("matches {}", named.join(" and ")),
@@ -1551,14 +1553,14 @@ impl<'a> Renderer<'a> {
         } else {
             ("links to nothing", "section 4 rule 11")
         };
-        self.link_error("link-unresolved", from_file, written, what, rule)
+        self.link_error(refusal::LINK_UNRESOLVED, from_file, written, what, rule)
     }
 
     /// A link error naming the linking file, the link as written and the
     /// rule it broke (section 4 rule 14).
     fn link_error(
         &self,
-        token: &str,
+        token: refusal::Token,
         from_file: &Path,
         written: &str,
         what: impl std::fmt::Display,
@@ -1622,7 +1624,7 @@ fn validate_no_obsidian_syntax(
         format!(" (not a link: {why}); write \\[[ to keep the brackets as text")
     });
     Err(CoreError::refused(
-        "unresolved-syntax",
+        refusal::UNRESOLVED_SYNTAX,
         format!("{source}: `{written}` is left in the built text{why} (section 4 rule 13)"),
     ))
 }
@@ -1641,7 +1643,7 @@ fn refuse_marks(text: &str, file: &str) -> Result<(), CoreError> {
     {
         None => Ok(()),
         Some(c) => Err(CoreError::refused(
-            "noncharacter",
+            refusal::NONCHARACTER,
             format!(
                 "{file} holds U+{:04X}, a Unicode noncharacter the build uses internally \
                  (section 4 rule 13)",
@@ -1693,7 +1695,7 @@ fn validate_frontmatter_links(
     match first_link(&value) {
         None => Ok(()),
         Some(written) => Err(CoreError::refused(
-            "unresolved-syntax",
+            refusal::UNRESOLVED_SYNTAX,
             format!(
                 "compiled skill {skill_name} has a link in the frontmatter of {output_path}: \
                  {written}; frontmatter ships as written, so the link is not resolved; \
@@ -2352,7 +2354,7 @@ fn select_fragment(
                 fragment.unwrap_or_default()
             ),
         };
-        CoreError::refused("fragment-unresolved", missing)
+        CoreError::refused(refusal::FRAGMENT_UNRESOLVED, missing)
     })
 }
 
@@ -2747,7 +2749,7 @@ mod tests {
 
         let err = compile(&vfs, "# Demo\n\n![[A]]\n").unwrap_err();
         let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
+        assert!(matches!(err, CoreError::Refused { .. }), "{message}");
         assert!(message.contains("cycle"), "{message}");
         assert!(message.contains("demo"), "{message}");
         // The loop, spelt in vault-relative hops from its first repeat.

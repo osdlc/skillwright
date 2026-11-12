@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use path_guard::{Guard, Resolver};
 
 use crate::error::CoreError;
+use crate::refusal;
 use crate::vfs::Vfs;
 
 /// A [`Vfs`] as `path-guard`'s [`Resolver`], so every containment check reads
@@ -44,7 +45,7 @@ impl VfsResolver<'_> {
 /// The refusal for a path the host could not resolve, with its `message`.
 fn unresolvable(p: &Path, message: &str) -> CoreError {
     CoreError::refused(
-        "unsafe-path",
+        refusal::UNSAFE_PATH,
         format!(
             "{}: cannot tell where this path leads — {message}. Nothing was written",
             p.display()
@@ -116,7 +117,7 @@ pub(crate) fn within(vfs: &dyn Vfs, outer: &Path, inner: &Path) -> Result<bool, 
     }
     answer.map_err(|err| {
         CoreError::refused(
-            "unsafe-path",
+            refusal::UNSAFE_PATH,
             format!(
                 "cannot compare {} with {}: {err}. Nothing was written",
                 inner.display(),

@@ -20,7 +20,7 @@
 //! a resource of the folder that holds it.
 //!
 //! Every note at a component position is a component. One with no
-//! `description` is listed with a [`MISSING_DESCRIPTION_REASON`] entry in
+//! `description` is listed with a [`refusal::MISSING_DESCRIPTION`] entry in
 //! [`DiscoveryReport::warnings`], and a build refuses it.
 //!
 //! # Validation
@@ -45,6 +45,7 @@ use serde_json::{Map, Value};
 use crate::error::CoreError;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::KNOWN_TARGETS;
+use crate::refusal;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vault::frontmatter_map;
 use crate::vfs::Vfs;
@@ -308,14 +309,6 @@ pub struct DiscoveryReport {
     pub warnings: Vec<DiscoveryWarning>,
 }
 
-/// The reason naming a component note with no `description`. A
-/// build refuses such a note; a scan lists it with this entry in
-/// [`DiscoveryReport::warnings`].
-pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
-
-/// The reason naming two notes that resolve onto one path.
-pub const PATH_COLLISION_REASON: &str = "path-collision";
-
 /// One note the scan admitted, and what is wrong with it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -347,7 +340,7 @@ impl DiscoveryWarning {
     /// Whether a build refuses the note this names, rather than ships it: a
     /// member with no description.
     pub fn is_error(&self) -> bool {
-        self.reason == MISSING_DESCRIPTION_REASON
+        self.reason == refusal::MISSING_DESCRIPTION
     }
 }
 
@@ -358,11 +351,8 @@ pub struct SkippedNote {
     /// The note's path relative to the vault root, forward-slashed — the same
     /// spelling every other report prints.
     pub path: String,
-    /// A closed-set reason token. The refusals that already carry one keep it
-    /// (`malformed`); everything else — frontmatter that will not parse,
-    /// a name the Agent Skills spec does not admit, an unreadable file — is
-    /// `unreadable-note`, the vocabulary's entry for "this note does not
-    /// parse".
+    /// The refusal's token, from [`crate::refusal`]. An error with no token,
+    /// such as a file that cannot be read, is `unreadable-note`.
     pub reason: String,
     /// The sentence naming what is wrong, after the reason token.
     pub detail: String,
@@ -376,23 +366,14 @@ pub struct SkippedNote {
 
 impl SkippedNote {
     fn new(vault_root: &Path, entry_path: &Path, plugin: Option<String>, err: &CoreError) -> Self {
-        // `CoreError::refused` puts the token first, `<token>: <prose>`, and the
-        // token is the reason, said once. Every other error is a content
-        // problem with no token of its own.
-        let (reason, detail) = match err {
-            CoreError::Refused(message) => match CoreError::split_refusal(message) {
-                Some((token, prose)) => (token.to_owned(), prose.to_owned()),
-                None => ("unreadable-note".to_owned(), err.to_string()),
-            },
-            _ => ("unreadable-note".to_owned(), err.to_string()),
-        };
+        let reason = err.token().unwrap_or(refusal::UNREADABLE_NOTE);
         Self {
             path: entry_path
                 .strip_prefix(vault_root)
                 .map(forward_slashed)
                 .unwrap_or_else(|_| entry_path.display().to_string()),
-            reason,
-            detail,
+            reason: reason.to_string(),
+            detail: err.detail(),
             plugin,
         }
     }
@@ -400,7 +381,7 @@ impl SkippedNote {
     /// The reason and the detail as one sentence, for a report that lists
     /// skipped notes under a single token of its own.
     pub fn sentence(&self) -> String {
-        if self.reason == "unreadable-note" {
+        if self.reason == refusal::UNREADABLE_NOTE {
             self.detail.clone()
         } else {
             format!("{}: {}", self.reason, self.detail)
@@ -416,7 +397,7 @@ impl SkippedNote {
 /// key such as `targets`, frontmatter that will not parse) lands in
 /// [`DiscoveryReport::skipped`] and the walk carries on. A note with no
 /// `description` is listed, and named in [`DiscoveryReport::warnings`] with
-/// [`MISSING_DESCRIPTION_REASON`], which a build refuses.
+/// [`refusal::MISSING_DESCRIPTION`], which a build refuses.
 ///
 /// # Errors
 ///
@@ -505,7 +486,7 @@ pub fn discover_in(
             plugin.unwrap_or_default(),
             paths.join(", ")
         );
-        return Err(CoreError::refused(PATH_COLLISION_REASON, detail));
+        return Err(CoreError::refused(refusal::PATH_COLLISION, detail));
     }
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     // Keys are unique by the check above, so this order is total.
@@ -535,7 +516,7 @@ pub(crate) fn needs_description(kind: EntityKind) -> bool {
 fn missing_description(component: &DiscoveredComponent) -> DiscoveryWarning {
     DiscoveryWarning {
         path: component.vault_relative_path.clone(),
-        reason: MISSING_DESCRIPTION_REASON.to_owned(),
+        reason: refusal::MISSING_DESCRIPTION.to_string(),
         detail: format!(
             "`{}` has no `description`; a build refuses it",
             component.name
@@ -543,7 +524,7 @@ fn missing_description(component: &DiscoveredComponent) -> DiscoveryWarning {
     }
 }
 
-/// Refuses with [`MISSING_DESCRIPTION_REASON`] when `paths` names any note.
+/// Refuses with [`refusal::MISSING_DESCRIPTION`] when `paths` names any note.
 /// A harness reads a component's description to decide when to load it, so
 /// a member without one is not published.
 ///
@@ -556,7 +537,7 @@ pub fn refuse_undescribed<'a>(paths: impl IntoIterator<Item = &'a str>) -> Resul
         return Ok(());
     }
     Err(CoreError::refused(
-        MISSING_DESCRIPTION_REASON,
+        refusal::MISSING_DESCRIPTION,
         format!(
             "{} note(s) have no `description`: {}. A harness reads the \
              description to decide when to load a component. Nothing was written",
@@ -589,12 +570,12 @@ fn read_source(
     // build refuses.
     check_values(&mut fields, &ours, entry_path, kind, position.name())?;
     if let Some(refusal) = description_refusal(&description) {
-        return Err(CoreError::malformed(entry_path, refusal));
+        return Err(CoreError::unreadable(entry_path, refusal));
     }
     if let Some(compatibility) = trimmed_string(&fields, "compatibility")
         && let Some(refusal) = compatibility_refusal(&compatibility)
     {
-        return Err(CoreError::malformed(entry_path, refusal));
+        return Err(CoreError::unreadable(entry_path, refusal));
     }
     let bundle_root = entry_path.parent().map(Path::to_path_buf);
     let resources = bundle_root
@@ -851,7 +832,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|w| w.reason == MISSING_DESCRIPTION_REASON && w.is_error())
+                .any(|w| w.reason == refusal::MISSING_DESCRIPTION && w.is_error())
         );
     }
 

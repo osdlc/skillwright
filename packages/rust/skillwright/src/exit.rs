@@ -37,6 +37,12 @@ pub fn refused(err: &mut dyn Write, message: &str) -> i32 {
     EXIT_REFUSED
 }
 
+/// `<what> failed: <reason>`, and [`EXIT_REFUSED`]. `reason` is what
+/// [`tradecraft_core::CoreError::reason`] gives, or the CLI's own words.
+pub fn failed(err: &mut dyn Write, what: &str, reason: &str) -> i32 {
+    refused(err, &format!("{what} failed: {reason}"))
+}
+
 /// An unknown command or flag, a missing argument, or a write off a terminal
 /// without `--yes`.
 pub fn usage_error(err: &mut dyn Write, message: &str) -> i32 {
@@ -79,6 +85,13 @@ mod tests {
         let (code, out) = written(|w| refused(w, "nothing to do"));
         assert_eq!(code, EXIT_REFUSED);
         assert_eq!(out, "nothing to do\n");
+    }
+
+    #[test]
+    fn failed_names_what_failed_and_returns_2() {
+        let (code, out) = written(|w| failed(w, "build", "layout: no root"));
+        assert_eq!(code, EXIT_REFUSED);
+        assert_eq!(out, "build failed: layout: no root\n");
     }
 
     #[test]
