@@ -512,7 +512,7 @@ mod tests {
                 content: note.content,
                 resources: Vec::new(),
             },
-            &["pi".to_owned()],
+            &[agent_adapt::RuntimeId::Pi],
             None,
         )
         .unwrap();

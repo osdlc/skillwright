@@ -6,7 +6,6 @@
     "plugins/marketplace-fields",
     "skills/plugin-namespace",
     "skills/plugin-root-variable",
-    "skills/project-dirs",
-    "skills/user-dirs"
+    "skills/project-dirs"
   ]
 }
