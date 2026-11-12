@@ -853,6 +853,8 @@ fn a_build_that_fails_in_one_marketplace_writes_none() {
         "{:?}",
         tree(&vault.join("dist"))
     );
+    // `acme` drifts and `labs` is refused: the refusal decides the code.
+    assert_eq!(run(&["check"], &vault).code, 2);
 }
 
 /// A build replaces only each harness's packs folder and the manifests it

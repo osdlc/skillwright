@@ -81,8 +81,8 @@ pub struct ExportFlags {
 ///
 /// Each marketplace is built into its own `dist/<m>/`, or only the one
 /// `--marketplace` names. The core plans every marketplace first; a build
-/// then asks once, and writes every one or none. The run exits with the
-/// first failure's code.
+/// then asks once, and writes every one or none. The run exits 2 when any
+/// marketplace was refused, else 1 when a check found drift.
 pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let run = match resolve_run(
         &flags.common,
@@ -183,15 +183,13 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
                 code
             }
         };
-        if exit == EXIT_OK {
-            exit = code;
-        }
+        // A refusal (2) outranks drift (1): exit 1 means drift and nothing else.
+        exit = exit.max(code);
     }
     if let Some(document) = document
         && let Err(code) = print_json(ctx, &document)
-        && exit == EXIT_OK
     {
-        exit = code;
+        exit = exit.max(code);
     }
     exit
 }
