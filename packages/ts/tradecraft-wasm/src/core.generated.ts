@@ -380,8 +380,8 @@ export interface VaultReport {
   marketplaces: MarketplaceReport[];
 
   /**
-   * A check's refused marketplaces, in folder order. A build that meets a
-   * refusal fails whole, so its report holds none.
+   * The refused marketplaces, in folder order. A build that meets one
+   * writes nothing.
    */
   refused?: MarketplaceRefusal[];
 }
@@ -398,15 +398,15 @@ export interface MarketplaceReport {
 /** What one export did, or would do — per plugin, per root. */
 export interface ExportReport {
   /**
-   * The mode the report describes, so `ok`/`drift` and
-   * `written`/`unchanged` read against the right verb.
+   * The mode the report describes, which gives each [`UnitStatus`] its
+   * verb.
    */
   mode: ExportMode;
 
   /** How many skills discovery found. */
   checked: number;
 
-  /** Check: anything drifted or stale. Build: anything was swapped. */
+  /** Anything differs or is stale: drift for a check, a swap for a build. */
   changed: boolean;
 
   /**
@@ -492,14 +492,15 @@ export type ExportUnit =
       /** The component's path in the vault. */
       path: string;
       /** The component's kind. */
-      kind: string;
+      kind: EntityKind;
     };
 
 /**
- * One unit's outcome. `check` speaks `ok`/`drift`; `build` speaks
- * `written`/`unchanged` — the same comparison, two verbs.
+ * Whether a unit matches what is installed. [`ExportReport::mode`] gives
+ * the verb: a check says `ok` or `drift`, a build `unchanged` or `written`.
+ * Closed: a unit either matches or does not.
  */
-export type UnitStatus = "ok" | "drift" | "written" | "unchanged";
+export type UnitStatus = "same" | "differs";
 
 /**
  * A plugin whose members changed since it was last built, with its own
@@ -532,7 +533,7 @@ export interface VersionBumpSuggestion {
  */
 export type StaleKind = "plugin" | "file" | "empty-dir";
 
-/** A marketplace a check could not plan, in a [`VaultReport`]. */
+/** A marketplace that could not be planned, in a [`VaultReport`]. */
 export interface MarketplaceRefusal {
   /** The marketplace's folder name. */
   marketplace: string;
