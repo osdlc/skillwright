@@ -173,8 +173,7 @@ in the [CHANGELOG](CHANGELOG.md).
 Most public types are `#[non_exhaustive]`, so a new field or variant is not a
 breaking change:
 
-- The request types (`VaultRequest`, `LoadRequest`,
-  `CompileSource`).
+- The request types (`VaultRequest`, `LoadRequest`).
   Build one with
   its `new` constructor, which takes the required inputs, and set the other
   fields on the value.

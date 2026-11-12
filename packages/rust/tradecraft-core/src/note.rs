@@ -61,8 +61,8 @@
 //! [`crate::compile`]'s pass, applied *between* this read and the
 //! projection. **The body here passes through verbatim** — the vault's bytes
 //! are canonical, and a read must not rewrite them. A caller that wants the
-//! flattened form runs [`crate::compile::compile_note`] over the body this
-//! read returns.
+//! flattened form passes the body this read returns to
+//! [`crate::model::resolve_body`].
 
 use std::path::Path;
 

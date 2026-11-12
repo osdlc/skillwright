@@ -72,7 +72,7 @@ pub mod settings;
 pub mod vfs;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
-pub use compile::{CallContext, CompileSource, CompiledNote, SkillIndex, compile_note};
+pub use compile::{CallContext, SkillIndex};
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, UNKNOWN_KEY_REASON,
