@@ -2,10 +2,10 @@
 //! into `<root>/dist/<m>/`, and the drift check over it.
 //!
 //! One function for both verbs, because in the core they are one path: a
-//! single render into a capturing overlay, compared once against
-//! `dist/<m>/`. `build` acts on that comparison and `check` returns it. This
-//! file's whole contribution is which mode goes on the request, and what a
-//! drifted report means for the exit code.
+//! single render, compared once against `dist/<m>/`. `build` acts on that
+//! comparison and `check` returns it. This file's whole contribution is which
+//! mode goes on the request, and what a drifted report means for the exit
+//! code.
 //!
 //! Nothing about the marketplace is decided here. Which skills ship, how they
 //! group into plugins, what each manifest says, which harnesses are built,

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// Something went wrong locating or reading a skill corpus.
+/// Something went wrong reading a vault or building from it.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CoreError {
@@ -15,12 +15,12 @@ pub enum CoreError {
     #[error("corpus root not found: {0}")]
     RootNotFound(PathBuf),
 
-    /// A path escaped its corpus root. Always a bug or an attack; never shown
+    /// A path escaped its vault root. Always a bug or an attack; never shown
     /// as a routine condition.
     #[error("path escapes its corpus root: {0}")]
     PathEscapesRoot(PathBuf),
 
-    /// Filesystem failure reading a corpus. Carries the path, because a bare
+    /// Filesystem failure. Carries the path, because a bare
     /// `io::Error` ("permission denied") is unactionable.
     #[error("reading {path}: {source}")]
     Io {

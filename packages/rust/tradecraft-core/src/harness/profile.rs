@@ -9,7 +9,7 @@
 //! A plugin row is a [`PluginPolicy`]: what this crate chooses (the packs
 //! folder, the dialect, a naming the knowledge does not give, whether a vault
 //! may choose the naming, the override lists) and, for each
-//! fact (user skills folder, manifest and marketplace paths, plugin-root
+//! fact (manifest and marketplace paths, plugin-root
 //! variable, naming rule), either [`Source::Knowledge`] or a
 //! [`Source::Constant`] with the reason. [`HarnessProfile::format`] resolves a
 //! row against the compiled harness knowledge file on first use (D-QXRN). This
@@ -38,11 +38,9 @@ pub struct HarnessProfile {
     pub name: &'static str,
     /// The harness's product name, for messages.
     pub label: &'static str,
-    /// The `agent-adapt` runtime a note renders through for this harness.
-    pub runtime: &'static str,
-    /// The runtime whose capability declaration answers for this harness:
-    /// which keys an override block may carry.
-    pub declaration: RuntimeId,
+    /// The `agent-adapt` runtime a note renders through for this harness. Its
+    /// capability declaration says which keys an override block may carry.
+    pub runtime: RuntimeId,
     /// The plugin policy. The facts it leaves to the knowledge file are read
     /// by [`Self::format`].
     pub plugin: PluginPolicy,
@@ -77,12 +75,6 @@ pub struct PluginRootPolicy {
 /// resolves it into a [`PluginFormat`] (D-QXRN).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginPolicy {
-    /// The project directory the projection puts a skill under. Policy: a
-    /// choice among the several a harness reads. A test holds it to one the
-    /// knowledge file's `skills/project-dirs` lists.
-    pub skills_dir: &'static str,
-    /// The folder under the home directory; `skills/user-dirs`.
-    pub user_skills_dir: Source<&'static str>,
     /// The pack manifest; `plugins/manifest-fields`.
     pub plugin_manifest: Source<&'static str>,
     /// The marketplace manifest, `None` with no marketplace;
@@ -98,8 +90,6 @@ pub struct PluginPolicy {
     pub plugin_root: Option<PluginRootPolicy>,
     /// How a published skill is named; `skills/plugin-namespace`.
     pub naming: Source<SkillNaming>,
-    /// See [`PluginFormat::hooks_manifest_entry`].
-    pub hooks_manifest_entry: Option<&'static str>,
     /// Whether the pack has a place for a command.
     pub carries_commands: bool,
     /// Whether the pack carries a hooks file.
@@ -119,15 +109,11 @@ pub struct PluginPolicy {
 /// Where a harness reads a plugin from, and how its pack is shaped.
 #[derive(Debug)]
 pub struct PluginFormat {
-    /// The project directory the runtime's projection puts a skill under.
-    /// The translator strips it and writes the skill under the pack's
-    /// `skills/`.
-    pub skills_dir: &'static str,
-    /// The folder under the home directory the harness loads a user's own
-    /// skills from. Each row's `PluginPolicy::user_skills_dir`
-    /// says where its value comes from and which folder it keeps when the
-    /// harness reads several.
-    pub user_skills_dir: &'static str,
+    /// The project directory the runtime's projection puts a skill under,
+    /// agent-adapt's project `skills_dir`. The translator strips it and
+    /// writes the skill under the pack's `skills/`. A test holds it to one the
+    /// knowledge file's `skills/project-dirs` lists.
+    pub skills_dir: String,
     /// The pack manifest, relative to a pack's own directory, in this
     /// harness's dialect.
     pub plugin_manifest: &'static str,
@@ -149,9 +135,6 @@ pub struct PluginFormat {
     pub plugin_root_var: Option<PluginRootVar>,
     /// How a published skill is named, and so how a call to it is spelled.
     pub naming: SkillNaming,
-    /// The pack manifest's `hooks` value naming the hooks file, for a harness
-    /// that reads hooks only from there.
-    pub hooks_manifest_entry: Option<&'static str>,
     /// Whether the pack has a place for a command.
     pub carries_commands: bool,
     /// Whether the pack carries a hooks file at
@@ -478,11 +461,8 @@ pub enum CliInvocation {
 pub const CLAUDE: HarnessProfile = HarnessProfile {
     name: "claude",
     label: "Claude Code",
-    runtime: "claude-code",
-    declaration: RuntimeId::ClaudeCode,
+    runtime: RuntimeId::ClaudeCode,
     plugin: PluginPolicy {
-        skills_dir: ".claude/skills",
-        user_skills_dir: Source::Knowledge,
         plugin_manifest: Source::Knowledge,
         marketplace_manifest: Source::Knowledge,
         packs: ".claude-plugin/packs",
@@ -495,7 +475,6 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
             note: None,
         }),
         naming: Source::Knowledge,
-        hooks_manifest_entry: None,
         carries_commands: true,
         carries_hooks: true,
         manifest_fields: CLAUDE_MANIFEST_FIELDS,
@@ -510,11 +489,8 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
 pub const CODEX: HarnessProfile = HarnessProfile {
     name: "codex",
     label: "Codex",
-    runtime: "codex-cli",
-    declaration: RuntimeId::CodexCli,
+    runtime: RuntimeId::CodexCli,
     plugin: PluginPolicy {
-        skills_dir: ".agents/skills",
-        user_skills_dir: Source::Knowledge,
         // knowledge disagrees: plugins/manifest-fields names the Agent Plugins
         // root `plugin.json`; `.codex-plugin/plugin.json` is the legacy path
         plugin_manifest: Source::Constant(".codex-plugin/plugin.json"),
@@ -532,7 +508,6 @@ pub const CODEX: HarnessProfile = HarnessProfile {
             ),
         }),
         naming: Source::Knowledge,
-        hooks_manifest_entry: None,
         carries_commands: false,
         carries_hooks: true,
         manifest_fields: CODEX_MANIFEST_FIELDS,
@@ -547,13 +522,8 @@ pub const CODEX: HarnessProfile = HarnessProfile {
 pub const CURSOR: HarnessProfile = HarnessProfile {
     name: "cursor",
     label: "Cursor",
-    runtime: "cursor",
-    declaration: RuntimeId::Cursor,
+    runtime: RuntimeId::Cursor,
     plugin: PluginPolicy {
-        skills_dir: ".cursor/skills",
-        // knowledge disagrees: skills/user-dirs lists `~/.agents/skills` first
-        // and `~/.cursor/skills` second; the row keeps the harness's own folder
-        user_skills_dir: Source::Constant(".cursor/skills"),
         plugin_manifest: Source::Knowledge,
         marketplace_manifest: Source::Knowledge,
         packs: ".cursor-plugin/packs",
@@ -567,7 +537,6 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         // names); prefixing the plugin is skillwright's default, so two
         // plugins' skills cannot collide (spec section 8 rule 6).
         naming: Source::Constant(SkillNaming::PluginPrefixed),
-        hooks_manifest_entry: None,
         carries_commands: false,
         carries_hooks: false,
         manifest_fields: CURSOR_MANIFEST_FIELDS,
@@ -582,11 +551,8 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
 pub const PI: HarnessProfile = HarnessProfile {
     name: "pi",
     label: "Pi",
-    runtime: "pi",
-    declaration: RuntimeId::Pi,
+    runtime: RuntimeId::Pi,
     plugin: PluginPolicy {
-        skills_dir: ".pi/skills",
-        user_skills_dir: Source::Knowledge,
         plugin_manifest: Source::Knowledge,
         marketplace_manifest: Source::Knowledge,
         packs: ".pi/packs",
@@ -597,7 +563,6 @@ pub const PI: HarnessProfile = HarnessProfile {
         // row prefixes the plugin so two plugins' skills cannot collide.
         // D-WNTQ lets a marketplace or a plugin choose `bare`.
         naming: Source::Constant(SkillNaming::PluginPrefixed),
-        hooks_manifest_entry: None,
         carries_commands: false,
         // Pi takes lifecycle events as TypeScript extensions and has no
         // hooks file.
@@ -628,13 +593,6 @@ pub(crate) mod facts {
     fn found(name: &str, subject: &str) -> Option<Found<'static>> {
         lookup(knowledge_slug(name), subject, Query::default())
             .unwrap_or_else(|e| panic!("{name} {subject}: {e}"))
-    }
-
-    /// `skills/user-dirs`: the first directory, less its `~/`.
-    pub fn user_skills_dir(name: &str) -> Option<(&'static str, Strength)> {
-        let f = found(name, "skills/user-dirs")?;
-        let dir = f.value.get("dirs")?.get(0)?.as_str()?;
-        Some((dir.strip_prefix("~/")?, f.strength))
     }
 
     /// `plugins/manifest-fields`: the manifest file.
@@ -701,13 +659,13 @@ fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
     let policy = &profile.plugin;
     let name = profile.name;
     PluginFormat {
-        skills_dir: policy.skills_dir,
-        user_skills_dir: sourced(
-            policy.user_skills_dir,
-            name,
-            "skills/user-dirs",
-            facts::user_skills_dir,
-        ),
+        skills_dir: agent_adapt::runtimes::for_id(profile.runtime)
+            .expect("every harness renders through an agent-adapt runtime")
+            .paths()
+            .skills_dir
+            .for_scope(agent_adapt::Scope::Project)
+            .to_string_lossy()
+            .into_owned(),
         plugin_manifest: sourced(
             policy.plugin_manifest,
             name,
@@ -740,7 +698,6 @@ fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
             "skills/plugin-namespace",
             facts::naming,
         ),
-        hooks_manifest_entry: policy.hooks_manifest_entry,
         carries_commands: policy.carries_commands,
         carries_hooks: policy.carries_hooks,
         manifest_fields: policy.manifest_fields,
@@ -834,7 +791,7 @@ impl HarnessProfile {
     /// The keys this harness reads in a harness block, from its
     /// runtime's own capability declaration, less those no harness fact backs.
     pub fn accepted_override_keys(&self) -> std::collections::BTreeSet<String> {
-        agent_adapt::runtimes::declaration_for(self.declaration)
+        agent_adapt::runtimes::declaration_for(self.runtime)
             .overrides
             .into_keys()
             .filter(|key| !UNREAD_OVERRIDES.contains(&key.as_str()))
@@ -894,7 +851,7 @@ mod tests {
     fn the_agent_only_keys_are_keys_the_harness_declares() {
         let claude = profile_named("claude").unwrap();
         let declared: std::collections::BTreeSet<String> =
-            agent_adapt::runtimes::declaration_for(claude.declaration)
+            agent_adapt::runtimes::declaration_for(claude.runtime)
                 .overrides
                 .into_keys()
                 .collect();
@@ -917,14 +874,6 @@ mod tests {
     fn a_key_no_fact_backs_is_not_accepted() {
         let codex = profile_named("codex").unwrap();
         assert!(!codex.accepted_override_keys().contains(UNREAD_OVERRIDES[0]));
-    }
-
-    #[test]
-    fn every_runtime_parses() {
-        for profile in &PROFILES {
-            crate::projection::parse_runtime_target(profile.runtime)
-                .unwrap_or_else(|e| panic!("{}: {e}", profile.name));
-        }
     }
 
     #[test]
@@ -971,10 +920,9 @@ mod tests {
     }
 
     /// What each plugin row held as constants before its facts came from the
-    /// knowledge file: user skills dir, pack manifest, marketplace manifest,
-    /// plugin-root variable and naming.
+    /// knowledge file: pack manifest, marketplace manifest, plugin-root
+    /// variable and naming.
     type Held = (
-        &'static str,
         &'static str,
         Option<&'static str>,
         Option<&'static str>,
@@ -983,33 +931,24 @@ mod tests {
     fn held(name: &str) -> Held {
         match name {
             "claude" => (
-                ".claude/skills",
                 ".claude-plugin/plugin.json",
                 Some(".claude-plugin/marketplace.json"),
                 Some("CLAUDE_PLUGIN_ROOT"),
                 SkillNaming::HostNamespaced,
             ),
             "codex" => (
-                ".agents/skills",
                 ".codex-plugin/plugin.json",
                 Some(".agents/plugins/marketplace.json"),
                 Some("PLUGIN_ROOT"),
                 SkillNaming::HostNamespaced,
             ),
             "cursor" => (
-                ".cursor/skills",
                 ".cursor-plugin/plugin.json",
                 Some(".cursor-plugin/marketplace.json"),
                 None,
                 SkillNaming::PluginPrefixed,
             ),
-            "pi" => (
-                ".pi/agent/skills",
-                "package.json",
-                None,
-                None,
-                SkillNaming::PluginPrefixed,
-            ),
+            "pi" => ("package.json", None, None, SkillNaming::PluginPrefixed),
             other => panic!("{other} has no plugin row"),
         }
     }
@@ -1018,8 +957,7 @@ mod tests {
     fn the_resolved_formats_equal_the_constants_the_rows_held() {
         for profile in with_plugin_format() {
             let format = profile.format();
-            let (user, manifest, market, root, naming) = held(profile.name);
-            assert_eq!(format.user_skills_dir, user, "{}", profile.name);
+            let (manifest, market, root, naming) = held(profile.name);
             assert_eq!(format.plugin_manifest, manifest, "{}", profile.name);
             assert_eq!(format.marketplace_manifest, market, "{}", profile.name);
             assert_eq!(
@@ -1042,13 +980,7 @@ mod tests {
         for profile in with_plugin_format() {
             let name = profile.name;
             let policy = &profile.plugin;
-            let (user, manifest, market, root, naming) = held(name);
-            if matches!(policy.user_skills_dir, Source::Knowledge) {
-                let (value, strength) = facts::user_skills_dir(name)
-                    .unwrap_or_else(|| panic!("{name}: no skills/user-dirs"));
-                enough(strength, &format!("{name} skills/user-dirs"));
-                assert_eq!(value, user, "{name}");
-            }
+            let (manifest, market, root, naming) = held(name);
             if matches!(policy.plugin_manifest, Source::Knowledge) {
                 let (value, strength) = facts::plugin_manifest(name)
                     .unwrap_or_else(|| panic!("{name}: no plugins/manifest-fields"));
@@ -1085,7 +1017,7 @@ mod tests {
         for profile in with_plugin_format() {
             let dirs = known(profile, "skills/project-dirs")
                 .unwrap_or_else(|| panic!("{}: no skills/project-dirs", profile.name));
-            let dir = profile.format().skills_dir;
+            let dir = profile.format().skills_dir.as_str();
             let listed = dirs["dirs"]
                 .as_array()
                 .unwrap()
