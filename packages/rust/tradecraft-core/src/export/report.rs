@@ -7,7 +7,6 @@ use crate::discover::DiscoveryWarning;
 
 use crate::frontmatter::EntityKind;
 use crate::harness::Harness;
-use crate::status::VersionBumpSuggestion;
 
 /// What one export did, or would do — per plugin, per root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,4 +126,19 @@ pub enum UnitStatus {
     Same,
     /// The unit differs from what is installed; a build replaces it.
     Differs,
+}
+
+/// A plugin whose members changed since it was last built, with its own
+/// `version` unmoved since: a suggestion to run `bump`.
+///
+/// The version at the last build is the built `plugin.json`'s own
+/// `"version"` field, read back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VersionBumpSuggestion {
+    /// The note's current `version`.
+    pub current_version: String,
+    /// The `version` the installed pack manifest carries. Equal to
+    /// `current_version` by construction — a suggestion exists exactly
+    /// because nothing moved to answer the members having changed.
+    pub published_version: String,
 }

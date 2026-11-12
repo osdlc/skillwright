@@ -50,8 +50,8 @@ use crate::harness::Harness;
 use crate::harness::manifest::{plugin_block, plugin_identity};
 use crate::keys;
 use crate::model::config::MarketplaceConfig;
+use crate::note::VaultNote;
 use crate::settings::SharedDefaults;
-use crate::vault::VaultNote;
 
 /// The containers above some notes, folded into one config.
 #[derive(Debug, Clone)]

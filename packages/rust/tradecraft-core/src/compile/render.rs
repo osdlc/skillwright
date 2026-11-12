@@ -18,8 +18,9 @@ use crate::guard::within;
 use crate::hooks_file::CANONICAL_ROOT;
 use crate::layout::{Layout, MARKETPLACES_DIR, Place, SharedDir};
 use crate::model::{LinkForm, PluginRootPath, ResolvedRef};
+use crate::note::read_utf8;
 use crate::refusal;
-use crate::skill::{forward_slashed, read_utf8};
+use crate::vfs::forward_slashed;
 use crate::vfs::{Vfs, normalize};
 
 /// One compile's state: the layout links resolve in, and the resources
