@@ -15,6 +15,7 @@ API:
 
 - `prompt::ask` is removed.
 - `resolve::ResolvedRun` is removed. `resolve_run` and `resolve_at` return the core's `LoadedVault`; its `root` is the vault root.
+- `resolve::CommonFlags` and `commands::marketplace::ExportFlags` are removed. `resolve::RunFlags` holds the flags every verb shares, and `resolve_run` takes it in place of a `marketplace` argument. `BumpFlags` keeps its own fields and holds a `RunFlags`.
 
 ### Changed
 

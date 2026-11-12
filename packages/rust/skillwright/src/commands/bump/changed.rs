@@ -129,7 +129,7 @@ pub(super) fn run_changed(
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
-    let baseline = match Baseline::resolve(since, loaded, &flags.harnesses, ctx) {
+    let baseline = match Baseline::resolve(since, loaded, &flags.run.harnesses, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
@@ -188,9 +188,10 @@ impl Changed<'_> {
         let (flags, since) = (self.flags, self.since);
         let mut request = VaultRequest::for_marketplace(&self.loaded.root, market);
         request.options.mode = ExportMode::Check;
-        request.options.harnesses.clone_from(&flags.harnesses);
+        request.options.harnesses.clone_from(&flags.run.harnesses);
         request.options.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<Harness> = match owned_paths(&self.loaded.settings, &flags.harnesses) {
+        let mut roots: Vec<Harness> = match owned_paths(&self.loaded.settings, &flags.run.harnesses)
+        {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return Err(refused(ctx.err, &err.reason())),
         };
@@ -299,7 +300,7 @@ fn verdicts(report: &ExportReport) -> BTreeMap<&str, Verdict> {
 /// each, or marks it `dry-run`. A failed write is reported on its row.
 fn apply(flags: &BumpFlags, rows: &mut [Row], ctx: &mut CommandContext<'_>) -> Result<(), i32> {
     let pending: Vec<&Row> = rows.iter().filter(|r| r.planned.is_some()).collect();
-    if !flags.dry_run && !flags.yes && !pending.is_empty() {
+    if !flags.run.dry_run && !flags.run.yes && !pending.is_empty() {
         let plan: Vec<String> = pending
             .iter()
             .filter_map(|r| {
@@ -325,7 +326,7 @@ fn apply(flags: &BumpFlags, rows: &mut [Row], ctx: &mut CommandContext<'_>) -> R
         let Some(new) = planned.new.clone() else {
             continue;
         };
-        if flags.dry_run {
+        if flags.run.dry_run {
             row.status = "dry-run";
         } else {
             // A failed write is reported on its row; the bumps already
@@ -350,7 +351,7 @@ fn print(
     rows: &[Row],
     ctx: &mut CommandContext<'_>,
 ) -> Result<(), i32> {
-    if flags.json {
+    if flags.run.json {
         let document = ChangedReport {
             baseline: since,
             plugins: rows.iter().map(Row::json).collect(),
@@ -361,10 +362,10 @@ fn print(
             let _ = writeln!(ctx.out, "{}", row.line());
         }
     }
-    if flags.dry_run && !flags.quiet {
+    if flags.run.dry_run && !flags.run.quiet {
         dry_run_notice(ctx, "the bumps this run would make");
     }
-    if !flags.quiet {
+    if !flags.run.quiet {
         let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
         for row in rows {
             *tally.entry(row.status).or_default() += 1;

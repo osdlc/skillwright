@@ -18,10 +18,10 @@ use tradecraft_core::Harness;
 
 use crate::commands::bump::{BumpFlags, BumpLevel, run_bump};
 use crate::commands::init::{InitFlags, run_init};
-use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
+use crate::commands::marketplace::{ExportVerb, run_export};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_USAGE};
-use crate::resolve::CommonFlags;
+use crate::resolve::RunFlags;
 
 const PROG: &str = "skillwright";
 const DESCRIPTION: &str = "Build a vault of markdown skill notes into plugin marketplaces for \
@@ -54,9 +54,17 @@ struct ReadOnlyGlobals {
 }
 
 impl ReadOnlyGlobals {
-    fn common(&self) -> CommonFlags {
-        CommonFlags {
+    /// The run's flags, with `--marketplace` and `--harness` and nothing
+    /// written.
+    fn run(&self, marketplace: Option<&String>, harness: &HarnessArg) -> RunFlags {
+        RunFlags {
             vault: self.vault.clone(),
+            json: self.json,
+            quiet: self.quiet,
+            dry_run: false,
+            yes: false,
+            marketplace: marketplace.cloned(),
+            harnesses: harness.names.iter().cloned().collect(),
         }
     }
 }
@@ -74,6 +82,17 @@ struct Globals {
     dry_run: bool,
     #[arg(long, help = "Accept the plan without prompting.")]
     yes: bool,
+}
+
+impl Globals {
+    /// [`ReadOnlyGlobals::run`], with `--dry-run` and `--yes`.
+    fn run(&self, marketplace: Option<&String>, harness: &HarnessArg) -> RunFlags {
+        RunFlags {
+            dry_run: self.dry_run,
+            yes: self.yes,
+            ..self.read_only.run(marketplace, harness)
+        }
+    }
 }
 
 /// The globals in the order the root `--help` lists them.
@@ -176,12 +195,6 @@ struct HarnessArg {
     names: Vec<String>,
 }
 
-impl HarnessArg {
-    fn set(&self) -> std::collections::BTreeSet<String> {
-        self.names.iter().cloned().collect()
-    }
-}
-
 /// `build`'s surface: the shared inputs and every global.
 #[derive(Args, Debug)]
 struct BuildArgs {
@@ -248,26 +261,11 @@ struct BumpArgs {
     globals: Globals,
 }
 
-impl ExportArgs {
-    fn flags(&self, globals: &ReadOnlyGlobals, dry_run: bool, yes: bool) -> ExportFlags {
-        ExportFlags {
-            marketplace: self.marketplace.clone(),
-            common: globals.common(),
-            json: globals.json,
-            dry_run,
-            yes,
-            quiet: globals.quiet,
-            harnesses: self.harness.set(),
-        }
-    }
-}
-
 impl BumpArgs {
     fn flags(&self) -> BumpFlags {
         BumpFlags {
             plugin: self.plugin.clone(),
             changed_since: self.changed_since.clone(),
-            marketplace: self.marketplace.clone(),
             level: if self.major {
                 BumpLevel::Major
             } else if self.minor {
@@ -275,12 +273,7 @@ impl BumpArgs {
             } else {
                 BumpLevel::Patch
             },
-            common: self.globals.read_only.common(),
-            json: self.globals.read_only.json,
-            dry_run: self.globals.dry_run,
-            yes: self.globals.yes,
-            quiet: self.globals.read_only.quiet,
-            harnesses: self.harness.set(),
+            run: self.globals.run(self.marketplace.as_ref(), &self.harness),
         }
     }
 }
@@ -319,14 +312,17 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
             ctx,
         ),
         Verb::Build(args) => {
-            let globals = &args.globals;
+            let export = &args.export;
             let flags = args
-                .export
-                .flags(&globals.read_only, globals.dry_run, globals.yes);
+                .globals
+                .run(export.marketplace.as_ref(), &export.harness);
             run_export(ExportVerb::Build, &flags, ctx)
         }
         Verb::Check(args) => {
-            let flags = args.export.flags(&args.globals, false, false);
+            let export = &args.export;
+            let flags = args
+                .globals
+                .run(export.marketplace.as_ref(), &export.harness);
             run_export(ExportVerb::Check, &flags, ctx)
         }
         Verb::Bump(args) => run_bump(&args.flags(), ctx),

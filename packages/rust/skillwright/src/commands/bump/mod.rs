@@ -34,12 +34,12 @@ use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, failed, refused, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::{dry_run_notice, print_json};
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{RunFlags, resolve_run};
 use changed::run_changed;
 pub use semver::BumpLevel;
 use semver::{next_version, parse_semver};
 
-/// The resolved flags of `skillwright bump`.
+/// The resolved flags of `skillwright bump`: its own, and the run's.
 pub struct BumpFlags {
     /// The plugin to bump, by its folder name. `None` with `changed_since`,
     /// or to bump the marketplace `--marketplace` names.
@@ -47,23 +47,11 @@ pub struct BumpFlags {
     /// `--changed-since`: bump every plugin that changed since this git ref
     /// or built directory.
     pub changed_since: Option<String>,
-    /// `--marketplace`: the marketplace to work in, or to bump.
-    pub marketplace: Option<String>,
     /// How much of the version to bump.
     pub level: BumpLevel,
-    /// The global `--vault` flag.
-    pub common: CommonFlags,
-    /// `--json`: print the report as one JSON document.
-    pub json: bool,
-    /// `--dry-run`: classify and report; write nothing.
-    pub dry_run: bool,
-    /// `--yes`: accept the plan without prompting.
-    pub yes: bool,
-    /// `--quiet`: drop progress and the tally from stderr.
-    pub quiet: bool,
-    /// `--harness`: the harnesses to build and compare. Empty means the root
-    /// file's `build.harnesses`.
-    pub harnesses: BTreeSet<String>,
+    /// The flags every verb shares. `--harness` names the harnesses to
+    /// build and compare.
+    pub run: RunFlags,
 }
 
 /// One row's `--json` object. `status` is `written`, `dry-run`, `unchanged`,
@@ -188,12 +176,7 @@ fn write_bump(planned: &Planned, new: &str) -> Result<(), String> {
 
 /// Run `skillwright bump` and return the exit code.
 pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
-    let loaded = match resolve_run(
-        &flags.common,
-        flags.marketplace.as_deref(),
-        &ctx.cwd,
-        ctx.err,
-    ) {
+    let loaded = match resolve_run(&flags.run, &ctx.cwd, ctx.err) {
         Ok(loaded) => loaded,
         Err(code) => return code,
     };
@@ -228,7 +211,10 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
             Ok(note) => run_one(flags, ctx, plugin, note, scheme),
             Err(message) => usage_error(ctx.err, &message),
         },
-        (None, None) => match (flags.marketplace.as_deref(), loaded.marketplaces.as_slice()) {
+        (None, None) => match (
+            flags.run.marketplace.as_deref(),
+            loaded.marketplaces.as_slice(),
+        ) {
             (Some(_), [market]) => {
                 let note = VersionNote {
                     path: market.note.clone(),
@@ -315,26 +301,26 @@ fn run_one(
     let Some(new) = planned.new.clone() else {
         let reason = non_semver_reason(&planned.current);
         let row = Row::refused(plugin, &planned.rel, &planned.current, reason).single();
-        if let Err(code) = write_row(ctx, flags.json, &row) {
+        if let Err(code) = write_row(ctx, flags.run.json, &row) {
             return code;
         }
-        if !flags.quiet {
+        if !flags.run.quiet {
             let _ = writeln!(ctx.err, "1 refused");
         }
         return EXIT_REFUSED;
     };
-    if flags.dry_run {
+    if flags.run.dry_run {
         let row = Row::bumped(plugin, planned, "dry-run", new).single();
-        if let Err(code) = write_row(ctx, flags.json, &row) {
+        if let Err(code) = write_row(ctx, flags.run.json, &row) {
             return code;
         }
-        if !flags.quiet {
+        if !flags.run.quiet {
             dry_run_notice(ctx, "the bump this run would make");
         }
         return EXIT_OK;
     }
 
-    if !flags.yes {
+    if !flags.run.yes {
         let plan = vec![format!(
             "{}  version {} -> {new}",
             planned.rel, planned.current
@@ -350,10 +336,10 @@ fn run_one(
     }
 
     let row = Row::bumped(plugin, planned, "written", new).single();
-    if let Err(code) = write_row(ctx, flags.json, &row) {
+    if let Err(code) = write_row(ctx, flags.run.json, &row) {
         return code;
     }
-    if !flags.quiet {
+    if !flags.run.quiet {
         let _ = writeln!(ctx.err, "1 written");
     }
     EXIT_OK

@@ -21,8 +21,6 @@
 //! the drift and exits 0, exactly as the build it previews would. `check` is
 //! the CI verb: the same render, the same report, and exit 1 on any drift.
 
-use std::collections::BTreeSet;
-
 use tradecraft_core::{
     BuildOptions, ExportMode, ExportReport, ExportUnit, LoadedVault, NativeVfs, VaultReport,
     owned_paths, plan,
@@ -35,7 +33,7 @@ use crate::report::{
     count_checked_units, dry_run_notice, print_json, render_export_tally, render_unit_line,
     render_warning_line,
 };
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{RunFlags, resolve_run};
 
 /// Which of the two verbs this run is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,25 +53,6 @@ impl ExportVerb {
     }
 }
 
-/// The resolved flags of `skillwright build and check`.
-pub struct ExportFlags {
-    /// Which marketplace to build. Absent means every one.
-    pub marketplace: Option<String>,
-    /// The global `--vault` flag.
-    pub common: CommonFlags,
-    /// `--json`: print the report as one JSON document.
-    pub json: bool,
-    /// `--dry-run`: classify and report; write nothing. `build` only.
-    pub dry_run: bool,
-    /// `--yes`: accept the plan without prompting. `build` only.
-    pub yes: bool,
-    /// `--quiet`: drop progress and the tally from stderr.
-    pub quiet: bool,
-    /// `--harness`: the harnesses to build. Empty means the root file's
-    /// `build.harnesses`.
-    pub harnesses: BTreeSet<String>,
-}
-
 /// Run one export. `verb` decides the mode a plain run uses and what a
 /// drifted report exits with; everything else about the two verbs is
 /// identical.
@@ -82,13 +61,8 @@ pub struct ExportFlags {
 /// `--marketplace` names. The core plans every marketplace first; a build
 /// then asks once, and writes every one or none. The run exits 2 when any
 /// marketplace was refused, else 1 when a check found drift.
-pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
-    let loaded = match resolve_run(
-        &flags.common,
-        flags.marketplace.as_deref(),
-        &ctx.cwd,
-        ctx.err,
-    ) {
+pub fn run_export(verb: ExportVerb, flags: &RunFlags, ctx: &mut CommandContext<'_>) -> i32 {
+    let loaded = match resolve_run(flags, &ctx.cwd, ctx.err) {
         Ok(loaded) => loaded,
         Err(code) => return code,
     };
@@ -161,7 +135,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
 }
 
 /// The core's options for this run: a build only when it `writes`.
-fn build_options(writes: bool, flags: &ExportFlags) -> BuildOptions {
+fn build_options(writes: bool, flags: &RunFlags) -> BuildOptions {
     let mut options = BuildOptions::default();
     options.harnesses.clone_from(&flags.harnesses);
     options.mode = if writes {
@@ -173,7 +147,7 @@ fn build_options(writes: bool, flags: &ExportFlags) -> BuildOptions {
 }
 
 /// Ask before a build replaces what it owns in each `dist/<m>/`.
-fn confirm_build(loaded: &LoadedVault, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
+fn confirm_build(loaded: &LoadedVault, flags: &RunFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // The harnesses are named, and the paths each one replaces with them.
     // The list comes from the core, not from a copy of the table here. The
     // plan before this one has already refused an unknown harness.
@@ -206,7 +180,7 @@ fn confirm_build(loaded: &LoadedVault, flags: &ExportFlags, ctx: &mut CommandCon
 /// one document over several marketplaces instead.
 fn export_one(
     verb: ExportVerb,
-    flags: &ExportFlags,
+    flags: &RunFlags,
     report: &ExportReport,
     advise: Option<String>,
     own_json: bool,
