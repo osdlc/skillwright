@@ -786,6 +786,32 @@ fn changed_since_a_git_ref_builds_it_in_a_temp_folder_and_cleans_up() {
 }
 
 #[test]
+fn changed_since_builds_and_compares_the_harnesses_harness_picks() {
+    let want = rows(&[("widget", "dry-run"), ("gadget", "unchanged")]);
+
+    let dir = project("build:\n  harnesses: [claude]\n");
+    let root = dir.path();
+    let built = run(&["build", "--yes", "--harness", "codex"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(!root.join("dist/acme/.claude-plugin").exists());
+    write_skill(root, "widget", "Second draft.");
+    assert_eq!(
+        statuses(&dry_bump(root, BUILT, &["--harness", "codex"])),
+        want
+    );
+
+    let dir = project("build:\n  harnesses: [claude]\n");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    commit_all(root, "one");
+    write_skill(root, "widget", "Second draft.");
+    assert_eq!(
+        statuses(&dry_bump(root, "HEAD", &["--harness", "codex"])),
+        want
+    );
+}
+
+#[test]
 fn a_ref_without_a_root_file_is_blocked_and_cleans_up() {
     let dir = project("");
     let root = dir.path();

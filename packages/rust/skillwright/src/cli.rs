@@ -11,9 +11,10 @@
 use std::io::Write;
 use std::path::PathBuf;
 
+use clap::builder::PossibleValuesParser;
 use clap::error::ErrorKind;
 use clap::{Args, Parser, Subcommand};
-use tradecraft_core::BumpLevel;
+use tradecraft_core::{BumpLevel, KNOWN_TARGETS};
 
 use crate::commands::bump::{BumpFlags, run_bump};
 use crate::commands::init::{InitFlags, run_init};
@@ -163,6 +164,22 @@ struct ExportArgs {
     /// The one marketplace under `marketplaces/` to build or check. Absent means every one.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
+    #[command(flatten)]
+    harness: HarnessArg,
+}
+
+/// `--harness`, which `build`, `check` and `bump` share.
+#[derive(Args, Debug)]
+struct HarnessArg {
+    /// A harness to build: claude, codex, cursor or pi. Repeat it for several. It replaces the root file's `build.harnesses` for this run.
+    #[arg(long = "harness", value_name = "name", value_parser = PossibleValuesParser::new(KNOWN_TARGETS))]
+    names: Vec<String>,
+}
+
+impl HarnessArg {
+    fn set(&self) -> std::collections::BTreeSet<String> {
+        self.names.iter().cloned().collect()
+    }
 }
 
 /// `build`'s surface: the shared inputs and every global.
@@ -226,6 +243,8 @@ struct BumpArgs {
     #[arg(long, conflicts_with_all = ["major", "minor"])]
     patch: bool,
     #[command(flatten)]
+    harness: HarnessArg,
+    #[command(flatten)]
     globals: Globals,
 }
 
@@ -238,6 +257,7 @@ impl ExportArgs {
             dry_run,
             yes,
             quiet: globals.quiet,
+            harnesses: self.harness.set(),
         }
     }
 }
@@ -260,6 +280,7 @@ impl BumpArgs {
             dry_run: self.globals.dry_run,
             yes: self.globals.yes,
             quiet: self.globals.read_only.quiet,
+            harnesses: self.harness.set(),
         }
     }
 }

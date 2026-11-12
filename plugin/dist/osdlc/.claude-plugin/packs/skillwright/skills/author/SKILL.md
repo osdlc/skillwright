@@ -125,7 +125,9 @@ node $PLUGIN_ROOT/scripts/tool.js --check
    error and warning with the note and the rule, and exits 1 on drift between the vault and
    `dist/`. Fix every error and warning in the notes.
 3. Build: `skillwright build --dry-run`, then `skillwright build --yes`. `--marketplace <m>`
-   builds one marketplace; without it every marketplace builds.
+   builds one marketplace; without it every marketplace builds. `--harness <name>` builds only
+   that harness; repeat it for several. Without it, `build.harnesses` in `skillwright.md`
+   decides, and with no such list all four build.
 4. Run `skillwright check` again. Exit 0 means `dist/` matches the vault.
 
 ## The dist/ output

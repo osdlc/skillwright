@@ -938,6 +938,54 @@ fn a_skill_targeting_claude_is_only_in_the_claude_pack() {
     );
 }
 
+/// The harness trees `dist/acme/` holds.
+fn built_trees(vault: &Path) -> Vec<String> {
+    let mut found: Vec<String> = fs::read_dir(vault.join("dist/acme"))
+        .map(|entries| {
+            entries
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .filter(|name| name.starts_with('.'))
+                .collect()
+        })
+        .unwrap_or_default();
+    found.sort();
+    found
+}
+
+#[test]
+fn harness_picks_the_harnesses_and_may_widen_the_root_files_list() {
+    let (_dir, vault) = fixture_with("---\nbuild:\n  harnesses: [claude]\n---\n");
+    let built = run(
+        &["build", "--yes", "--harness", "codex", "--harness", "pi"],
+        &vault,
+    );
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert_eq!(built_trees(&vault), [".agents", ".pi"]);
+
+    let checked = run(&["check", "--harness", "codex", "--harness", "pi"], &vault);
+    assert_eq!(checked.code, 0, "{}", checked.stderr);
+
+    let (_dir, vault) = fixture_with("---\nbuild:\n  harnesses: [claude]\n---\n");
+    let built = run(&["build", "--yes"], &vault);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert_eq!(built_trees(&vault), [".claude-plugin"]);
+}
+
+#[test]
+fn an_unknown_harness_is_a_usage_error() {
+    let (_dir, vault) = fixture();
+    for argv in [
+        &["build", "--yes", "--harness", "emacs"][..],
+        &["check", "--harness", "claude-code"],
+        &["bump", "tools", "--yes", "--harness", "emacs"],
+    ] {
+        let run = run(argv, &vault);
+        assert_eq!(run.code, 3, "{argv:?}: {}", run.stderr);
+        assert!(run.stderr.contains("--harness"), "{}", run.stderr);
+    }
+    assert!(!vault.join("dist").exists());
+}
+
 #[test]
 fn a_build_off_a_tty_without_yes_is_a_usage_error_not_a_silent_write() {
     let (dir, vault) = fixture();

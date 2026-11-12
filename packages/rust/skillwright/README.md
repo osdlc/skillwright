@@ -104,6 +104,7 @@ error messages go to stderr. `--json` prints the report as one JSON document.
 |---|---|---|
 | `--vault <path>` | all three | The vault root: the folder holding `skillwright.md` and `marketplaces/`. Without it, the first such folder at or above the working directory. |
 | `--marketplace <name>` | all three | Work on one marketplace. `build` and `check` without it cover every marketplace. |
+| `--harness <name>` | all three | Build only this harness: `claude`, `codex`, `cursor` or `pi`. Repeat it for several. It replaces `build.harnesses` for this run. |
 | `--json` | all three | Print the report on stdout as one JSON document |
 | `--quiet` | all three | Drop progress and the tally from stderr |
 | `--dry-run` | `build`, `bump` | Show what would be written; write nothing |

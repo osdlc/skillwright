@@ -33,6 +33,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `--harness <name>` on `build`, `check` and `bump` picks the harnesses to build, and may be repeated. It replaces the root file's `build.harnesses` for that run, which is now only the default. `bump --changed-since` builds and compares the same harnesses. An unknown name is a usage error, exit 3.
 - `cursor: {naming: bare | prefixed}` on `skillwright.md`, a marketplace note or a plugin note. A plugin's value overrides the marketplace's.
 - A plugin's Cursor display name reaches its entry in `.cursor-plugin/marketplace.json` as well as its `plugin.json`.
 

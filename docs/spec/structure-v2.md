@@ -1075,6 +1075,7 @@ does not say the command was removed.
    |---|---|---|
    | `--vault <path>` | `build`, `check`, `bump` | Names the root (section 1 rule 2). |
    | `--marketplace <m>` | `build`, `check`, `bump` | Picks one marketplace (rules 2 to 4). |
+   | `--harness <name>` | `build`, `check`, `bump` | Picks a harness to build: `claude`, `codex`, `cursor` or `pi`. Repeat it for several (rule 7). Any other name is a usage error, exit 3. |
    | `--json` | `build`, `check`, `bump` | Writes the report to stdout as one JSON document. |
    | `--quiet` | `build`, `check`, `bump` | Drops progress and the tally from stderr. |
    | `--dry-run` | `build`, `bump` | Reports what would be written, and writes nothing. |
@@ -1086,11 +1087,11 @@ does not say the command was removed.
 6. `build` and `bump` print what they will write and ask before they write.
    `--yes` skips the question. Without a terminal and without `--yes`, they
    stop with a usage error, exit 3, and write nothing.
-7. The core's build and check requests take a `harnesses` list; the CLI
-   has no flag for it. The harnesses built are that list when it is given,
-   else the root file's `build.harnesses`, else all four. A request's list
-   replaces the root file's for that run, and may name a harness the root
-   file leaves out. The root file's list is only the default.
+7. The harnesses built are those `--harness` names, or the core request's
+   `harnesses` list, when given; else the root file's `build.harnesses`;
+   else all four. A list given for a run replaces the root file's, and may
+   name a harness the root file leaves out. The root file's list is only the
+   default. `bump --changed-since` builds and compares the same harnesses.
 
 ## 11. A vault not in this layout
 

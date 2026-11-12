@@ -69,6 +69,9 @@ pub struct ExportFlags {
     pub yes: bool,
     /// `--quiet`: drop progress and the tally from stderr.
     pub quiet: bool,
+    /// `--harness`: the harnesses to build. Empty means the root file's
+    /// `build.harnesses`.
+    pub harnesses: BTreeSet<String>,
 }
 
 /// Run one export. `verb` decides the mode a plain run uses and what a
@@ -100,7 +103,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     } else {
         ExportMode::Check
     };
-    let plan = plan_loaded(&NativeVfs, &run.loaded, mode, &BTreeSet::new());
+    let plan = plan_loaded(&NativeVfs, &run.loaded, mode, &flags.harnesses);
     let several = plan.marketplaces.len() > 1;
     // `bump` needs `--marketplace` only when the vault holds several, but
     // naming it always runs.

@@ -56,6 +56,9 @@ pub struct BumpFlags {
     pub yes: bool,
     /// `--quiet`: drop progress and the tally from stderr.
     pub quiet: bool,
+    /// `--harness`: the harnesses to build and compare. Empty means the root
+    /// file's `build.harnesses`.
+    pub harnesses: BTreeSet<String>,
 }
 
 /// `--changed-since`'s `--json` document: the baseline, and one row per
@@ -458,13 +461,12 @@ fn run_changed(
         .marketplaces()
         .iter()
         .map(|m| {
-            (
-                m.name.as_str(),
-                run.loaded.export_request(m, ExportMode::Check),
-            )
+            let mut request = run.loaded.export_request(m, ExportMode::Check);
+            request.harnesses.clone_from(&flags.harnesses);
+            (m.name.as_str(), request)
         })
         .collect();
-    let baseline = match Baseline::resolve(since, run, ctx) {
+    let baseline = match Baseline::resolve(since, run, &flags.harnesses, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
@@ -805,6 +807,7 @@ impl Baseline {
     fn resolve(
         since: &str,
         run: &ResolvedRun,
+        harnesses: &BTreeSet<String>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<Baseline, i32> {
         let as_dir = crate::config::resolve_against_cwd(since, &ctx.cwd);
@@ -819,7 +822,7 @@ impl Baseline {
             }
             return Ok(Baseline::Dir(as_dir));
         }
-        BuiltRef::build(since, run, ctx).map(Baseline::Built)
+        BuiltRef::build(since, run, harnesses, ctx).map(Baseline::Built)
     }
 }
 
@@ -850,6 +853,7 @@ impl BuiltRef {
     fn build(
         since: &str,
         run: &ResolvedRun,
+        harnesses: &BTreeSet<String>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<BuiltRef, i32> {
         let fail = |ctx: &mut CommandContext<'_>, why: String| {
@@ -956,9 +960,10 @@ impl BuiltRef {
                 }
                 continue;
             };
-            let request = base_run
+            let mut request = base_run
                 .loaded
                 .export_request(base_market, ExportMode::Build);
+            request.harnesses.clone_from(harnesses);
             let result = plan_in(&NativeVfs, &base_run.loaded.layout, &request)
                 .and_then(|plan| plan.write(&NativeVfs));
             if let Err(err) = result {
