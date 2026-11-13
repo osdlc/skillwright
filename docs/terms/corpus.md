@@ -9,7 +9,7 @@ has osdlc's meaning (see below).
 
 ## In code
 
-`validateCorpus` in the [`@osdlc/corpus-schema`](https://www.npmjs.com/package/@osdlc/corpus-schema) package. `harness-reference/corpus/` is one.
+`validateCorpus` in the [`@osdlc/corpus-schema`](https://www.npmjs.com/package/@osdlc/corpus-schema) package. The harness reference's corpus is one. It moved to osdlc/osdlc, at [`packages/corpora/harness-reference/corpus`](https://github.com/osdlc/osdlc/tree/main/packages/corpora/harness-reference/corpus).
 
 ## Not to be confused with
 

@@ -47,6 +47,22 @@ cannot.
 - Read the corpus at build time. The file is the only interface.
 - A separate Rust crate for the file. No second consumer yet.
 
+## Update 2026-11-13: the corpus moved
+
+The `harness-reference` corpus and its compiler moved to osdlc/osdlc, at
+`packages/corpora/harness-reference`. The decision stands. What changed is
+where the embedded copy comes from:
+
+- It is cut from the `@osdlc/harness-knowledge` npm package, at the version
+  the root `package.json` pins, by `pnpm run harness-knowledge:slice`. That
+  replaces `compile:embed`.
+- Its `basis` links name the commit the package's data was compiled at, not
+  the placeholder `main`.
+- `scripts/harness-knowledge-slice.test.ts` fails when the copy is stale. That
+  replaces the `harness-reference` test.
+
+See `packages/rust/tradecraft-core/data/README.md`.
+
 ## Reopen if
 
 A second Rust consumer needs the file, or the facts kept as constants outnumber
