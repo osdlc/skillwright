@@ -30,8 +30,8 @@ importers:
   .:
     devDependencies:
       '@osdlc/harness-knowledge':
-        specifier: 0.1.0
-        version: 0.1.0
+        specifier: 0.2.0
+        version: 0.2.0
       '@osdlc/prettier-config':
         specifier: ^0.3.1
         version: 0.3.1
@@ -105,8 +105,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@osdlc/harness-knowledge@0.1.0':
-    resolution: {integrity: sha512-fWXn4w4wZHlrsbLLkJV6XeQFaE4JWLWZH9yBzDNeRDE/KgZ0IACFvzFU7QcLNkgZt5O38Wh5EKjE27NcM4V7dw==}
+  '@osdlc/harness-knowledge@0.2.0':
+    resolution: {integrity: sha512-1ti0oYvn14VQpCG3DnzBVx/WohennAdAEUgiqUXKg/y6r3wpdkkIjyeMMixa61RlM9wufSzQEtOV7r/7nSqDhw==}
     engines: {node: '>=22'}
 
   '@osdlc/prettier-config@0.3.1':
@@ -680,7 +680,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@osdlc/harness-knowledge@0.1.0': {}
+  '@osdlc/harness-knowledge@0.2.0': {}
 
   '@osdlc/prettier-config@0.3.1': {}
 
