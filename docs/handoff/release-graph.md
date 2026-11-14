@@ -1,5 +1,7 @@
 # What is left: the work graph
 
+> `harness-reference/` has moved to [osdlc/osdlc](https://github.com/osdlc/osdlc/tree/main/packages/corpora/harness-reference); paths below that start with it are historical. Its compiled output ships in [`@osdlc/harness-knowledge`](https://www.npmjs.com/package/@osdlc/harness-knowledge).
+
 > Note: the `@osdlc/markdown-db` package and its spec moved to osdlc as `@osdlc/corpus-schema` ([spec](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md)); `packages/ts/markdown-db/` no longer exists here and the `markdown-db` binary is now `corpus-schema`. The text below is historical.
 
 Every step to release markdown-db, land the evidence work, and move harness-reference and the
