@@ -842,7 +842,7 @@ mod tests {
     fn the_embedded_file_parses_and_names_its_corpus() {
         let kn = embedded();
         assert_eq!(kn.schema, 1);
-        assert_eq!(kn.corpus.repo, "osdlc/skillwright");
+        assert_eq!(kn.corpus.repo, "osdlc/osdlc");
         assert!(!kn.values.is_empty());
         for v in &kn.values {
             assert!(kn.harnesses.contains_key(&v.harness), "{}", v.harness);
