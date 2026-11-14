@@ -1,5 +1,7 @@
 # Plan: harness knowledge from evidence
 
+> `harness-reference/` has moved to [osdlc/osdlc](https://github.com/osdlc/osdlc/tree/main/packages/corpora/harness-reference); paths below that start with it are historical. Its compiled output ships in [`@osdlc/harness-knowledge`](https://www.npmjs.com/package/@osdlc/harness-knowledge).
+
 **Goal:** turn harness-reference into a claims corpus, and compile that corpus into one small
 data file that tools look values up in. Every value in the file links back to the statement
 that sets it. From the statement a reader can reach its evidence.

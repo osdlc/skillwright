@@ -1,17 +1,17 @@
 //! The compiled harness knowledge file, embedded, and the lookup over it.
 //!
-//! `harness-reference` compiles its claims corpus into `harness-knowledge.json`: one value per
+//! The `harness-reference` corpus (osdlc/osdlc, `packages/corpora/harness-reference`) compiles its claims corpus into `harness-knowledge.json`: one value per
 //! harness, subject and scope, each with a strength and a permalink to the statement that sets
 //! it. A copy lives at `data/harness-knowledge.json`, is read once on first use, and is the only
 //! thing this crate reads of that corpus (D-QXRN). [`lookup`] mirrors
-//! `harness-reference/src/compile/lookup.ts`; the two are held to the same cases.
+//! `lookup.ts` in that package, published as `@osdlc/harness-knowledge`; the two are held to the same cases.
 //!
 //! The copy holds only the harnesses and subjects in `data/embedded-slice.json`, written compact
-//! and without `valueSchema`. A new lookup adds its subject to that list and reruns
-//! `compile:embed`; a test fails until it does.
+//! and without `valueSchema`. A new lookup adds its subject to that list and refreshes
+//! the copy; a test fails until it does.
 //!
-//! The copy is compiled with the placeholder commit `main`, so it is the same on every checkout;
-//! a `harness-reference` test fails when it is stale.
+//! The copy is compiled with the placeholder commit `main`, so it is the same on every checkout.
+//! It is refreshed by hand from the corpus in osdlc/osdlc; no test here checks it against the corpus.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -766,10 +766,11 @@ mod tests {
         }
     }
 
-    /// `harness-reference/src/corpus/version-cases.json`, which the TypeScript tests read too.
+    /// `data/version-cases.json`, a copy of `src/corpus/version-cases.json` in the harness-reference
+    /// corpus in osdlc/osdlc, which its TypeScript tests read too.
     fn shared_cases() -> Value {
         serde_json::from_str(include_str!(
-            "../../../../../harness-reference/src/corpus/version-cases.json"
+            "../../data/version-cases.json"
         ))
         .unwrap()
     }

@@ -7,7 +7,9 @@ Amends [D-FDLQ](D-FDLQ-harness-profile-and-translator.md).
 
 A harness profile's *fact* values are looked up in the compiled
 `harness-knowledge.json` at first use, not written in the row. The file is
-compiled from the `harness-reference` claims corpus and embedded in
+compiled from the `harness-reference` claims corpus (now in
+[osdlc/osdlc](https://github.com/osdlc/osdlc/tree/main/packages/corpora/harness-reference), published as
+[`@osdlc/harness-knowledge`](https://www.npmjs.com/package/@osdlc/harness-knowledge)) and embedded in
 `tradecraft-core` (`data/harness-knowledge.json`).
 
 - **Facts move:** the user skills folder, the pack manifest path, the
@@ -24,11 +26,13 @@ compiled from the `harness-reference` claims corpus and embedded in
   value in a usable shape, only a weak or disputed one, or a value that
   disagrees with the row. Each constant in `profile.rs` says which of these it
   is.
-- **The embedded copy is reproducible.** It is compiled with the placeholder
-  commit `main` (`pnpm --filter harness-reference run compile:embed`), cut to
-  the harnesses and subjects in `data/embedded-slice.json` and written compact, without `valueSchema`.
-  A `harness-reference` test fails when it is stale, and a Rust test fails when
-  `profile.rs` looks up a subject the list lacks.
+- **The embedded copy is a slice.** It is compiled with the placeholder
+  commit `main`, cut to the harnesses and subjects in
+  `data/embedded-slice.json` and written compact, without `valueSchema`. A Rust
+  test fails when `profile.rs` looks up a subject the list lacks. Since the
+  corpus moved to osdlc/osdlc, the copy is refreshed by hand from there, and no
+  test here checks it against the corpus. The crate cannot read the npm package
+  at build time, because a published crate must carry its data.
 - A test holds every lookup a profile makes to a moderate or stronger
   statement and to the value the row held before, so a corpus change that moves
   a fact fails a test instead of changing output.
