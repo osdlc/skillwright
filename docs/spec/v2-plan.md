@@ -53,7 +53,7 @@ the build. The commits must cover them:
 
 | Probe | Question | Role |
 |---|---|---|
-| `plugin-layout` ([#148](https://github.com/osdlc/skillwright/issues/148)) | Do models on Codex, Cursor and Pi resolve relative paths in skill text from the file they are written in, for references and scripts, both skill-local (`scripts/x`) and plugin-shared (`../../scripts/x`)? | Evidence for section 4 rule 19 only. It blocks no commit and is not in the definition of done. Method and fixture: [plugin-layout](../../harness-reference/corpus/methods/plugin-layout/plugin-layout.md). Record each run as a study result linked to it. If models fail, rule 19 is revisited in a follow-up; v2 ships as specified. |
+| `plugin-layout` ([#148](https://github.com/osdlc/skillwright/issues/148)) | Do models on Codex, Cursor and Pi resolve relative paths in skill text from the file they are written in, for references and scripts, both skill-local (`scripts/x`) and plugin-shared (`../../scripts/x`)? | Evidence for section 4 rule 19 only. It blocks no commit and is not in the definition of done. Method and fixture: [plugin-layout](https://github.com/osdlc/osdlc/tree/main/packages/corpora/harness-reference/corpus/methods/plugin-layout/plugin-layout.md). Record each run as a study result linked to it. If models fail, rule 19 is revisited in a follow-up; v2 ships as specified. |
 
 ## Build order
 
