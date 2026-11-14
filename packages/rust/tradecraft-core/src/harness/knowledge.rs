@@ -1,17 +1,20 @@
 //! The compiled harness knowledge file, embedded, and the lookup over it.
 //!
-//! `harness-reference` compiles its claims corpus into `harness-knowledge.json`: one value per
-//! harness, subject and scope, each with a strength and a permalink to the statement that sets
-//! it. A copy lives at `data/harness-knowledge.json`, is read once on first use, and is the only
-//! thing this crate reads of that corpus (D-QXRN). [`lookup`] mirrors
-//! `harness-reference/src/compile/lookup.ts`; the two are held to the same cases.
+//! The harness reference, a claims corpus in osdlc/osdlc
+//! (`packages/corpora/harness-reference`), is compiled into `harness-knowledge.json`: one value
+//! per harness, subject and scope, each with a strength and a permalink to the statement that
+//! sets it. The `@osdlc/harness-knowledge` npm package ships that file. A vendored copy of part
+//! of it lives at `data/harness-knowledge.json`, is read once on first use, and is the only
+//! thing this crate reads of that corpus (D-QXRN). [`lookup`] mirrors the package's `lookup`;
+//! the two are held to the same cases (`data/version-cases.json`).
 //!
 //! The copy holds only the harnesses and subjects in `data/embedded-slice.json`, written compact
 //! and without `valueSchema`. A new lookup adds its subject to that list and reruns
-//! `compile:embed`; a test fails until it does.
+//! `pnpm run harness-knowledge:slice` at the repository root; a test fails until it does.
 //!
-//! The copy is compiled with the placeholder commit `main`, so it is the same on every checkout;
-//! a `harness-reference` test fails when it is stale.
+//! The copy is cut from the version of `@osdlc/harness-knowledge` that the root `package.json`
+//! pins. `scripts/harness-knowledge-slice.test.ts` fails when the two differ. See
+//! `data/README.md`.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -766,12 +769,9 @@ mod tests {
         }
     }
 
-    /// `harness-reference/src/corpus/version-cases.json`, which the TypeScript tests read too.
+    /// A copy of the harness reference's `version-cases.json`, which its TypeScript tests read.
     fn shared_cases() -> Value {
-        serde_json::from_str(include_str!(
-            "../../../../../harness-reference/src/corpus/version-cases.json"
-        ))
-        .unwrap()
+        serde_json::from_str(include_str!("../../data/version-cases.json")).unwrap()
     }
 
     #[test]

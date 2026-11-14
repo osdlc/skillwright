@@ -1,3 +1,0 @@
-# Guide
-
-Marker: PATHS-GUIDE-DECOY-PROJECT

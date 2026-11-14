@@ -26,7 +26,7 @@ See the [CLI README](packages/rust/skillwright/README.md) for options and exit c
 - `packages/rust/`: the skillwright CLI and the tradecraft crates.
 - `packages/ts/tradecraft-wasm/`: the WebAssembly build of the core, for TypeScript.
 - `plugin/`: the agent plugin, with skills for using the skillwright CLI. See [plugin/README.md](plugin/README.md).
-- `harness-reference/`: reference notes on agent harnesses.
+- The harness reference, the cited notes on agent harnesses that were in `harness-reference/`, is now in [osdlc/osdlc](https://github.com/osdlc/osdlc/tree/main/packages/corpora/harness-reference). `tradecraft-core` embeds a copy of part of its compiled file; see [its data folder](packages/rust/tradecraft-core/data/README.md).
 - `docs/`: [decisions](docs/decisions/README.md), [standards](docs/standards/README.md) and [terms](docs/terms/README.md).
 
 ## Documentation

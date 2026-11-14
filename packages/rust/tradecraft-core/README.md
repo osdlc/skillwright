@@ -161,6 +161,18 @@ replaced on every build. `HarnessProfile::owned_paths` names them, for example
 everything else in `.agents/`, `.pi/`, `.claude-plugin/` and `.cursor-plugin/`
 alone.
 
+## Harness facts
+
+Where a harness keeps its skills, manifests and marketplace file is read from
+`data/harness-knowledge.json`, which is embedded in the crate. The file is a
+vendored copy of part of the compiled harness knowledge that
+[`@osdlc/harness-knowledge`](https://www.npmjs.com/package/@osdlc/harness-knowledge)
+ships, from the harness reference in
+[osdlc/osdlc](https://github.com/osdlc/osdlc/tree/main/packages/corpora/harness-reference).
+Its `corpus` block names the commit it was compiled from, and each value's
+`basis` links to the statement that sets it. [data/README.md](data/README.md)
+says how the copy is refreshed and checked.
+
 ## WebAssembly
 
 The library does no I/O except through `Vfs`, so it runs under

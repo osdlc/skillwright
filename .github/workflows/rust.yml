@@ -85,7 +85,7 @@ jobs:
               files='*'
               ;;
           esac
-          if [ "$files" = '*' ] || grep -qE '^(packages/rust/|harness-reference/src/corpus/version-cases\.json$|packages/ts/tradecraft-wasm/src/core\.generated\.ts|docs/reference/fields\.md$|\.github/workflows/(rust|release-plz)\.yml$|\.github/actions/rust-|scripts/crates-io-)' <<<"$files"; then
+          if [ "$files" = '*' ] || grep -qE '^(packages/rust/|packages/ts/tradecraft-wasm/src/core\.generated\.ts|docs/reference/fields\.md$|\.github/workflows/(rust|release-plz)\.yml$|\.github/actions/rust-|scripts/crates-io-)' <<<"$files"; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
           else
             echo "rust=false" >> "$GITHUB_OUTPUT"

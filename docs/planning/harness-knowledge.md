@@ -8,6 +8,12 @@ The corpus is never compiled into a tool or shipped with one. Tools ship the der
 
 Status: in progress, updated 2026-11-09.
 
+Moved 2026-11-13: the corpus and its compiler are now in osdlc/osdlc, at
+`packages/corpora/harness-reference`, and `@osdlc/harness-knowledge` is compiled from them there.
+The paths, scripts and release steps below describe the work as it was done in this repository.
+tradecraft-core embeds a copy cut from the npm package; see
+`packages/rust/tradecraft-core/data/README.md`.
+
 ## Progress
 
 | Phase | PR | State |

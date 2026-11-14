@@ -1,9 +1,0 @@
-{
-  "name": "probe-with-manifest",
-  "private": true,
-  "pi": {
-    "skills": [
-      "skills"
-    ]
-  }
-}

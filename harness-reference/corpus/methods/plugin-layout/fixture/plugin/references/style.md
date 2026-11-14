@@ -1,3 +1,0 @@
-# Style
-
-Marker: PATHS-STYLE-PLUGIN-OK

@@ -14,10 +14,12 @@
     "build": "pnpm -r --if-present run build",
     "test": "pnpm -r --if-present run test",
     "lint": "pnpm -r --if-present run lint",
+    "harness-knowledge:slice": "node scripts/harness-knowledge-slice.ts",
     "test:scripts": "node --test scripts/*.test.ts packages/rust/skillwright/release/dist.test.ts",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
   "devDependencies": {
+    "@osdlc/harness-knowledge": "0.1.0",
     "@osdlc/prettier-config": "^0.3.1",
     "@types/node": "catalog:",
     "prettier": "catalog:",

@@ -1,6 +1,5 @@
 packages:
   - 'packages/ts/*'
-  - 'harness-reference'
 
 # Shared versions. A package or the root names one as `"catalog:"` so a bump
 # is one edit here.
