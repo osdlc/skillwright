@@ -49,9 +49,9 @@
       "line": 9,
       "title": "docs/terms/resolved-reference.md says compile records only with a recorder",
       "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "96de993af3a0f2f02faf6c78012737789b12cddb"
     },
     {
       "id": "r1-5",
