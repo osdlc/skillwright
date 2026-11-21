@@ -71,9 +71,9 @@
       "line": 164,
       "title": "used check is a substring match: refusal::MALFORMED matches MALFORMED_HOOKS_FILE",
       "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891870",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a74e82f92e2f1691772cd94ea920408bb3ee15f3"
     },
     {
       "id": "r1-7",
