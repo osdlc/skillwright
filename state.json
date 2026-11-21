@@ -134,9 +134,9 @@
       "line": 40,
       "title": "Principle 5 adds a follow-up PR inside a milestone; principle 1 says one PR per milestone",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "60b19e6ed46a4d007e5958165922a2bc94398115"
     },
     {
       "id": "r1-13",
