@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 162,
-  "head": "0ee3461e042595a98dc46946185026585b4c3922",
-  "base": "97aa24276141ee209541c7fe9f25323715ca3e24",
-  "round": 2,
+  "head": "e0efd90bf75bbe9b240fdf835589e9ec9a3ffd14",
+  "base": "2c9b218696ad7ffa9445c855b26e4dd6a37bc1eb",
+  "round": 3,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T06:04:51.947Z"
@@ -118,6 +118,17 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "988f973c4a1a254561e7265c7774a1d91173303e"
+    },
+    {
+      "id": "r3-1",
+      "round": 3,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 802,
+      "title": "Snapshot doc sentence reads as 'keeps a file's size within the mtime granularity'",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
