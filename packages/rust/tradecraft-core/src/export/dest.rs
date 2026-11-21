@@ -26,7 +26,7 @@ pub(super) struct RootDiff {
 }
 
 /// What the destination root actually holds.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 struct DestState {
     /// Root-relative file paths → is-symlink. A symlink never matches: the
     /// render emits bytes, and a link that reads the same resolves elsewhere.
@@ -37,7 +37,8 @@ struct DestState {
 }
 
 /// What `base` holds under `paths`: [`DestState`], and each file's size,
-/// modification time and execute bit.
+/// modification time and execute bit. An edit that keeps a file's size within
+/// the filesystem's modification-time granularity is not seen.
 #[derive(PartialEq, Eq)]
 pub(super) struct Snapshot {
     pub(super) paths: Vec<&'static str>,
@@ -98,7 +99,7 @@ fn scan_output(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestState, 
     Ok(state)
 }
 
-/// The folders directly in `dir`, by name, links left out. None when `dir`
+/// The folders directly in `dir`, by name, links left out. Empty when `dir`
 /// is missing.
 fn folders_in(vfs: &dyn Vfs, dir: &Path) -> Result<Vec<String>, CoreError> {
     if !vfs.exists(dir) {
@@ -389,11 +390,10 @@ fn slices_of<'a>(
     stale_plugins: &BTreeSet<&str>,
     rendered: &BTreeMap<String, PreviewWrite>,
 ) -> (BTreeMap<&'a str, PluginSlice<'a>>, Vec<(String, StaleKind)>) {
-    // Bucket what carries a story by the plugin that owns it. Membership is
-    // decided against the two NAME sets, never by path shape alone: a
-    // symlinked plugin directory is absent from the plugin folders and present
-    // among the files, so it is neither carried nor stale, and falls to the
-    // loose pile like any other stray.
+    // A path joins a plugin only by name, in `admitted` or `stale_plugins`,
+    // never by path shape alone: a symlinked plugin directory is absent from
+    // the plugin folders but present among the files, so it is in neither set
+    // and is reported as a stale file like any other stray.
     let mut slices: BTreeMap<&str, PluginSlice> = BTreeMap::new();
     let mut loose: Vec<&str> = Vec::new();
     for relative in &sets.extra {
@@ -414,11 +414,10 @@ fn slices_of<'a>(
         }
     }
 
-    // Empty directories, in the one order that keeps each to a single story:
-    // inside a carried plugin it drifts that plugin; inside a stale one that
-    // plugin's unit already speaks for it; where the render owns files
-    // beneath it the owning unit reports the gap; otherwise it is stale on
-    // its own.
+    // Each empty directory is reported once, by the first arm that matches:
+    // inside a carried plugin it marks that plugin drifted; inside a stale
+    // plugin that plugin's unit covers it; above a rendered file the unit
+    // owning that file reports it; otherwise it is stale on its own.
     let mut stale_paths: Vec<(String, StaleKind)> = Vec::new();
     for dir in &dest.state.empty_dirs {
         match split_pack(packs, dir) {
