@@ -104,9 +104,9 @@
       "line": 21,
       "title": "CLI and TS changelogs don't mention the new output-changed refusal",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "988f973c4a1a254561e7265c7774a1d91173303e"
     },
     {
       "id": "r2-3",
