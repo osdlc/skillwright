@@ -156,9 +156,9 @@
       "line": 47,
       "title": "Folding the unit test in dropped the check that every token line parsed",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "6e2073b358dba846d5dee884937dcd1eaa89e9c3"
     },
     {
       "id": "r3-2",
