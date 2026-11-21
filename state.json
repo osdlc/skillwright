@@ -93,9 +93,9 @@
       "line": 638,
       "title": "build_vault's # Errors omits the new output-changed refusal",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "988f973c4a1a254561e7265c7774a1d91173303e"
     },
     {
       "id": "r2-2",
