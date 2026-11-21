@@ -82,9 +82,9 @@
       "line": 168,
       "title": "name fallback is dead now that Cascade::over always sets config.name",
       "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496930",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0ee3461e042595a98dc46946185026585b4c3922"
     },
     {
       "id": "r2-1",
