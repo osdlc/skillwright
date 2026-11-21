@@ -60,9 +60,9 @@
       "line": 9,
       "title": "marketplace.rs:7-8 module doc says the file's whole contribution is the mode on the request",
       "comment": "https://github.com/osdlc/skillwright/pull/162#pullrequestreview-5871946935",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0ee3461e042595a98dc46946185026585b4c3922"
     },
     {
       "id": "r1-6",
