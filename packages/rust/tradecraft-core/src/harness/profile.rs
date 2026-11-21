@@ -8,14 +8,14 @@
 //!
 //! A plugin row is a [`PluginPolicy`]: what this crate chooses (the packs
 //! folder, the dialect, a naming the knowledge does not give, whether a vault
-//! may choose the naming, the override lists) and, for each
-//! fact (manifest and marketplace paths, plugin-root
-//! variable, naming rule), either [`Source::Knowledge`] or a
-//! [`Source::Constant`] with the reason. [`HarnessProfile::format`] resolves a
-//! row against the compiled harness knowledge file on first use (D-QXRN). This
-//! module's tests hold every knowledge-sourced fact to a moderate or stronger
-//! statement and to the value the row held before, so a corpus change that
-//! moves a fact is a visible test failure, not a silent change.
+//! may choose the naming, the override lists) and, for each fact (manifest
+//! and marketplace paths, plugin-root variable, naming rule), either
+//! [`Source::Knowledge`] or a [`Source::Constant`] with the reason.
+//! [`HarnessProfile::format`] resolves a row against the compiled harness
+//! knowledge file on first use (D-QXRN). This module's tests hold every
+//! knowledge-sourced fact to a moderate or stronger statement and to the
+//! value the row held before, so a corpus change that moves a fact is a
+//! visible test failure, not a silent change.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;

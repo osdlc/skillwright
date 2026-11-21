@@ -33,9 +33,9 @@ pub struct ProjectedFile {
 /// Renders one snapshot for every given runtime target.
 ///
 /// Output is sorted by path — the stable order the hash, the manifest, and
-/// the tests all rely on. Unknown target names are refused, not skipped: a
-/// target this build cannot render is a configuration error, and skipping
-/// would ship less, silently.
+/// the tests all rely on. A runtime that renders no skills is refused, not
+/// skipped: a target this build cannot render is a configuration error, and
+/// skipping would ship less, silently.
 ///
 /// `overrides_target` is the canonical harness whose harness block this
 /// render applies, which need not be the runtime target it renders with.
@@ -76,9 +76,9 @@ pub fn project_skill(
 /// attempted path escape nobody will ever notice.
 ///
 /// The token is `unsafe-path`, the same one [`crate::guard::within`]
-/// refuses under: two layers apply one
-/// rule, so they answer in one word. Everything else `agent-adapt` can fail
-/// with is a projection error, unchanged.
+/// refuses under: two layers apply one rule, so they answer in one word.
+/// Everything else `agent-adapt` can fail with is a projection error,
+/// unchanged.
 fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
     match error {
         agent_adapt::Error::UnsafePath { path, reason } => CoreError::refused(

@@ -10,8 +10,8 @@
 //!    lands in the pack. Nothing is copied for a link: every file a link may
 //!    reach ships on its own. A `/[[call]]` is checked against the skills
 //!    and commands it may name ([`CallContext`]). Each call, link, inlined
-//!    file and plugin-root path is written as a mark and recorded
-//!    for each harness to write its own way (see [`crate::model`]).
+//!    file and plugin-root path is written as a mark and recorded for each
+//!    harness to write its own way (see [`crate::model`]).
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a harness has no resolver to
 //!    give it meaning. A `[[` after an odd run of `\` is escaped: it is neither a
@@ -178,8 +178,8 @@ pub struct CallContext<'a> {
 }
 
 /// The calls, links, inlined files and plugin-root paths a compile met, in
-/// the order it met them. A compile is done once for every harness: each is
-/// written as a mark, for a translator to spell later (see [`crate::model`]).
+/// the order it met them. One compile serves every harness: each is written
+/// as a mark, for a translator to spell later (see [`crate::model`]).
 /// The `n`th mark of each kind in the output names the `n`th entry here.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Recorded {
@@ -373,13 +373,13 @@ pub(crate) fn compile_note(
 
 impl Renderer<'_> {
     /// Compiles every Markdown resource, frontmatter kept, to its bytes and
-    /// execute bit. A growing queue: compiling one can discover more, and
-    /// each is compiled exactly once. Indexed iteration because the queue
-    /// grows while it drains.
+    /// execute bit. Compiling one can discover more; each is compiled
+    /// exactly once.
     fn compile_resources(&mut self) -> Result<BTreeMap<String, (Vec<u8>, bool)>, CoreError> {
         let mut outputs = BTreeMap::new();
         let mut queue: Vec<PathBuf> = self.markdown_resources.keys().cloned().collect();
         let mut next = 0;
+        // Indexed, not an iterator: the queue grows while it drains.
         while next < queue.len() {
             let source_path = queue[next].clone();
             next += 1;
@@ -2389,10 +2389,9 @@ mod tests {
         vfs.write_file(path, content).unwrap();
     }
 
-    /// Skill `demo` compiled with the test call context over `skills`, and
-    /// what it warned. The body and each Markdown resource are written back
-    /// from their segments in Claude Code's spelling, a call as
-    /// `/<plugin:name>`.
+    /// Skill `demo` compiled with the test call context over `skills`, its
+    /// body and Markdown resources passed through [`written`], and what it
+    /// warned.
     fn try_compile_with(
         vfs: &MemVfs,
         skills: &SkillIndex,
@@ -2418,7 +2417,8 @@ mod tests {
         try_compile_with(vfs, &call_index("called"), body).map(|(compiled, _)| compiled)
     }
 
-    /// `text`'s segments, each mark written as Claude Code's pack would.
+    /// `text`'s segments, each mark written as Claude Code's pack would, a
+    /// call as `/<plugin:name>`.
     fn written(text: &str, recorded: &Recorded) -> String {
         crate::model::segments(text, recorded)
             .segments

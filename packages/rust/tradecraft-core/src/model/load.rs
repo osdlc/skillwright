@@ -360,8 +360,9 @@ pub(crate) fn load_for(
 ///
 /// # Errors
 ///
-/// Everything the compile pass refuses (see [`crate::compile`]). Whether a harness
-/// ships what a call names is asked when the call is written.
+/// Everything the compile pass refuses (see [`crate::compile`]). Whether a
+/// harness ships what a call names is asked when the call is written
+/// ([`crate::model::Call::check_shipped`]).
 pub fn resolve_body(
     vfs: &dyn Vfs,
     layout: &Layout,

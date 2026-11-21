@@ -11,10 +11,9 @@
 //! # Pure, and one output shape
 //!
 //! A translator reads the model and returns a `FileTree`: paths, bytes and
-//! execute bits. It reads no file and
-//! writes none — the load read everything it needs, and what happens to the
-//! tree is the emitting verb's: `build` diffs it against a marketplace
-//! directory and swaps it in.
+//! execute bits. It reads no file and writes none — the load read everything
+//! it needs, and what happens to the tree is the emitting verb's: `build`
+//! diffs it against a marketplace directory and swaps it in.
 //!
 //! Each harness's packs sit under its own tree beside its marketplace
 //! manifest, and every emitted skill and command carries the provenance
