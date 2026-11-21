@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 163,
-  "head": "0df1bf68a57f75af9e6535488620b2125e2e8447",
-  "base": "aef88aa232d702d5eafaba1a15465c64f10a59e6",
-  "round": 1,
+  "head": "284fa2d6e22e21049932d8b095f9d6eeb38bec25",
+  "base": "fb5eb293c380b871eba22b2c1fa25bf90f1b94b4",
+  "round": 2,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T03:53:43.080Z"
@@ -115,6 +115,28 @@
       "line": 12,
       "title": "Public module doc names a pub(crate) helper and counts it",
       "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801660",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/compile/validate.rs",
+      "line": 21,
+      "title": "Comment line left unwrapped after the r1-2 rewrite",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/export/dest.rs",
+      "line": 16,
+      "title": "Split use lines for crate::vfs",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
