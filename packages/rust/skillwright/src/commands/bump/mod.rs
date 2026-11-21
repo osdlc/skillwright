@@ -21,7 +21,7 @@ mod changed;
 mod semver;
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Serialize;
 use tradecraft_core::discover::discover_in;
@@ -35,6 +35,7 @@ use crate::exit::{EXIT_OK, EXIT_REFUSED, failed, refused, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::{dry_run_notice, print_json};
 use crate::resolve::{RunFlags, resolve_run};
+use baseline::relative_to;
 use changed::run_changed;
 pub use semver::BumpLevel;
 use semver::{next_version, parse_semver};
@@ -135,10 +136,7 @@ struct VersionNote {
 
 /// The reason on a row whose `version` is not semver.
 fn non_semver_reason(current: &str) -> String {
-    format!(
-        "{}: `version` reads `{current}`",
-        refusal::NON_SEMVER.as_str()
-    )
+    CoreError::refused(refusal::NON_SEMVER, format!("`version` reads `{current}`")).reason()
 }
 
 fn plan_bump(
@@ -218,7 +216,8 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
             (Some(_), [market]) => {
                 let note = VersionNote {
                     path: market.note.clone(),
-                    rel: vault_relative(&loaded.root, &market.note),
+                    rel: relative_to(&loaded.root, &market.note)
+                        .unwrap_or_else(|| market.note.display().to_string()),
                 };
                 run_one(flags, ctx, &market.name, note, scheme)
             }
@@ -233,14 +232,6 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
             "bump takes a plugin name or --changed-since, and not both",
         ),
     }
-}
-
-/// `path` relative to `root`, forward-slashed.
-fn vault_relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 /// The note of the plugin `name`, or why there is none to bump.
