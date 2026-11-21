@@ -15,7 +15,7 @@
       "path": "packages/rust/tradecraft-core/src/compile/mod.rs",
       "line": 188,
       "title": "Intra-doc link to refuse_marks broke when it moved to validate.rs",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801578",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -26,7 +26,7 @@
       "path": "packages/rust/tradecraft-core/src/compile/validate.rs",
       "line": 21,
       "title": "'Every transformation above' points at nothing after the move",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801588",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,7 +37,7 @@
       "path": "packages/rust/tradecraft-core/src/model/config.rs",
       "line": 10,
       "title": "Unresolved link crate::model::Cascade; 'never by a host' restates pub(crate)",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801594",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -48,7 +48,7 @@
       "path": "packages/rust/tradecraft-core/src/layout.rs",
       "line": 816,
       "title": "Second within() site (walk-ancestor check) has no test for the new unsafe-path refusal",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801605",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -59,7 +59,7 @@
       "path": "packages/rust/tradecraft-core/src/harness/mod.rs",
       "line": 11,
       "title": "pub mod naming adds a third public path for two re-exported functions",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801614",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -70,7 +70,7 @@
       "path": "packages/rust/skillwright/CHANGELOG.md",
       "line": 18,
       "title": "BumpFlags breaking line omits removed fields and the BumpLevel move",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801624",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -81,7 +81,7 @@
       "path": "packages/rust/skillwright/src/cli.rs",
       "line": 57,
       "title": "ReadOnlyGlobals::run doc 'and nothing written' is unclear",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801629",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -92,7 +92,7 @@
       "path": "packages/rust/skillwright/src/cli.rs",
       "line": 59,
       "title": "Option<&String> parameter; take Option<&str>",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801637",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -103,7 +103,7 @@
       "path": "packages/rust/tradecraft-core/src/discover.rs",
       "line": 49,
       "title": "Split use lines for one module",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801652",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -114,7 +114,7 @@
       "path": "packages/rust/tradecraft-core/src/vfs.rs",
       "line": 12,
       "title": "Public module doc names a pub(crate) helper and counts it",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801660",
       "status": "open",
       "reason": null,
       "fixedIn": null
