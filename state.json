@@ -178,9 +178,9 @@
       "line": 28,
       "title": "coreName Io-to-Refused for an unreadable note is under Changed, not Breaking",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "6e2073b358dba846d5dee884937dcd1eaa89e9c3"
     },
     {
       "id": "r3-4",
