@@ -79,9 +79,9 @@
       "line": 178,
       "title": "The 2,500-line acceptance bar is at risk on the stack's measured numbers",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "60b19e6ed46a4d007e5958165922a2bc94398115"
     },
     {
       "id": "r1-8",
