@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 161,
-  "head": "204db09d9f6e7ff1c9b7825d7605b4a15ac810a8",
-  "base": "f4a645574a16d818a253df1d6bf1ee804c4b1ccb",
-  "round": 1,
+  "head": "940481493acb07d37d6d61e57e02284578795a46",
+  "base": "c1f29526378b3b09cc09bf058f2e9ffe164d489a",
+  "round": 2,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T03:26:06.055Z"
@@ -93,6 +93,61 @@
       "line": 17,
       "title": "D-QXRN still describes the translator trait, the dialect and profile.format()",
       "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/ts/tradecraft-wasm/CHANGELOG.md",
+      "line": 9,
+      "title": "`Target` shipped in 0.2.0, and the Unreleased section no longer says it is removed",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 92,
+      "title": "`project_command` doc names a `harness` parameter it no longer has",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 21,
+      "title": "The `Harness` API list leaves out the public `from_name`",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 25,
+      "title": "An earlier Unreleased entry still gives new signatures for functions this PR makes private",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-5",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "The PR body still says projection takes `Harness`",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
