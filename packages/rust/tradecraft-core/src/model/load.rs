@@ -29,6 +29,7 @@ use crate::harness::manifest::plugin_version;
 use crate::harness::{Harness, SkillNaming};
 use crate::refusal;
 use crate::settings::{RootFile, SharedDefaults};
+use crate::text::named;
 use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
@@ -643,16 +644,6 @@ fn resolve_marketplace(
                 named(&present)
             ),
         )),
-    }
-}
-
-/// `` `a`, `b` and `c` `` — for a refusal that has to name what it found.
-fn named(names: &BTreeSet<&str>) -> String {
-    let quoted: Vec<String> = names.iter().map(|name| format!("`{name}`")).collect();
-    match quoted.split_last() {
-        None => String::new(),
-        Some((last, [])) => last.clone(),
-        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
     }
 }
 
