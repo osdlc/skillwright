@@ -16,9 +16,9 @@
       "line": null,
       "title": "CHANGELOG [Unreleased] has no Breaking entries for the removed public API",
       "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "9dc1c86bb44a2f1500bd57787505b86f985c6a24"
     },
     {
       "id": "r1-2",
