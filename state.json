@@ -57,9 +57,9 @@
       "line": 653,
       "title": "path-guard is \"wait\" in the Order table and \"No\" in the library table",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "60b19e6ed46a4d007e5958165922a2bc94398115"
     },
     {
       "id": "r1-6",
