@@ -35,9 +35,9 @@
       "line": 129,
       "title": "Step 8 promises a report sink that #163 drops, and acceptance requires every step",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "60b19e6ed46a4d007e5958165922a2bc94398115"
     },
     {
       "id": "r1-4",
