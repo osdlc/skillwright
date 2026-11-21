@@ -4,28 +4,10 @@
 //! These functions bind directly to the core's native structs, with no
 //! `--json` round trip in between.
 
-use tradecraft_core::{DiscoveryWarning, ExportMode, ExportUnit, StaleKind};
+use tradecraft_core::{DiscoveryWarning, ExportMode, ExportUnit, StaleKind, UnitStatus};
 
 use crate::ctx::CommandContext;
 use crate::exit::refused;
-
-/// `N word` for each word in `words`, counted: the `order` words first, as
-/// listed, then any other word in the order it first appears. A status the
-/// core adds later is counted under its own word rather than dropped.
-fn tally_words<'a>(order: &[&str], words: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    let mut counts: Vec<(&str, usize)> = order.iter().map(|word| (*word, 0)).collect();
-    for word in words {
-        match counts.iter_mut().find(|(known, _)| *known == word) {
-            Some((_, count)) => *count += 1,
-            None => counts.push((word, 1)),
-        }
-    }
-    counts
-        .into_iter()
-        .filter(|(_, count)| *count > 0)
-        .map(|(word, count)| format!("{count} {word}"))
-        .collect()
-}
 
 /// `dry run — reporting <what>; nothing will be written`, on stderr.
 pub fn dry_run_notice(ctx: &mut CommandContext<'_>, what: &str) {
@@ -50,6 +32,17 @@ pub fn print_json(ctx: &mut CommandContext<'_>, value: &impl serde::Serialize) -
     }
 }
 
+/// What a unit's status reads as under `mode`: a check says `ok` or `drift`,
+/// a build `unchanged` or `written`.
+fn status_word(status: UnitStatus, mode: ExportMode) -> &'static str {
+    match (status, mode == ExportMode::Check) {
+        (UnitStatus::Same, true) => "ok",
+        (UnitStatus::Same, false) => "unchanged",
+        (UnitStatus::Differs, true) => "drift",
+        (UnitStatus::Differs, false) => "written",
+    }
+}
+
 /// One export unit as `path  status` — the same `path  outcome` column order
 /// every other line in this file uses, so one `awk '{print $2}'` reads a
 /// build and a check alike.
@@ -63,11 +56,14 @@ pub fn render_unit_line(unit: &ExportUnit, mode: ExportMode) -> String {
             ..
         } => format!(
             "{root}/{name}  {} · {skills} skill{}",
-            status.as_str(),
+            status_word(*status, mode),
             if *skills == 1 { "" } else { "s" }
         ),
         ExportUnit::Manifest { root, status } => {
-            format!("{root}  {} · marketplace manifest", status.as_str())
+            format!(
+                "{root}  {} · marketplace manifest",
+                status_word(*status, mode)
+            )
         }
         // What is going is worth naming: a whole pack leaving the
         // marketplace and a leftover file both read as `stale` otherwise,
@@ -97,8 +93,8 @@ pub fn render_unit_line(unit: &ExportUnit, mode: ExportMode) -> String {
         // own — the line says what it is, what kind, and which root when
         // only one root lacks the place.
         ExportUnit::NotCarried { root, path, kind } => match root {
-            Some(root) => format!("{path}  not carried · {kind} on {root}"),
-            None => format!("{path}  not carried · {kind}"),
+            Some(root) => format!("{path}  not carried · {} on {root}", kind.as_str()),
+            None => format!("{path}  not carried · {}", kind.as_str()),
         },
         // A unit this build does not know yet: its JSON is the honest line.
         other => serde_json::to_string(other).unwrap_or_default(),
@@ -125,37 +121,40 @@ pub fn count_checked_units(units: &[ExportUnit]) -> usize {
 }
 
 /// `2 written, 1 unchanged` / `1 drift, 3 ok`, plus the stale and
-/// not-carried counts — the stderr tally for an export.
+/// not-carried counts — the stderr tally for an export in `mode`.
 ///
 /// Stale and not-carried sit outside the status counts: neither is one of
 /// the report's status tokens, and listing either beside them would read as
 /// a further outcome.
-pub fn render_export_tally(units: &[ExportUnit]) -> String {
-    let mut statuses = Vec::new();
-    let mut stale = 0usize;
-    let mut not_carried = 0usize;
-    let mut other = 0usize;
+pub fn render_export_tally(units: &[ExportUnit], mode: ExportMode) -> String {
+    let mut counts = [
+        ("written", 0usize),
+        ("unchanged", 0),
+        ("drift", 0),
+        ("ok", 0),
+        ("stale", 0),
+        ("not carried", 0),
+        ("other", 0),
+    ];
     for unit in units {
-        match unit {
-            ExportUnit::Stale { .. } => stale += 1,
-            ExportUnit::NotCarried { .. } => not_carried += 1,
+        let word = match unit {
             ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => {
-                statuses.push(status.as_str());
+                status_word(*status, mode)
             }
+            ExportUnit::Stale { .. } => "stale",
+            ExportUnit::NotCarried { .. } => "not carried",
             // A kind of unit this build does not know yet.
-            _ => other += 1,
+            _ => "other",
+        };
+        if let Some((_, count)) = counts.iter_mut().find(|(known, _)| *known == word) {
+            *count += 1;
         }
     }
-    let mut parts = tally_words(&["written", "unchanged", "drift", "ok"], statuses);
-    if stale > 0 {
-        parts.push(format!("{stale} stale"));
-    }
-    if not_carried > 0 {
-        parts.push(format!("{not_carried} not carried"));
-    }
-    if other > 0 {
-        parts.push(format!("{other} other"));
-    }
+    let parts: Vec<String> = counts
+        .iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(word, count)| format!("{count} {word}"))
+        .collect();
     if parts.is_empty() {
         "nothing to report".to_string()
     } else {
@@ -175,23 +174,4 @@ pub fn render_warning_line(warning: &DiscoveryWarning) -> String {
         "{}  {level} · {}: {}",
         warning.path, warning.reason, warning.detail
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::tally_words;
-
-    #[test]
-    fn a_word_outside_the_order_is_counted_after_it() {
-        let parts = tally_words(
-            &["written", "unchanged", "refused"],
-            ["refused", "held", "written", "held", "written"],
-        );
-        assert_eq!(parts, ["2 written", "1 refused", "2 held"]);
-    }
-
-    #[test]
-    fn a_word_with_no_count_is_left_out() {
-        assert!(tally_words(&["written"], []).is_empty());
-    }
 }

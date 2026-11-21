@@ -3,16 +3,15 @@
 //!
 //! One function for both verbs, because in the core they are one path: a
 //! single render, compared once against `dist/<m>/`. `build` acts on that
-//! comparison and `check` returns it. This file's whole contribution is which
-//! mode goes on the request, and what a drifted report means for the exit
-//! code.
+//! comparison and `check` returns it. This file picks the mode in
+//! `BuildOptions` and decides what a drifted report means for the exit code.
 //!
 //! Nothing about the marketplace is decided here. Which skills ship, how they
 //! group into plugins, what each manifest says, which harnesses are built,
 //! what counts as stale, and whether the swap is safe
-//! all live in [`tradecraft_core::export`]. This file has the core check
-//! every marketplace, asks the user, has the core build, and renders the
-//! report. A build so renders twice: once to check, once to write.
+//! all live in [`tradecraft_core::export`]. This file has the core plan every
+//! marketplace once, asks the user, has the core commit the plan, and renders
+//! the report.
 //!
 //! # `--dry-run` on `build` is not `check`
 //!
@@ -25,8 +24,8 @@
 use std::collections::BTreeSet;
 
 use tradecraft_core::{
-    ExportMode, ExportReport, ExportUnit, MarketplaceRefusal, NativeVfs, VaultReport, VaultRequest,
-    build_vault, owned_paths,
+    BuildOptions, ExportMode, ExportReport, ExportUnit, LoadedVault, NativeVfs, VaultReport,
+    owned_paths, plan,
 };
 
 use crate::ctx::CommandContext;
@@ -36,7 +35,7 @@ use crate::report::{
     count_checked_units, dry_run_notice, print_json, render_export_tally, render_unit_line,
     render_warning_line,
 };
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_run};
+use crate::resolve::{CommonFlags, resolve_run};
 
 /// Which of the two verbs this run is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,13 +83,13 @@ pub struct ExportFlags {
 /// then asks once, and writes every one or none. The run exits 2 when any
 /// marketplace was refused, else 1 when a check found drift.
 pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
-    let run = match resolve_run(
+    let loaded = match resolve_run(
         &flags.common,
         flags.marketplace.as_deref(),
         &ctx.cwd,
         ctx.err,
     ) {
-        Ok(run) => run,
+        Ok(loaded) => loaded,
         Err(code) => return code,
     };
 
@@ -99,20 +98,12 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     // module doc). So the only run that reaches `ExportMode::Build` is a
     // plain `build`.
     let writes = verb == ExportVerb::Build && !flags.dry_run;
-    let request = |mode: ExportMode| {
-        let mut request = VaultRequest::new(run.loaded.root.clone());
-        request.marketplace.clone_from(&flags.marketplace);
-        request.harnesses.clone_from(&flags.harnesses);
-        request.mode = mode;
-        request
-    };
-    // Every run checks first. A build writes only when every marketplace
-    // passed, after asking.
-    let checked = match build_vault(&NativeVfs, &request(ExportMode::Check)) {
-        Ok(checked) => checked,
+    let planned = match plan(&NativeVfs, &loaded, &build_options(writes, flags)) {
+        Ok(planned) => planned,
         Err(err) => return failed(ctx.err, verb.as_str(), &err.reason()),
     };
-    let several = run.marketplaces().len() > 1;
+    let outcomes = planned.outcomes();
+    let several = loaded.marketplaces.len() > 1;
     // `bump` needs `--marketplace` only when the vault holds several, but
     // naming it always runs.
     let name_market = flags.marketplace.is_some() || several;
@@ -123,17 +114,16 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     };
 
     // A build writes nothing when any marketplace failed.
-    if writes && !checked.refused.is_empty() {
-        for refusal in &checked.refused {
+    if writes && outcomes.iter().any(Result::is_err) {
+        for refusal in outcomes.iter().filter_map(|outcome| outcome.as_ref().err()) {
             header(&refusal.marketplace, ctx);
             failed(ctx.err, verb.as_str(), &refusal.reason());
         }
         let _ = writeln!(ctx.err, "Nothing was written.");
         return EXIT_REFUSED;
     }
-
     if writes && !flags.yes {
-        let gate = confirm_build(&run, flags, ctx);
+        let gate = confirm_build(&loaded, flags, ctx);
         if gate != EXIT_OK {
             return gate;
         }
@@ -142,100 +132,59 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         dry_run_notice(ctx, "the drift a build would act on");
     }
 
-    let reports = if writes {
-        match build_vault(&NativeVfs, &request(ExportMode::Build)) {
-            Ok(built) => in_folder_order(&run, built),
-            Err(err) => return failed(ctx.err, verb.as_str(), &err.reason()),
-        }
-    } else {
-        in_folder_order(&run, checked)
-    };
-
-    // With several marketplaces, `--json` gathers every report into one
-    // document, the shape of the core's `VaultReport`.
-    let mut document = (flags.json && several).then(VaultDocument::default);
+    if let Err(err) = planned.commit(&NativeVfs) {
+        return failed(ctx.err, verb.as_str(), &err.reason());
+    }
+    // With several marketplaces, `--json` prints one document, the core's
+    // `VaultReport`.
+    let one_document = flags.json && several;
     let mut exit = EXIT_OK;
-    for (name, report) in reports {
-        header(&name, ctx);
-        let code = match report {
+    for outcome in &outcomes {
+        let code = match outcome {
             Err(refusal) => {
-                let code = failed(ctx.err, verb.as_str(), &refusal.reason());
-                if let Some(document) = &mut document {
-                    document.refused.push(refusal);
-                }
-                code
+                header(&refusal.marketplace, ctx);
+                failed(ctx.err, verb.as_str(), &refusal.reason())
             }
-            Ok(report) => {
-                let advise = name_market.then(|| name.clone());
-                let code = export_one(verb, flags, &report, advise, document.is_none(), ctx);
-                if let Some(document) = &mut document {
-                    document.marketplaces.push(Market {
-                        marketplace: name,
-                        report,
-                    });
-                }
-                code
+            Ok(market) => {
+                header(&market.marketplace, ctx);
+                let advise = name_market.then(|| market.marketplace.clone());
+                export_one(verb, flags, &market.report, advise, !one_document, ctx)
             }
         };
         // A refusal (2) outranks drift (1): exit 1 means drift and nothing else.
         exit = exit.max(code);
     }
-    if let Some(document) = document
-        && let Err(code) = print_json(ctx, &document)
-    {
+    if one_document && let Err(code) = print_json(ctx, &VaultReport::from(outcomes)) {
         exit = exit.max(code);
     }
     exit
 }
 
-/// `--json`'s one document over several marketplaces.
-#[derive(Default, serde::Serialize)]
-struct VaultDocument {
-    marketplaces: Vec<Market>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    refused: Vec<MarketplaceRefusal>,
-}
-
-#[derive(serde::Serialize)]
-struct Market {
-    marketplace: String,
-    report: ExportReport,
-}
-
-/// Each marketplace's report, or what refused it, in folder order.
-fn in_folder_order(
-    run: &ResolvedRun,
-    report: VaultReport,
-) -> Vec<(String, Result<ExportReport, MarketplaceRefusal>)> {
-    let mut reports: Vec<(String, Result<ExportReport, MarketplaceRefusal>)> = report
-        .marketplaces
-        .into_iter()
-        .map(|m| (m.marketplace, Ok(m.report)))
-        .chain(
-            report
-                .refused
-                .into_iter()
-                .map(|r| (r.marketplace.clone(), Err(r))),
-        )
-        .collect();
-    let at = |name: &str| run.marketplaces().iter().position(|m| m.name == name);
-    reports.sort_by_key(|(name, _)| at(name));
-    reports
+/// The core's options for this run: a build only when it `writes`.
+fn build_options(writes: bool, flags: &ExportFlags) -> BuildOptions {
+    let mut options = BuildOptions::default();
+    options.harnesses.clone_from(&flags.harnesses);
+    options.mode = if writes {
+        ExportMode::Build
+    } else {
+        ExportMode::Check
+    };
+    options
 }
 
 /// Ask before a build replaces what it owns in each `dist/<m>/`.
-fn confirm_build(run: &ResolvedRun, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
+fn confirm_build(loaded: &LoadedVault, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // The harnesses are named, and the paths each one replaces with them.
     // The list comes from the core, not from a copy of the table here. The
-    // check before this one has already refused an unknown harness.
-    let owned = owned_paths(&run.loaded.settings, &flags.harnesses).unwrap_or_default();
+    // plan before this one has already refused an unknown harness.
+    let owned = owned_paths(&loaded.settings, &flags.harnesses).unwrap_or_default();
     // The paths are padded to each other so the harness names line up after
     // them, the way `plan_flow` lines the labels up against each other.
     let width = owned.iter().map(|(_, path)| path.len()).max().unwrap_or(0);
     let mut lines = vec!["build the marketplace".to_string(), String::new()];
-    for market in run.marketplaces() {
+    for market in &loaded.marketplaces {
         lines.extend(plan_flow(&[
-            ("from vault", vec![run.vault.display().to_string()]),
+            ("from vault", vec![loaded.root.display().to_string()]),
             ("into", vec![market.dist.display().to_string()]),
             (
                 "replacing",
@@ -294,7 +243,7 @@ fn export_one(
             ctx.err,
             "{} checked — {}{suffix}",
             count_checked_units(&report.units),
-            render_export_tally(&report.units)
+            render_export_tally(&report.units, report.mode)
         );
     }
 

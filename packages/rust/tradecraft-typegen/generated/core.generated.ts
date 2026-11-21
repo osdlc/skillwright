@@ -111,8 +111,11 @@ export interface DiscoveryReport {
 
 /** One component, as discovery hands it to the verbs. */
 export interface DiscoveredComponent {
-  /** The folder's name, which the layout has checked against the name rule. */
-  name: string;
+  /**
+   * Where the note sits: its marketplace, plugin, kind and folder name,
+   * which the layout has checked against the name rule.
+   */
+  position: Position;
 
   /**
    * The frontmatter `description`, ≤1024 characters. Empty when the note
@@ -120,18 +123,6 @@ export interface DiscoveredComponent {
    * ([`Self::lacks_description`]); a container need not have one.
    */
   description: string;
-
-  /** What this component is, from its position. */
-  kind: EntityKind;
-
-  /** The plugin folder holding this note. `None` for a marketplace's note. */
-  plugin: string | null;
-
-  /**
-   * The marketplace folder this sits under. `None` for a marketplace's
-   * own note.
-   */
-  marketplace: string | null;
 
   /** Absolute path of the entry note. */
   entry_path: string;
@@ -179,6 +170,38 @@ export interface DiscoveredComponent {
    */
   unknown_keys?: string[];
 }
+
+/**
+ * What a path under the root is, by its position. On the wire, `at` names
+ * the variant.
+ */
+export type Position =
+  /** `marketplaces/<m>/<m>.md`. */
+  | {
+      at: "marketplace";
+      /** The marketplace folder. */
+      marketplace: string;
+    }
+  /** `marketplaces/<m>/plugins/<p>/<p>.md`. */
+  | {
+      at: "plugin";
+      /** The marketplace folder. */
+      marketplace: string;
+      /** The plugin folder. */
+      plugin: string;
+    }
+  /** `marketplaces/<m>/plugins/<p>/<kind>/<c>/<c>.md`. */
+  | {
+      at: "component";
+      /** The marketplace folder. */
+      marketplace: string;
+      /** The plugin folder. */
+      plugin: string;
+      /** The component's kind, from its kind folder. */
+      kind: EntityKind;
+      /** The component folder. */
+      name: string;
+    };
 
 /**
  * Which kind of unit a note is: what the folder it sits in names.
@@ -321,7 +344,7 @@ export interface VaultRequest {
   /** Absolute path to the vault root. */
   vault_root: string;
 
-  /** Which marketplace to build, by folder. `None` builds every one. */
+  /** Which marketplace to build, by folder. Absent builds every one. */
   marketplace?: string;
 
   /**
@@ -357,8 +380,8 @@ export interface VaultReport {
   marketplaces: MarketplaceReport[];
 
   /**
-   * A check's refused marketplaces, in folder order. A build that meets a
-   * refusal fails whole, so its report holds none.
+   * The refused marketplaces, in folder order. A build that meets one
+   * writes nothing.
    */
   refused?: MarketplaceRefusal[];
 }
@@ -375,15 +398,15 @@ export interface MarketplaceReport {
 /** What one export did, or would do — per plugin, per root. */
 export interface ExportReport {
   /**
-   * The mode the report describes, so `ok`/`drift` and
-   * `written`/`unchanged` read against the right verb.
+   * The mode the report describes, which gives each [`UnitStatus`] its
+   * verb.
    */
   mode: ExportMode;
 
   /** How many skills discovery found. */
   checked: number;
 
-  /** Check: anything drifted or stale. Build: anything was swapped. */
+  /** Anything differs or is stale: drift for a check, a swap for a build. */
   changed: boolean;
 
   /**
@@ -469,14 +492,15 @@ export type ExportUnit =
       /** The component's path in the vault. */
       path: string;
       /** The component's kind. */
-      kind: string;
+      kind: EntityKind;
     };
 
 /**
- * One unit's outcome. `check` speaks `ok`/`drift`; `build` speaks
- * `written`/`unchanged` — the same comparison, two verbs.
+ * Whether a unit matches what is installed. [`ExportReport::mode`] gives
+ * the verb: a check says `ok` or `drift`, a build `unchanged` or `written`.
+ * Closed: a unit either matches or does not.
  */
-export type UnitStatus = "ok" | "drift" | "written" | "unchanged";
+export type UnitStatus = "same" | "differs";
 
 /**
  * A plugin whose members changed since it was last built, with its own
@@ -509,7 +533,7 @@ export interface VersionBumpSuggestion {
  */
 export type StaleKind = "plugin" | "file" | "empty-dir";
 
-/** A marketplace a check could not plan, in a [`VaultReport`]. */
+/** A marketplace that could not be planned, in a [`VaultReport`]. */
 export interface MarketplaceRefusal {
   /** The marketplace's folder name. */
   marketplace: string;
@@ -531,7 +555,7 @@ export interface LoadRequest {
   vault_root: string;
 
   /**
-   * Which marketplace to load, by folder. `None` names the vault's only
+   * Which marketplace to load, by folder. Absent names the vault's only
    * one.
    */
   marketplace?: string;
@@ -627,7 +651,10 @@ export interface SkillId {
   /** Its source name. */
   name: string;
 
-  /** A skill or a command. */
+  /**
+   * A skill or a command. The call index also holds agents, and a call
+   * to one is refused: no pack contains agents.
+   */
   kind: EntityKind;
 }
 

@@ -16,7 +16,7 @@ API:
 - `projection::{project_skill_reporting, redundant_override_keys, RedundantOverride}` and `FileTree::redundant_overrides` are removed.
 - `CallContext::{render, target, record}` and `Component::content` are removed. `Resolved::content` and `resolve_body`'s return type change.
 - `compile_note`, `CompileSource`, `CompiledNote`, `compile::Recorded` and `compile::CallSite` are no longer public. A compile now writes each call, link, inlined file and plugin-root path as a mark that only the crate decodes. Compile a component with `model::resolve_body`, which returns the decoded segments.
-- `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId` and `Marketplace::folder` is a `String`.
+- `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId`. `Marketplace::folder` is removed; it equals `name`.
 - `keys::field_reference` is no longer public.
 - `CoreError::Refused` is `{ token, message }`. The token is a `refusal::Token`, and the new `refusal` module lists every one. `CoreError::token()`, `detail()` and `reason()` read a refusal without parsing its message.
 - `CoreError::RootNotFound` is removed.
@@ -31,11 +31,20 @@ API:
 - `ExportUnit`'s `root`, `model::Plugin::bare_on` and `model::Call::bare_on` hold `Harness`, and `owned_paths` returns `(Harness, &str)` pairs. `marketplace_manifest_path`, `plugin_manifest_path` and `packs_path` are removed; use `Harness::format`.
 - The `projection` module is no longer public.
 - `refusal::UNKNOWN_TARGET` is removed. No refusal used it.
+- `BuildScope` is added: the whole vault or one marketplace. `LoadRequest` and `VaultRequest` hold it as `scope`, in place of `marketplace`, and `load_vault` takes a `&BuildScope`. `VaultRequest`'s `harnesses`, `mode` and `compare_with` move to `options`, a `BuildOptions`. The JSON shape of both requests is unchanged.
+- `LoadedVault::vault_request` is removed; use `VaultRequest::for_marketplace`. `model::load_in` and `model::load::Index` are removed.
+- `DiscoveredComponent` holds `position: Position` in place of `name`, `kind`, `plugin` and `marketplace`, and loses `folder()`. `Position` serializes with its variant as `at`.
+- `Component`'s `kind`, `name` and `path` are methods that read its `discovered` note. `resolve_body` takes no `kind`.
+- `compile::IndexedSkill` is removed: `SkillIndex` holds `SkillId`, which `SkillId::of` builds from a `DiscoveredComponent`.
+- `plan(vfs, &loaded, &options)` is added. It returns a `VaultPlan`, with `outcomes()`, `report()` and `commit(vfs)`; `build_vault` calls all three. A `VaultReport` converts from `outcomes()`. `BuildOptions` and `VaultPlan` are exported at the root.
+- `UnitStatus` changes (see Changed), and `UnitStatus::as_str` is removed. `ExportUnit::NotCarried`'s `kind` is an `EntityKind`.
 
 ### Changed
 
 - Messages say "vault root" in place of "corpus root".
 - A name that is not a harness is refused one way, in a request and in `build.harnesses`: `` `<name>` is not a harness. The harnesses are `claude`, `codex`, `cursor` and `pi` ``, with `unknown-harness` on a request. Of several unknown names, the first is named.
+- `UnitStatus` is `Same` or `Differs` in place of `Ok`, `Drift`, `Written` and `Unchanged`. A report's `mode` gives the verb: a check reads `same` as ok and `differs` as drift, a build reads them as unchanged and written.
+- `VaultPlan::commit` re-reads each `dist/<m>/` and refuses with the new `output-changed` token, writing nothing, when an owned path changed since `plan` read it. A build that rendered again after its prompt had the same protection.
 
 ## [0.50.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.0...tradecraft-core/v0.50.1) - 2026-11-12
 
