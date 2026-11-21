@@ -687,7 +687,7 @@ impl Harness {
 
     /// The harness named `name`, if any.
     #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
             .find(|harness| harness.as_str() == name)

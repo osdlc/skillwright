@@ -89,7 +89,8 @@ fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
     }
 }
 
-/// Renders one note as a **slash command** for `harness`.
+/// Renders one note as a **slash command** through the runtime `id`, with the
+/// override block `block` applied.
 ///
 /// The second entry point beside [`project_skill`], and separate for a
 /// reason: a different file at a different path, from a different reading of
