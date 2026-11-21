@@ -812,8 +812,8 @@ mod tests {
         assert_eq!(lookup(Command, "tools").unwrap().shape, Shape::Words);
     }
 
-    /// `docs/reference/fields.md` is the key table's own text. When the table
-    /// changes, refresh it from `packages/rust` with
+    /// When the key table changes, refresh `docs/reference/fields.md` from
+    /// `packages/rust` with
     /// `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --lib keys::tests`.
     #[test]
     fn the_field_reference_matches_the_key_table() {

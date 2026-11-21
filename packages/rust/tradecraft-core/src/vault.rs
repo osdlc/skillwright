@@ -99,9 +99,9 @@ pub struct VaultNote {
 /// empty description. The name is the file name slugified, via
 /// [`crate::discover::default_name`], the one derivation the scan uses too.
 ///
-/// The kind, resolved by the caller from the note's folder, says which of
-/// the note's keys are skillwright's: on a plugin note `license` is the
-/// pack's, on a skill it is the spec's.
+/// `kind`, resolved by the caller from the note's folder, says which of the
+/// note's keys are skillwright's: on a plugin note `license` is the pack's,
+/// on a skill it is the spec's.
 pub fn read_vault_note(
     vfs: &dyn Vfs,
     skill_path: &Path,
