@@ -85,7 +85,6 @@ use crate::vfs::{Vfs, normalize};
 /// skills its calls may name. `entry_path` is absolute, and must lie under
 /// the layout's root and be a file of the layout.
 #[derive(Debug, Clone)]
-#[non_exhaustive]
 pub(crate) struct CompileSource<'a> {
     /// The vault's layout.
     pub layout: &'a Layout,

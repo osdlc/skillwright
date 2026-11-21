@@ -7,10 +7,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.50.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.0...tradecraft-core/v0.50.1) - 2026-11-12
-
-- Depend on markdown-link 0.9, so an install builds one copy of it.
-
 ### Breaking
 
 API:
@@ -22,6 +18,10 @@ API:
 - `compile_note`, `CompileSource`, `CompiledNote`, `compile::Recorded` and `compile::CallSite` are no longer public. A compile now writes each call, link, inlined file and plugin-root path as a mark that only the crate decodes. Compile a component with `model::resolve_body`, which returns the decoded segments.
 - `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId` and `Marketplace::folder` is a `String`.
 - `keys::field_reference` is no longer public.
+
+## [0.50.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.0...tradecraft-core/v0.50.1) - 2026-11-12
+
+- Depend on markdown-link 0.9, so an install builds one copy of it.
 
 ## [0.50.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.1...tradecraft-core/v0.50.0) - 2026-11-12
 
