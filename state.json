@@ -15,7 +15,7 @@
       "path": "packages/rust/skillwright/src/commands/bump.rs",
       "line": 311,
       "title": "non-semver refusal token is a string literal outside the refusal module",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891795",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -26,7 +26,7 @@
       "path": "packages/rust/tradecraft-core/src/vault.rs",
       "line": 124,
       "title": "read_vault_note refuses a missing description as unreadable-note, not missing-description",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891821",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,7 +37,7 @@
       "path": "packages/rust/skillwright/src/commands/bump.rs",
       "line": 160,
       "title": "bump's own UTF-8 check skips the unreadable-note token; 'bump keeps CoreError until it prints' is not delivered",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891839",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -48,7 +48,7 @@
       "path": "packages/rust/tradecraft-core/src/skill.rs",
       "line": 29,
       "title": "no test for a non-UTF-8 note becoming Refused(unreadable-note)",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891848",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -59,7 +59,7 @@
       "path": "packages/rust/tradecraft-core/src/refusal.rs",
       "line": 149,
       "title": "core crate test reads a downstream crate's source tree",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891855",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -70,7 +70,7 @@
       "path": "packages/rust/tradecraft-core/src/refusal.rs",
       "line": 164,
       "title": "used check is a substring match: refusal::MALFORMED matches MALFORMED_HOOKS_FILE",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891870",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -81,7 +81,7 @@
       "path": "packages/rust/tradecraft-core/src/error.rs",
       "line": 113,
       "title": "unreadable doc lists a narrower scope than its callers and the token doc",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891880",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -92,7 +92,7 @@
       "path": "packages/rust/tradecraft-core/src/error.rs",
       "line": 98,
       "title": "reason() doc sentence is unclear",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891890",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -103,7 +103,7 @@
       "path": "packages/rust/tradecraft-core/CHANGELOG.md",
       "line": 24,
       "title": "breaking changes filed under Changed instead of Breaking",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891894",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -114,7 +114,7 @@
       "path": "packages/rust/tradecraft-core/src/refusal.rs",
       "line": 169,
       "title": "magic token count in the test",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891900",
       "status": "open",
       "reason": null,
       "fixedIn": null
