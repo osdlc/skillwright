@@ -15,7 +15,7 @@
       "path": null,
       "line": null,
       "title": "CHANGELOG [Unreleased] has no Breaking entries for the removed public API",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -23,10 +23,10 @@
     {
       "id": "r1-2",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/README.md",
+      "line": 23,
       "title": "tradecraft-core README names PreviewVfs, no longer exported",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -34,10 +34,10 @@
     {
       "id": "r1-3",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/terms/file-tree.md",
+      "line": 5,
       "title": "docs/terms/file-tree.md describes TreeFile and per-file provenance",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -45,10 +45,10 @@
     {
       "id": "r1-4",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/terms/resolved-reference.md",
+      "line": 9,
       "title": "docs/terms/resolved-reference.md says compile records only with a recorder",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -56,10 +56,10 @@
     {
       "id": "r1-5",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/terms/vfs.md",
+      "line": 5,
       "title": "docs/terms/vfs.md says PreviewVfs is how dry runs and check work",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -70,10 +70,10 @@
       "path": "packages/rust/tradecraft-core/src/harness/mod.rs",
       "line": 19,
       "title": "FileTree stays public with no public producer",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/159#discussion_r4547712219",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "d7da5b68"
     },
     {
       "id": "r1-7",
@@ -81,10 +81,10 @@
       "path": "packages/rust/tradecraft-core/src/keys.rs",
       "line": 532,
       "title": "field_reference is public only for an integration test",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/159#discussion_r4547712231",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "d7da5b68"
     },
     {
       "id": "r1-8",
@@ -92,18 +92,18 @@
       "path": "packages/rust/tradecraft-core/src/harness/translator.rs",
       "line": 396,
       "title": "RuntimeId round-trips through a string into the projection",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/159#discussion_r4547712236",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "d7da5b68"
     },
     {
       "id": "r1-9",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/data/embedded-slice.json",
+      "line": 10,
       "title": "skills/user-dirs is still embedded but nothing reads it",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -114,10 +114,10 @@
       "path": "packages/rust/tradecraft-core/src/compile.rs",
       "line": 670,
       "title": "Renderer::vault_root is a copy of layout.root",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/159#discussion_r4547712243",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "d7da5b68"
     },
     {
       "id": "r1-11",
@@ -125,7 +125,7 @@
       "path": "packages/rust/tradecraft-core/src/error.rs",
       "line": 18,
       "title": "Doc says vault root, the message below says corpus root",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#discussion_r4547712248",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -133,10 +133,10 @@
     {
       "id": "r1-12",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/decisions/D-QXRN-harness-facts-from-knowledge.md",
+      "line": 13,
       "title": "D-QXRN still lists the user skills folder as a looked-up fact",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/159#pullrequestreview-5870927026",
       "status": "open",
       "reason": null,
       "fixedIn": null
