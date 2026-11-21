@@ -78,7 +78,7 @@ impl Translator {
         self.0.format()
     }
 
-    /// Does this pack carry this member? Its kind has a place in the pack.
+    /// Whether this harness's pack has a place for `component`'s kind.
     pub(crate) fn admits(self, component: &Component) -> bool {
         self.format().carries(component.kind)
     }
