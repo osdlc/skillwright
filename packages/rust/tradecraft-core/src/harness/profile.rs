@@ -659,13 +659,13 @@ fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
     let policy = &profile.plugin;
     let name = profile.name;
     PluginFormat {
-        skills_dir: agent_adapt::runtimes::for_id(profile.runtime)
-            .expect("every harness renders through an agent-adapt runtime")
-            .paths()
-            .skills_dir
-            .for_scope(agent_adapt::Scope::Project)
-            .to_string_lossy()
-            .into_owned(),
+        skills_dir: crate::skill::forward_slashed(
+            agent_adapt::runtimes::for_id(profile.runtime)
+                .expect("every harness renders through an agent-adapt runtime")
+                .paths()
+                .skills_dir
+                .for_scope(agent_adapt::Scope::Project),
+        ),
         plugin_manifest: sourced(
             policy.plugin_manifest,
             name,
