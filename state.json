@@ -104,9 +104,9 @@
       "line": 9,
       "title": "`Target` shipped in 0.2.0, and the Unreleased section no longer says it is removed",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b882efd3dd7eb54633d225923e9ae7cbc4758c68"
     },
     {
       "id": "r2-2",
