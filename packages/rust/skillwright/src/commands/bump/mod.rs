@@ -469,6 +469,29 @@ mod tests {
 
     const NOW: u64 = 20_261_105_143_000;
 
+    /// A note that is not UTF-8 fails its bump, named by its vault-relative
+    /// path. Discovery skips such a note, so only a note that changes after
+    /// discovery reaches this read.
+    #[test]
+    fn a_note_that_is_not_utf8_is_named_by_its_vault_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("widget.md");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        let note = VersionNote {
+            path,
+            rel: "marketplaces/acme/plugins/widget/widget.md".to_owned(),
+        };
+        let Err(reason) = plan_bump(note, BumpLevel::Patch, PatchScheme::Increment, 0) else {
+            panic!("a non-UTF-8 note must not plan");
+        };
+        assert!(
+            reason.starts_with(
+                "unreadable-note: marketplaces/acme/plugins/widget/widget.md: not UTF-8"
+            ),
+            "{reason}"
+        );
+    }
+
     #[test]
     fn the_increment_scheme_is_plain_semver() {
         for (level, want) in [
