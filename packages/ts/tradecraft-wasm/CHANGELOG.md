@@ -29,6 +29,7 @@
 ### Changed
 
 - A `harnesses` name that is not a harness throws `Refused` (`unknown-harness`) with `` `<name>` is not a harness. The harnesses are ... ``. Of several unknown names, the first is named.
+- `buildVault` throws `Refused` (`output-changed`), writing nothing, when an owned path in `dist/<m>/` changed between its plan and its write.
 
 ## 0.2.0
 

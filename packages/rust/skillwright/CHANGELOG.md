@@ -22,6 +22,7 @@ Output:
 ### Changed
 
 - A build plans every marketplace once, not twice (once to check, once to write).
+- A build refuses with `output-changed`, writing nothing, when an owned path in `dist/<m>/` changed while it waited for confirmation.
 - A note that is not UTF-8 or whose frontmatter does not parse is no longer reported as `reading <path>: <what>`. It is `<path>: <what>` in the list of skipped notes, and `unreadable-note: <path>: <what>` on its own.
 - A `build.harnesses` name that is not a harness is refused as `` `<name>` is not a harness `` and names the first such name only.
 
