@@ -15,10 +15,10 @@
       "path": "packages/ts/tradecraft-wasm/CHANGELOG.md",
       "line": 24,
       "title": "wasm CHANGELOG lacks the refusal change the PR says it lists; Target still named in the same Unreleased section",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/161#discussion_r4548124044",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0859a8ea"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
       "line": 695,
       "title": "Harness::parse used as a membership test; every miss builds a refusal",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/161#discussion_r4548124053",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0859a8ea"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
       "line": 53,
       "title": "KNOWN_TARGETS doc does not say why the alias of Harness::ALL exists",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/161#discussion_r4548124062",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0859a8ea"
     },
     {
       "id": "r1-4",
@@ -48,18 +48,18 @@
       "path": "packages/rust/tradecraft-core/src/projection.rs",
       "line": 21,
       "title": "projection now imports harness, while harness::translator imports projection",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/161#discussion_r4548124074",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0859a8ea"
     },
     {
       "id": "r1-5",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "profile.rs",
+      "line": 53,
       "title": "tradecraft-wasm README.md:61 still names the removed Target type",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -67,10 +67,10 @@
     {
       "id": "r1-6",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "profile.rs",
+      "line": 53,
       "title": "docs/terms/README.md:27 roster still says translator is one implementation of a shared trait",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -78,10 +78,10 @@
     {
       "id": "r1-7",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "profile.rs",
+      "line": 53,
       "title": "tradecraft-wasm src/lib.rs:16 still says target name",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -89,10 +89,10 @@
     {
       "id": "r1-8",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/decisions/D-QXRN-harness-facts-from-knowledge.md",
+      "line": 17,
       "title": "D-QXRN still describes the translator trait, the dialect and profile.format()",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
       "status": "open",
       "reason": null,
       "fixedIn": null
