@@ -101,9 +101,9 @@
       "line": 24,
       "title": "breaking changes filed under Changed instead of Breaking",
       "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891894",
-      "status": "declined",
-      "reason": "The owner chose Changed for the planned minor release.",
-      "fixedIn": null
+      "status": "fixed",
+      "reason": null,
+      "fixedIn": "2c76bac462bd13a11469cb679ac75ea87d1ee15d"
     },
     {
       "id": "r1-10",
