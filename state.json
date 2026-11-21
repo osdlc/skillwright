@@ -60,9 +60,9 @@
       "line": 149,
       "title": "core crate test reads a downstream crate's source tree",
       "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891855",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a74e82f92e2f1691772cd94ea920408bb3ee15f3"
     },
     {
       "id": "r1-6",
