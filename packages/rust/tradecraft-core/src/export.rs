@@ -662,15 +662,15 @@ fn plan_with(
     market: &VaultMarketplace,
     options: &BuildOptions,
 ) -> Result<ExportPlan, CoreError> {
-    // Load once, for every harness this build renders: the marketplace
-    // chosen and validated, every body resolved. Everything a build refuses
-    // before it renders, it refuses here.
     let out = match &options.compare_with {
         Some(path) => normalize(path),
         None => market.dist.clone(),
     };
     let scope = BuildScope::Marketplace(market.name.clone());
     let defaults = &loaded.settings.defaults;
+    // Load once, for every harness this build renders: the marketplace
+    // chosen and validated, every body resolved. Everything a build refuses
+    // before it renders, it refuses here.
     let market = load_for(vfs, &loaded.layout, scan, &scope, roots, defaults)?;
     let warnings = market.warnings.clone();
 
@@ -857,7 +857,7 @@ fn scan_destination(vfs: &dyn Vfs, base: &Path, owned: &[&str]) -> Result<DestSt
     Ok(state)
 }
 
-/// The folders directly in `dir`, by name, links left out. None when `dir`
+/// The folders directly in `dir`, by name, links left out. Empty when `dir`
 /// is missing.
 fn folders_in(vfs: &dyn Vfs, dir: &Path) -> Result<Vec<String>, CoreError> {
     if !vfs.exists(dir) {

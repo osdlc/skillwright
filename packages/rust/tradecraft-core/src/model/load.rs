@@ -145,6 +145,9 @@ pub(crate) fn load_for(
     pack_files(vfs, layout, &market, &mut plugins)?;
     warnings.extend(changelog_warnings(vfs, layout, &market, config));
     warnings.extend(load_hooks_files(vfs, layout, &market, roots, &mut plugins)?);
+    // One index for every call, over every skill, command and agent in the
+    // marketplace, whether or not a given harness ships it: which harness
+    // ships what is asked when the call is written.
     let index = skill_index(
         plugins
             .values()
@@ -177,10 +180,8 @@ pub(crate) fn load_for(
     })
 }
 
-/// Refuses a build over notes the scan skipped in `scope`. The root file's
-/// own entry is configuration, not a note, and `check_block_values` refuses
-/// it naming the marketplace. A note in another marketplace does not stop a
-/// build of this one.
+/// Refuses a build over notes the scan skipped in `scope`. A note in another
+/// marketplace does not stop a build of this one.
 ///
 /// # Errors
 ///
@@ -193,6 +194,8 @@ fn refuse_skipped(scan: &DiscoveryReport, scope: &BuildScope) -> Result<(), Core
     let skipped: Vec<&SkippedNote> = scan
         .skipped
         .iter()
+        // The root file's own entry is configuration, not a note, and
+        // `check_block_values` refuses it naming the marketplace.
         .filter(|note| note.path != crate::settings::ROOT_FILE)
         .filter(|note| {
             market_prefix
@@ -318,10 +321,7 @@ fn members(
 }
 
 /// Pass 2 over every member some harness in `roots` carries, and each
-/// plugin's shared references. One index for every call, over every skill,
-/// command and agent in the marketplace under the plugin it ships in,
-/// whether or not a given harness ships it: which harness ships what is
-/// asked when the call is written.
+/// plugin's shared references.
 ///
 /// # Errors
 ///
@@ -648,8 +648,8 @@ fn resolve_marketplace(
     }
 }
 
-/// Plugins, members in discovery's name order: one per plugin note, so a
-/// plugin with no component still builds, with its skills and commands.
+/// Plugins, members in discovery's name order. Every plugin note makes a
+/// plugin, so one with no component still builds.
 ///
 /// # Errors
 ///

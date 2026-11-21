@@ -167,8 +167,9 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
 ///
 /// A build: the first marketplace's refusal, with nothing written, or
 /// `SwapFailed`. `Refused` (`output-changed`) when a `dist/<m>/` changed
-/// between the plan and the write, with nothing written. `Refused` (`compare-with`) for a build that names
-/// `compare_with`, or a request for several marketplaces that does.
+/// between the plan and the write, with nothing written. `Refused`
+/// (`compare-with`) for a build that names `compare_with`, or a request for
+/// several marketplaces that does.
 #[wasm_bindgen(js_name = buildVault)]
 pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
