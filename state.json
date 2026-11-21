@@ -38,9 +38,9 @@
       "line": 362,
       "title": "wire_type reads only serde from, which governs deserialization; output types follow into",
       "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496913",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0ee3461e042595a98dc46946185026585b4c3922"
     },
     {
       "id": "r1-4",
