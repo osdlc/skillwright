@@ -11,7 +11,8 @@ use super::scan::{
     scan_wiki_tokens,
 };
 use super::validate::{ESCAPED, refuse_marks};
-use super::{CallContext, CallSite, CompileSource, Recorded, mark};
+use super::{CallContext, CallSite, CompileSource, Recorded, marked};
+use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::guard::within;
@@ -47,6 +48,8 @@ pub(super) struct Renderer<'a> {
     pub(super) binary_resources: BTreeMap<PathBuf, String>,
     /// What the marks written so far stand for.
     pub(super) record: Recorded,
+    /// What the compile warned about so far.
+    pub(super) warnings: Vec<DiscoveryWarning>,
 }
 
 impl<'a> Renderer<'a> {
@@ -98,6 +101,7 @@ impl<'a> Renderer<'a> {
             markdown_resources: BTreeMap::new(),
             binary_resources: BTreeMap::new(),
             record: Recorded::default(),
+            warnings: Vec::new(),
         })
     }
 
@@ -402,8 +406,7 @@ impl<'a> Renderer<'a> {
         let label = self.vault_relative(file)?;
         refuse_marks(&content, &label)?;
         let block = fenced_block(&content, extension_of_path(file).as_deref(), line);
-        self.record.literals.push(block);
-        Ok(mark('v', self.record.literals.len() - 1))
+        Ok(marked(&mut self.record.literals, 'v', block))
     }
 
     /// A plugin-root variable, recorded as a mark for each harness to write
@@ -442,8 +445,7 @@ impl<'a> Renderer<'a> {
             written: written.to_owned(),
             caller: self.relative_or_verbatim(source_path),
         };
-        self.record.roots.push(site);
-        Ok(mark('p', self.record.roots.len() - 1))
+        Ok(marked(&mut self.record.roots, 'p', site))
     }
 
     /// A Markdown link's `destination`: a relative path is resolved like a
@@ -514,7 +516,7 @@ impl<'a> Renderer<'a> {
             && matches!(component.kind, EntityKind::Skill | EntityKind::Command)
             && self.component_folder(source_path) != resolved.parent().map(Path::to_path_buf)
         {
-            self.call_context.warn(
+            self.warn(
                 caller.clone(),
                 "link-not-call",
                 format!(
@@ -537,8 +539,7 @@ impl<'a> Renderer<'a> {
             written: written.to_owned(),
             caller,
         };
-        self.record.links.push(link);
-        Ok(mark('l', self.record.links.len() - 1))
+        Ok(marked(&mut self.record.links, 'l', link))
     }
 
     /// A `/[[call]]`: the mark for the target's invocation, in backticks,
@@ -611,12 +612,12 @@ impl<'a> Renderer<'a> {
                 format!("names agent `{}`, and no pack contains agents", skill.name),
             ));
         }
-        self.record.calls.push(CallSite {
+        let site = CallSite {
             skill: skill.clone(),
             written: token.destination.to_owned(),
             caller: self.relative_or_verbatim(source_path),
-        });
-        Ok(mark('c', self.record.calls.len() - 1))
+        };
+        Ok(marked(&mut self.record.calls, 'c', site))
     }
 
     /// A call error naming the file, the call as written and section 4 rule
@@ -700,6 +701,15 @@ impl<'a> Renderer<'a> {
     /// For messages only: the vault-relative spelling when there is one, the
     /// verbatim path when there is not — an error about a path must never
     /// itself error.
+    /// Records a warning about the file at `path`.
+    pub(super) fn warn(&mut self, path: String, reason: &str, detail: String) {
+        self.warnings.push(DiscoveryWarning {
+            path,
+            reason: reason.to_owned(),
+            detail,
+        });
+    }
+
     pub(super) fn relative_or_verbatim(&self, path: &Path) -> String {
         self.vault_relative(path)
             .unwrap_or_else(|_| path.display().to_string())

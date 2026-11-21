@@ -44,6 +44,8 @@ API:
 - The `vault` module is renamed `note`, and `skill::split_frontmatter` moves into it. `paths::{BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file}` move to `model::vault`, and `status::VersionBumpSuggestion` to `export`. The `skill` and `status` modules are removed. The root re-exports are unchanged.
 - The `semver` module and the root `BumpLevel`, `next_version` and `parse_semver` are removed. Only `skillwright bump` used them, and it holds them now.
 - The `paths` module and the root `resolve_path` are removed. They were the CLI's path helpers, and the CLI holds what it uses.
+- `CoreError` is `Clone`: `CoreError::Io`'s `source` is an `Arc<std::io::Error>`.
+- `CallContext::warnings` is removed. `resolve_body` appends what the compile warned about to a `warnings` argument.
 
 ### Changed
 

@@ -106,7 +106,6 @@ mod resolve;
 mod scan;
 mod validate;
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -132,23 +131,6 @@ pub(crate) struct CompileSource<'a> {
     pub skill_name: &'a str,
     /// What `/[[x]]` calls may name.
     pub calls: &'a CallContext<'a>,
-}
-
-impl<'a> CompileSource<'a> {
-    /// Compile the note at `entry_path`, named `skill_name`, in `layout`.
-    pub fn new(
-        layout: &'a Layout,
-        entry_path: &'a Path,
-        skill_name: &'a str,
-        calls: &'a CallContext<'a>,
-    ) -> Self {
-        Self {
-            layout,
-            entry_path,
-            skill_name,
-            calls,
-        }
-    }
 }
 
 /// Every component a compile's calls may name, keyed by entry path.
@@ -189,8 +171,6 @@ pub struct CallContext<'a> {
     /// name to write as `/[[name]]` instead (spec section 4 rule 8). Empty
     /// checks nothing.
     pub hand_written: BTreeMap<String, String>,
-    /// What the compile warned about, deduplicated.
-    pub warnings: RefCell<Vec<DiscoveryWarning>>,
 }
 
 /// The calls, links, inlined files and plugin-root paths a compile met, in
@@ -228,24 +208,12 @@ pub(crate) struct CallSite {
 pub(crate) const MARK_OPEN: char = '\u{FDD0}';
 pub(crate) const MARK_CLOSE: char = '\u{FDD1}';
 
-/// The mark for the `index`th call (`kind` `c`), link (`l`), literal (`v`)
-/// or plugin-root path (`p`).
-pub(super) fn mark(kind: char, index: usize) -> String {
+/// Records `site` last in `sites` and returns its mark: the `index`th call
+/// (`kind` `c`), link (`l`), literal (`v`) or plugin-root path (`p`).
+pub(super) fn marked<T>(sites: &mut Vec<T>, kind: char, site: T) -> String {
+    sites.push(site);
+    let index = sites.len() - 1;
     format!("{MARK_OPEN}{kind}{index}{MARK_CLOSE}")
-}
-
-impl CallContext<'_> {
-    pub(super) fn warn(&self, path: String, reason: &str, detail: String) {
-        let warning = DiscoveryWarning {
-            path,
-            reason: reason.to_owned(),
-            detail,
-        };
-        let mut warnings = self.warnings.borrow_mut();
-        if !warnings.contains(&warning) {
-            warnings.push(warning);
-        }
-    }
 }
 
 /// What a compile produces: the entry body flattened, every resource the
@@ -262,6 +230,8 @@ pub(crate) struct CompiledNote {
     pub resources: Vec<(String, Vec<u8>, bool)>,
     /// What the marks in the body and the Markdown resources stand for.
     pub recorded: Recorded,
+    /// What the compile warned about, in the order it met them.
+    pub warnings: Vec<DiscoveryWarning>,
 }
 
 /// Compiles one note body against its vault.
@@ -307,6 +277,7 @@ pub(crate) fn compile_note(
             .map(|(path, (bytes, executable))| (path, bytes, executable))
             .collect(),
         recorded: renderer.record,
+        warnings: renderer.warnings,
     })
 }
 
@@ -386,7 +357,12 @@ mod tests {
         let layout = crate::layout::read_layout(vfs, Path::new("/vault"))?;
         let calls = test_calls(skills);
         let entry = Path::new("/vault/marketplaces/m/plugins/p/skills/demo/demo.md");
-        let source = CompileSource::new(&layout, entry, "demo", &calls);
+        let source = CompileSource {
+            layout: &layout,
+            entry_path: entry,
+            skill_name: "demo",
+            calls: &calls,
+        };
         let mut compiled = compile_note(vfs, &source, body)?;
         compiled.body = written(&compiled.body, &compiled.recorded);
         for (path, bytes, _) in &mut compiled.resources {
@@ -395,7 +371,8 @@ mod tests {
                 *bytes = written(text, &compiled.recorded).into_bytes();
             }
         }
-        Ok((compiled, calls.warnings.into_inner()))
+        let warnings = std::mem::take(&mut compiled.warnings);
+        Ok((compiled, warnings))
     }
 
     /// [`try_compile_with`] over [`call_index`], without the warnings.
@@ -558,7 +535,12 @@ mod tests {
         let (_, body) = crate::note::split_frontmatter(&raw);
         let skills = SkillIndex::default();
         let calls = test_calls(&skills);
-        let compile_source = CompileSource::new(&layout, &entry, "workflow-checklist", &calls);
+        let compile_source = CompileSource {
+            layout: &layout,
+            entry_path: &entry,
+            skill_name: "workflow-checklist",
+            calls: &calls,
+        };
         let compiled = compile_note(&vfs, &compile_source, body).unwrap();
 
         assert!(compiled.body.contains("# Workflow Checklist"));
@@ -605,7 +587,12 @@ mod tests {
             vault.join("linked/demo/demo.md"),
             alias.join(skill).join("demo.md"),
         ] {
-            let compile_source = CompileSource::new(&layout, &entry, "demo", &calls);
+            let compile_source = CompileSource {
+                layout: &layout,
+                entry_path: &entry,
+                skill_name: "demo",
+                calls: &calls,
+            };
             let err = compile_note(&vfs, &compile_source, "# Demo\n").unwrap_err();
             assert!(
                 matches!(&err, CoreError::PathEscapesRoot(p) if *p == entry),
@@ -1344,7 +1331,6 @@ mod tests {
         CallContext {
             skills,
             hand_written: test_forms(),
-            warnings: RefCell::new(Vec::new()),
         }
     }
 
