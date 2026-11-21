@@ -18,14 +18,16 @@ API:
 - `compile_note`, `CompileSource`, `CompiledNote`, `compile::Recorded` and `compile::CallSite` are no longer public. A compile now writes each call, link, inlined file and plugin-root path as a mark that only the crate decodes. Compile a component with `model::resolve_body`, which returns the decoded segments.
 - `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId` and `Marketplace::folder` is a `String`.
 - `keys::field_reference` is no longer public.
+- `CoreError::Refused` is `{ token, message }`. The token is a `refusal::Token`, and the new `refusal` module lists every one. `CoreError::token()`, `detail()` and `reason()` read a refusal without parsing its message.
+- `CoreError::RootNotFound` is removed.
+- `CoreError::malformed` is renamed `unreadable` and refuses with `unreadable-note`.
+- `MarketplaceRefusal` has `token` and `detail` in place of `error`.
+- `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
 
 ### Changed
 
-- `CoreError::Refused` is `{ token, message }`. The token is a `refusal::Token`, and the new `refusal` module lists every one. `CoreError::token()`, `detail()` and `reason()` read a refusal without parsing its message.
-- `CoreError::RootNotFound` is removed, and messages say "vault root" in place of "corpus root".
-- `CoreError::malformed` is renamed `unreadable` and refuses with `unreadable-note`. A note that is not UTF-8 is refused the same way, not reported as `Io`.
-- `MarketplaceRefusal` has `token` and `detail` in place of `error`.
-- `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
+- Messages say "vault root" in place of "corpus root".
+- A note that is not UTF-8 is refused with `unreadable-note`, not reported as `Io`.
 
 ## [0.50.2](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.1...tradecraft-core/v0.50.2) - 2026-11-28
 

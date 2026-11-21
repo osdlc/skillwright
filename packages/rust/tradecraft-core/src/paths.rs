@@ -209,9 +209,10 @@ pub fn read_root_file(vfs: &dyn Vfs, root: &Path) -> Result<RootFile, CoreError>
 
 /// The refusal for a root file at `file` that cannot be read.
 fn malformed_root(file: &Path, detail: &str) -> CoreError {
-    CoreError::refused(
+    CoreError::refused_at(
         refusal::MALFORMED_ROOT_FILE,
-        format!("{}: {detail}. Nothing was written", file.display()),
+        file,
+        format!("{detail}. Nothing was written"),
     )
 }
 

@@ -44,12 +44,10 @@ impl VfsResolver<'_> {
 
 /// The refusal for a path the host could not resolve, with its `message`.
 fn unresolvable(p: &Path, message: &str) -> CoreError {
-    CoreError::refused(
+    CoreError::refused_at(
         refusal::UNSAFE_PATH,
-        format!(
-            "{}: cannot tell where this path leads — {message}. Nothing was written",
-            p.display()
-        ),
+        p,
+        format!("cannot tell where this path leads — {message}. Nothing was written"),
     )
 }
 

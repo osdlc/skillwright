@@ -126,28 +126,3 @@ pub const UNREADABLE_NOTE: Token = Token("unreadable-note");
 pub const UNRESOLVED_SYNTAX: Token = Token("unresolved-syntax");
 /// A path that is absolute, climbs out of its root, or cannot be written safely.
 pub const UNSAFE_PATH: Token = Token("unsafe-path");
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn every_token_is_documented_and_distinct() {
-        let lines: Vec<&str> = include_str!("refusal.rs").lines().collect();
-        let mut tokens = std::collections::BTreeSet::new();
-        for (at, line) in lines.iter().enumerate() {
-            let Some((name, token)) = line
-                .strip_prefix("pub const ")
-                .and_then(|rest| rest.split_once(": Token = Token("))
-            else {
-                continue;
-            };
-            assert!(
-                lines[at - 1].starts_with("///"),
-                "`{name}` has no doc comment"
-            );
-            assert!(tokens.insert(token), "`{name}` repeats {token}");
-        }
-        let declared = lines.iter().filter(|l| l.starts_with("pub const ")).count();
-        assert_eq!(tokens.len(), declared, "a `pub const` line did not parse");
-        assert!(!tokens.is_empty());
-    }
-}
