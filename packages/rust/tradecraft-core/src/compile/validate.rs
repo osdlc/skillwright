@@ -18,9 +18,10 @@ impl Renderer<'_> {
         body: &str,
         outputs: &mut BTreeMap<String, (Vec<u8>, bool)>,
     ) -> Result<String, CoreError> {
-        // `transform_body` replaced every token or refused, but splicing can move text across fence boundaries and frontmatter is
-        // carried untransformed, so the emitted files are scanned once more. An
-        // escape wrote [`ESCAPED`] for its `[[`, so the scan skips it.
+        // `transform_body` replaced every token or refused, but splicing can
+        // move text across fence boundaries and frontmatter is carried
+        // untransformed, so the emitted files are scanned once more. An escape
+        // wrote [`ESCAPED`] for its `[[`, so the scan skips it.
         let entry_label = self.relative_or_verbatim(&self.entry_path);
         validate_no_obsidian_syntax(body, 0, &entry_label)?;
         // Only the compiled Markdown: a copied file ships as written.

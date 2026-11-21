@@ -12,8 +12,7 @@ use crate::harness::translator::GENERATED_MARKER;
 use crate::harness::{Harness, Translator};
 use crate::model::Marketplace;
 use crate::model::config::MarketplaceConfig;
-use crate::vfs::forward_slashed;
-use crate::vfs::{PreviewWrite, Vfs};
+use crate::vfs::{PreviewWrite, Vfs, forward_slashed};
 
 /// One root's comparison: equality across what it owns (the swap's grain) and
 /// the per-unit stories a report tells about it.
