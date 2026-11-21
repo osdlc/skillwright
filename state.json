@@ -123,8 +123,8 @@
       "line": 18,
       "title": "Doc says vault root, the message below says corpus root",
       "comment": "https://github.com/osdlc/skillwright/pull/159#discussion_r4547712248",
-      "status": "open",
-      "reason": null,
+      "status": "declined",
+      "reason": "Not in this PR: #160 renames the message, and its error.rs now says \"path escapes its vault root\".",
       "fixedIn": null
     },
     {
