@@ -59,6 +59,46 @@
 //! `\/[[x]]` escapes, read as a layer over `markdown-link`'s links; the `\[[`
 //! escape; hand-written calls; and the validation that no Obsidian syntax
 //! survives.
+//!
+//! # What the pass refuses
+//!
+//! Each refusal carries a token from [`crate::refusal`] and names the skill
+//! or the source file, so the author can act:
+//!
+//! * `refused: layout` — the entry is not a component note or a shared file.
+//! * `refused: unreadable-note` — a linked or embedded markdown file is not
+//!   UTF-8.
+//! * `refused: cycle` — the embeds form a cycle, named in vault-relative hops.
+//! * `refused: fragment-unresolved` — a `#heading` or `#^block` selected
+//!   nothing, naming the source file and the fragment.
+//! * `refused: embed-fragment` — an embed of a file that is not a note has a
+//!   fragment.
+//! * `refused: embed-frontmatter` — an embedded note's frontmatter never
+//!   closes or is not YAML.
+//! * `refused: embed-binary` — an embedded file that is not markdown or an
+//!   image is not UTF-8 text.
+//! * `refused: link-ambiguous` — a name matched several files.
+//! * `refused: link-unresolved` — a link or embed reached nothing.
+//! * `refused: link-out-of-scope` — a link left the marketplace or reached
+//!   another plugin.
+//! * `refused: excluded-link` — a link reached a file that never ships.
+//! * `refused: unsafe-path` — an absolute link target.
+//! * `refused: claude-plugin-root` — a note writes `${CLAUDE_PLUGIN_ROOT}`.
+//! * `refused: plugin-root-no-path` — a plugin-root variable names no file.
+//! * `refused: noncharacter` — a source holds a code point the build uses
+//!   as its own mark (U+FDD0 to U+FDD2).
+//! * `refused: unresolved-syntax` — the validation pass found Obsidian syntax
+//!   in an emitted markdown file's body, or a link in a string of a
+//!   resource's frontmatter.
+//! * `refused: skill-call-unresolved` / `skill-call-ambiguous` /
+//!   `skill-call-not-shipped` / `skill-call-fragment` — a call named no
+//!   skill or command, several, or an agent, or had a fragment. A broken
+//!   call sends the reader to a command that does not exist, so it blocks.
+//!   Whether a harness carries what a call names is asked when the call is
+//!   written ([`crate::model::Call::check_shipped`]).
+//! * `refused: literal-skill-call` — prose spells one of
+//!   [`CallContext::hand_written`]'s call strings by hand, which is right
+//!   for one harness only. Every such call is listed in one refusal.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -283,35 +323,7 @@ pub struct Closure {
 ///
 /// # Errors
 ///
-/// All refusals name the skill or the source file so the author can act:
-///
-/// * `refused: cycle` — the embeds form a cycle, named in vault-relative hops.
-/// * `refused: fragment-unresolved` — a `#heading` or `#^block` selected
-///   nothing, naming the source file and the fragment.
-/// * `refused: link-ambiguous` — a name matched several files.
-/// * `refused: link-unresolved` — a link or embed reached nothing.
-/// * `refused: link-out-of-scope` — a link left the marketplace or reached
-///   another plugin.
-/// * `refused: excluded-link` — a link reached a file that never ships.
-/// * `refused: unsafe-path` — an absolute link target.
-/// * `refused: path-collision` — two sources claim one output path.
-/// * `refused: noncharacter` — a source holds a code point the build uses
-///   as its own mark (U+FDD0 to U+FDD2).
-/// * `refused: unresolved-syntax` — the validation pass found Obsidian syntax
-///   in an emitted markdown file's body, or a link in a string of a
-///   resource's frontmatter.
-/// * `refused: skill-call-unresolved` / `skill-call-ambiguous` /
-///   `skill-call-not-shipped` / `skill-call-fragment` — a call named no
-///   skill or command, several, or an agent, or had a fragment. A broken
-///   call sends the reader to a command that does not exist, so it blocks.
-///   Whether a harness carries what a call names is asked when the call is
-///   written ([`crate::model::Call::check_shipped`]).
-/// * `refused: literal-skill-call` — prose spells one of
-///   [`CallContext::hand_written`]'s call strings by hand, which is right
-///   for one harness only. Every such call is listed in one refusal.
-///
-/// Every token above except `cycle`, `unsafe-path` and `path-collision` is
-/// this pass's own.
+/// The refusals listed on [`crate::compile`].
 pub(crate) fn compile_note(
     vfs: &dyn Vfs,
     source: &CompileSource<'_>,
