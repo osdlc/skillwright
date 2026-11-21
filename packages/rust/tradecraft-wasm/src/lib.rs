@@ -217,7 +217,6 @@ fn report_json<T: Serialize>(what: &str, report: &T) -> Result<String, JsValue> 
 
 // --- CoreError -> thrown JS Error ------------------------------------------
 
-/// A refusal also carries its token as `.token`.
 fn core_error_to_js(e: &CoreError) -> JsValue {
     let err = js_sys::Error::new(&e.to_string());
     err.set_name(e.variant_name());
