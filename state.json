@@ -115,9 +115,9 @@
       "line": 799,
       "title": "Snapshot relies on mtime precision for a same-size edit; the test pins only MemVfs's counter",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "988f973c4a1a254561e7265c7774a1d91173303e"
     }
   ]
 }
