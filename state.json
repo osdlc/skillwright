@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 160,
-  "head": "a74e82f92e2f1691772cd94ea920408bb3ee15f3",
-  "base": "fd32ce04c3f628c8291de1a0f283c4fc8cdaf959",
-  "round": 2,
+  "head": "2c76bac462bd13a11469cb679ac75ea87d1ee15d",
+  "base": "2443bc9e95f8d5ca8ad01959a80fdc8e40a69cf9",
+  "round": 3,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T06:04:35.142Z"
@@ -151,6 +151,61 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "a6540d935736bb5aed4de66c95cefcbdabbd677c"
+    },
+    {
+      "id": "r3-1",
+      "round": 3,
+      "path": "packages/rust/tradecraft-core/tests/refusal_tokens.rs",
+      "line": 47,
+      "title": "Folding the unit test in dropped the check that every token line parsed",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r3-2",
+      "round": 3,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 30,
+      "title": "Io-to-Refused for a non-UTF-8 note is still under Changed, not Breaking",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r3-3",
+      "round": 3,
+      "path": "packages/ts/tradecraft-wasm/CHANGELOG.md",
+      "line": 28,
+      "title": "coreName Io-to-Refused for an unreadable note is under Changed, not Breaking",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r3-4",
+      "round": 3,
+      "path": null,
+      "line": null,
+      "title": "PR description no longer matches the branch",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r3-5",
+      "round": 3,
+      "path": "packages/rust/tradecraft-core/src/vault.rs",
+      "line": 126,
+      "title": "read_vault_note's missing-description change is in no changelog",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
