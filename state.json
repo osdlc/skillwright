@@ -137,9 +137,9 @@
       "line": 25,
       "title": "An earlier Unreleased entry still gives new signatures for functions this PR makes private",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b882efd3dd7eb54633d225923e9ae7cbc4758c68"
     },
     {
       "id": "r2-5",
