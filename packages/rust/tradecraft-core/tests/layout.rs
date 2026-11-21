@@ -3,9 +3,10 @@
 
 use std::path::Path;
 
+use tradecraft_core::vfs::VfsError;
 use tradecraft_core::{
-    BuildScope, CoreError, EntityKind, ExportMode, MemVfs, VaultRequest, Vfs, build_vault,
-    check_vault_root, discover_components, find_vault_root, load_vault, read_layout,
+    BuildScope, CoreError, EntityKind, ExportMode, MemVfs, NativeVfs, VaultRequest, Vfs,
+    build_vault, check_vault_root, discover_components, find_vault_root, load_vault, read_layout,
 };
 
 /// `build_vault` over the one marketplace a request covers: its report.
@@ -937,6 +938,108 @@ fn sibling_folder_links_that_lead_back_are_refused() {
     assert!(matches!(err, CoreError::Refused { .. }), "{err}");
     assert!(
         err.to_string().contains("a folder the walk is inside"),
+        "{err}"
+    );
+}
+
+/// The host on disk, except that it cannot resolve the path ending in the
+/// given suffix.
+#[cfg(unix)]
+struct DeniedMarket(&'static str);
+
+#[cfg(unix)]
+impl Vfs for DeniedMarket {
+    fn read_file(&self, path: &Path) -> Result<Vec<u8>, VfsError> {
+        NativeVfs.read_file(path)
+    }
+    fn read_dir(&self, path: &Path) -> Result<Vec<tradecraft_core::DirEntry>, VfsError> {
+        NativeVfs.read_dir(path)
+    }
+    fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), VfsError> {
+        NativeVfs.write_file(path, bytes)
+    }
+    fn create_dir_all(&self, path: &Path) -> Result<(), VfsError> {
+        NativeVfs.create_dir_all(path)
+    }
+    fn exists(&self, path: &Path) -> bool {
+        NativeVfs.exists(path)
+    }
+    fn metadata(&self, path: &Path) -> Result<tradecraft_core::vfs::Metadata, VfsError> {
+        NativeVfs.metadata(path)
+    }
+    fn is_executable(&self, path: &Path) -> bool {
+        NativeVfs.is_executable(path)
+    }
+    fn set_executable(&self, path: &Path, yes: bool) -> Result<(), VfsError> {
+        NativeVfs.set_executable(path, yes)
+    }
+    fn rename(&self, from: &Path, to: &Path) -> Result<(), VfsError> {
+        NativeVfs.rename(from, to)
+    }
+    fn remove(&self, path: &Path) -> Result<(), VfsError> {
+        NativeVfs.remove(path)
+    }
+    fn is_symlink(&self, path: &Path) -> bool {
+        NativeVfs.is_symlink(path)
+    }
+    fn sees_links(&self) -> bool {
+        true
+    }
+    fn read_link(&self, path: &Path) -> Result<std::path::PathBuf, VfsError> {
+        NativeVfs.read_link(path)
+    }
+    fn canonicalize(&self, path: &Path) -> Result<std::path::PathBuf, VfsError> {
+        if path.ends_with(self.0) {
+            let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+            return Err(VfsError::io(path, denied));
+        }
+        NativeVfs.canonicalize(path)
+    }
+}
+
+/// Reads a vault of one plugin, `tools`, with an empty `references/`, after
+/// `links` adds to the plugin folder it is given, through a host that cannot
+/// resolve the path ending in `denied`. The refusal.
+#[cfg(unix)]
+fn denied_layout(denied: &'static str, links: impl FnOnce(&Path)) -> CoreError {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let tools = root.join("marketplaces/acme/plugins/tools");
+    std::fs::create_dir_all(tools.join("references")).unwrap();
+    std::fs::write(root.join("skillwright.md"), ROOT).unwrap();
+    std::fs::write(root.join("marketplaces/acme/acme.md"), NOTE).unwrap();
+    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
+    links(&tools);
+    read_layout(&DeniedMarket(denied), root).unwrap_err()
+}
+
+/// A host that cannot resolve the folder a symlink must stay inside refuses
+/// the vault as an unsafe path; it does not fail with a bare host error.
+#[cfg(unix)]
+#[test]
+fn a_symlink_whose_scope_cannot_be_resolved_is_refused() {
+    let err = denied_layout("marketplaces/acme", |tools| {
+        std::fs::write(tools.join("references/x.md"), "x").unwrap();
+        std::os::unix::fs::symlink(tools.join("references/x.md"), tools.join("references/y.md"))
+            .unwrap();
+    });
+    assert!(
+        err.to_string().starts_with("refused: unsafe-path: "),
+        "{err}"
+    );
+}
+
+/// The walk-ancestor check refuses the same way when a folder the walk is
+/// inside cannot be resolved.
+#[cfg(unix)]
+#[test]
+fn a_walk_ancestor_that_cannot_be_resolved_is_refused() {
+    let err = denied_layout("plugins/tools/references", |tools| {
+        std::fs::create_dir_all(tools.join("other")).unwrap();
+        std::os::unix::fs::symlink(tools.join("other"), tools.join("references/y")).unwrap();
+    });
+    assert!(
+        err.to_string().starts_with("refused: unsafe-path: "),
         "{err}"
     );
 }

@@ -5,7 +5,6 @@
 //! It reads through [`discover_in`] (pass 1) and resolves through
 //! [`resolve_body`] (pass 2).
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -22,19 +21,19 @@ use crate::discover::{
     refuse_undescribed,
 };
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{Harness, SkillNaming};
+use crate::model::config::MarketplaceConfig;
+use crate::note::{VaultNote, read_vault_note};
 use crate::refusal;
 use crate::settings::{RootFile, SharedDefaults};
 use crate::text::named;
-use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
 use crate::layout::{Layout, Place, SharedDir};
-use crate::paths::BuildScope;
+use crate::model::vault::BuildScope;
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
@@ -115,7 +114,7 @@ pub(crate) fn built_harnesses(
 /// * What [`crate::layout::read_layout`] refuses.
 pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreError> {
     let layout = crate::layout::read_layout(vfs, &normalize(&request.vault_root))?;
-    let root = crate::paths::read_root_file(vfs, &layout.root)?;
+    let root = crate::model::vault::read_root_file(vfs, &layout.root)?;
     let roots = built_harnesses(&root, &request.harnesses)?;
     let scan = discover_in(vfs, &layout)?;
     load_for(vfs, &layout, &scan, &request.scope, &roots, &root.defaults)
@@ -158,10 +157,9 @@ pub(crate) fn load_for(
     let calls = CallContext {
         skills: &index,
         hand_written: hand_written_forms(&plugins, roots, config)?,
-        warnings: RefCell::new(Vec::new()),
     };
-    resolve_members(vfs, layout, &market, &cascade, roots, &calls, &mut plugins)?;
-    for warning in calls.warnings.into_inner() {
+    let compiled = resolve_members(vfs, layout, &market, &cascade, roots, &calls, &mut plugins)?;
+    for warning in compiled {
         if !warnings.contains(&warning) {
             warnings.push(warning);
         }
@@ -320,7 +318,8 @@ fn members(
 }
 
 /// Pass 2 over every member some harness in `roots` carries, and each
-/// plugin's shared references.
+/// plugin's shared references. Returns what the compiles warned about, in
+/// the order they met it.
 ///
 /// # Errors
 ///
@@ -334,7 +333,8 @@ fn resolve_members(
     roots: &[Harness],
     calls: &CallContext<'_>,
     plugins: &mut BTreeMap<String, Plugin>,
-) -> Result<(), CoreError> {
+) -> Result<Vec<DiscoveryWarning>, CoreError> {
+    let mut warnings = Vec::new();
     for plugin in plugins.values_mut() {
         let plugin_name = plugin.name.clone();
         for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
@@ -346,16 +346,19 @@ fn resolve_members(
             let mut note = read_vault_note(vfs, &found.entry_path, kind)?;
             cascade.apply(&mut note, kind, Some(&plugin_name));
             component.extensions = extensions(&note.frontmatter, found)?;
-            component.resolved = Some(resolve_body(vfs, layout, found, note, calls)?);
+            let resolved = resolve_body(vfs, layout, found, note, calls, &mut warnings)?;
+            component.resolved = Some(resolved);
         }
-        plugin.references = shared_references(vfs, layout, market, &plugin_name, calls)?;
+        plugin.references =
+            shared_references(vfs, layout, market, &plugin_name, calls, &mut warnings)?;
     }
-    Ok(())
+    Ok(warnings)
 }
 
 /// Pass 2 for one component: its body compiled once for every harness —
 /// embeds expanded, links pointed at the files that travel with it, calls at
-/// the skills and commands they name — and split into segments.
+/// the skills and commands they name — and split into segments. What the
+/// compile warned about is appended to `warnings`.
 ///
 /// # Errors
 ///
@@ -366,6 +369,7 @@ pub fn resolve_body(
     component: &DiscoveredComponent,
     note: VaultNote,
     calls: &CallContext<'_>,
+    warnings: &mut Vec<DiscoveryWarning>,
 ) -> Result<Resolved, CoreError> {
     let VaultNote {
         mut content,
@@ -380,14 +384,15 @@ pub fn resolve_body(
     }
     let compiled = compile_note(
         vfs,
-        &CompileSource::new(
+        &CompileSource {
             layout,
-            &component.entry_path,
-            component.position.name(),
+            entry_path: &component.entry_path,
+            skill_name: component.position.name(),
             calls,
-        ),
+        },
         &content.body,
     )?;
+    warnings.extend(compiled.warnings);
     let record = &compiled.recorded;
     let body = segments(&compiled.body, record);
     let resources = compiled
@@ -416,7 +421,6 @@ pub fn resolve_body(
         content,
         body,
         resources,
-        closures: compiled.closures,
     })
 }
 
@@ -452,7 +456,7 @@ fn hand_written_forms(
                 .iter()
                 .filter(|_| root.format().carries(EntityKind::Command));
             for member in plugin.skills.iter().chain(commands) {
-                if let Ok(form) = crate::export::rendered_skill_call(
+                if let Ok(form) = crate::harness::rendered_skill_call(
                     root.profile().runtime,
                     naming,
                     &plugin.name,
@@ -744,7 +748,8 @@ fn shared_markdown(place: &Place) -> bool {
 
 /// The Markdown in plugin `plugin`'s shared `references/`, each compiled
 /// as a file with no component: its links start at step 2 and are written
-/// from where it lands, at the pack root (spec section 4 rule 3).
+/// from where it lands, at the pack root (spec section 4 rule 3). What the
+/// compiles warned about is appended to `warnings`.
 ///
 /// # Errors
 ///
@@ -755,6 +760,7 @@ fn shared_references(
     market: &str,
     plugin: &str,
     calls: &CallContext<'_>,
+    warnings: &mut Vec<DiscoveryWarning>,
 ) -> Result<Vec<Resource>, CoreError> {
     let mut out = Vec::new();
     for file in layout.files_of(market) {
@@ -765,11 +771,17 @@ fn shared_references(
         if owner != plugin || !shared_markdown(&file.place) {
             continue;
         }
-        let raw = crate::skill::read_utf8(vfs, &file.path)?;
+        let raw = crate::note::read_utf8(vfs, &file.path)?;
         // Its frontmatter ships as written; only the body is compiled.
         let split = frontmatter_lossless::split(&raw);
-        let source = CompileSource::new(layout, &file.path, path, calls);
+        let source = CompileSource {
+            layout,
+            entry_path: &file.path,
+            skill_name: path,
+            calls,
+        };
         let compiled = compile_note(vfs, &source, split.body)?;
+        warnings.extend(compiled.warnings);
         let text = frontmatter_lossless::compose(split.yaml, &compiled.body, split.shape);
         out.push(Resource {
             path: path.clone(),

@@ -6,4 +6,4 @@ A link or call in a body, checked during [load](load.md) and pointing at the nod
 
 ## In code
 
-`Segment::Link` and `Segment::Call` in `model/mod.rs` (`ResolvedRef`, `Call`). `compile.rs` records them as marks in `CompiledNote::recorded`.
+`Segment::Link` and `Segment::Call` in `model/mod.rs` (`ResolvedRef`, `Call`). `compile/render.rs` records them as marks in `CompiledNote::recorded`.
