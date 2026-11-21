@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 159,
-  "head": "96de993af3a0f2f02faf6c78012737789b12cddb",
+  "head": "2443bc9e95f8d5ca8ad01959a80fdc8e40a69cf9",
   "base": "c27887e636ff50bbbeff7d12438612dd6d67b39a",
-  "round": 2,
+  "round": 3,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T06:04:27.495Z"
@@ -173,6 +173,17 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "9dc1c86bb44a2f1500bd57787505b86f985c6a24"
+    },
+    {
+      "id": "r3-1",
+      "round": 3,
+      "path": null,
+      "line": null,
+      "title": "PR description says field_reference is #[doc(hidden)], but it is now a private test helper",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
