@@ -115,9 +115,9 @@
       "line": 12,
       "title": "Public module doc names a pub(crate) helper and counts it",
       "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801660",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "284fa2d6e22e21049932d8b095f9d6eeb38bec25"
     },
     {
       "id": "r2-1",
