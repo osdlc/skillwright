@@ -15,7 +15,7 @@
       "path": "packages/rust/skillwright/src/commands/marketplace.rs",
       "line": 138,
       "title": "Commit after the prompt acts on a destination scan made before it; foreign-tree guard and stale report no longer cover the wait",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496900",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -26,7 +26,7 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 603,
       "title": "Shared failure copied into every marketplace entry (err.duplicate) has no test",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496907",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,7 +37,7 @@
       "path": "packages/rust/tradecraft-typegen/src/emit.rs",
       "line": 362,
       "title": "wire_type reads only serde from, which governs deserialization; output types follow into",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496913",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -45,10 +45,10 @@
     {
       "id": "r1-4",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/terms/drift.md",
+      "line": 9,
       "title": "docs/terms/drift.md:9 still names UnitStatus::Drift",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/162#pullrequestreview-5871946935",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -56,10 +56,10 @@
     {
       "id": "r1-5",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/terms/drift.md",
+      "line": 9,
       "title": "marketplace.rs:7-8 module doc says the file's whole contribution is the mode on the request",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/162#pullrequestreview-5871946935",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -70,7 +70,7 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 662,
       "title": "plan_with recomputes dist_dir that VaultMarketplace.dist already holds",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496923",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -81,7 +81,7 @@
       "path": "packages/rust/tradecraft-core/src/model/load.rs",
       "line": 168,
       "title": "name fallback is dead now that Cascade::over always sets config.name",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496930",
       "status": "open",
       "reason": null,
       "fixedIn": null
