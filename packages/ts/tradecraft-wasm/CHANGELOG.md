@@ -22,10 +22,7 @@
 - `ContainerIdentity`'s fields are optional (`display_name?: string`, not `display_name: string | null`). The JSON stays flat: no `identity` key appears. ([#75](https://github.com/osdlc/skillwright/issues/75))
 - A `Refused` `CoreError` carries its reason token as `token`. `MarketplaceRefusal` has `token` and `detail` in place of `error`.
 - `CoreErrorName` loses `RootNotFound`, which the core never threw.
-
-### Changed
-
-- A note that is not UTF-8 or whose frontmatter does not parse throws `Refused` (`unreadable-note`), not `Io`.
+- A note that is not UTF-8 or whose frontmatter does not parse throws `Refused` (`unreadable-note`), not `Io`: a caller that branches on `coreName === 'Io'` sees a refusal instead.
 
 ## 0.2.0
 

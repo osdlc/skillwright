@@ -23,11 +23,12 @@ API:
 - `CoreError::malformed` is renamed `unreadable` and refuses with `unreadable-note`.
 - `MarketplaceRefusal` has `token` and `detail` in place of `error`.
 - `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
+- A note that is not UTF-8 is refused with `unreadable-note` (`CoreError::Refused`), not reported as `CoreError::Io`.
+- `read_vault_note` refuses a skill, agent or command note with no `description` as `missing-description` (`CoreError::Refused`), not `CoreError::Io`.
 
 ### Changed
 
 - Messages say "vault root" in place of "corpus root".
-- A note that is not UTF-8 is refused with `unreadable-note`, not reported as `Io`.
 
 ## [0.50.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.0...tradecraft-core/v0.50.1) - 2026-11-12
 
