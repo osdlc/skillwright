@@ -149,7 +149,8 @@ pub fn owned_paths(
 /// nothing written yet.
 struct ExportPlan {
     report: ExportReport,
-    swap: Swap,
+    /// What a build writes; a check has none.
+    swap: Option<Swap>,
 }
 
 /// A build or check of every marketplace in a vault, or of the one named.
@@ -314,7 +315,7 @@ impl VaultPlan {
         }
         let mut swaps = Vec::with_capacity(self.marketplaces.len());
         for (_, plan) in self.marketplaces {
-            swaps.push(plan?.swap);
+            swaps.extend(plan?.swap);
         }
         commit(vfs, &swaps)
     }
@@ -358,7 +359,7 @@ pub fn plan(
         .map(|market| {
             let plan = match &shared {
                 Ok((roots, scan)) => plan_with(vfs, loaded, scan, roots, market, options),
-                Err(err) => Err(err.duplicate()),
+                Err(err) => Err(err.clone()),
             };
             (market.name.clone(), plan)
         })
@@ -442,33 +443,38 @@ fn plan_with(
             kind: c.kind(),
         })
         .collect();
-    // Taken before the comparison, so `commit` sees a change made after it.
-    let all_owned = roots.iter().flat_map(|spec| spec.owned_paths()).collect();
-    let seen = Snapshot::take(vfs, &out, all_owned)?;
-    let mut drifted = Vec::with_capacity(roots.len());
-    for (&spec, files) in roots.iter().zip(&rendered) {
-        let (root_units, equal) = compare_root(vfs, &out, spec, &market, files)?;
-        units.extend(root_units);
-        drifted.push(!equal);
-    }
-    let mut swap = Swap {
-        base: out,
-        owned: Vec::new(),
-        files: BTreeMap::new(),
-        seen,
+    // A check never commits, so it has no swap and takes no snapshot. A
+    // build's is taken before the comparison, so `commit` sees a change made
+    // after it.
+    let mut swap = match options.mode {
+        ExportMode::Check => None,
+        ExportMode::Build => {
+            let all_owned = roots.iter().flat_map(|spec| spec.owned_paths()).collect();
+            Some(Swap {
+                seen: Snapshot::take(vfs, &out, all_owned)?,
+                base: out.clone(),
+                owned: Vec::new(),
+                files: BTreeMap::new(),
+            })
+        }
     };
-    for ((spec, files), drifted) in roots.iter().zip(rendered).zip(drifted) {
-        if drifted {
-            swap.owned
-                .extend(spec.owned_paths().into_iter().map(str::to_owned));
-            swap.files.extend(files);
+    let mut changed = false;
+    for (&spec, files) in roots.iter().zip(rendered) {
+        let (root_units, equal) = compare_root(vfs, &out, spec, &market, &files)?;
+        units.extend(root_units);
+        if !equal {
+            changed = true;
+            if let Some(swap) = &mut swap {
+                swap.owned.extend(spec.owned_paths());
+                swap.files.extend(files);
+            }
         }
     }
     Ok(ExportPlan {
         report: ExportReport {
             mode: options.mode,
             checked: market.checked,
-            changed: !swap.owned.is_empty(),
+            changed,
             units,
             warnings,
         },
@@ -534,9 +540,8 @@ mod tests {
             .marketplaces
             .remove(0)
             .1?;
-        if request.options.mode == ExportMode::Build {
-            commit(vfs, std::slice::from_ref(&planned.swap))?;
-        }
+        // A check has no swap, so this writes nothing.
+        commit(vfs, planned.swap.as_slice())?;
         Ok(planned.report)
     }
 
@@ -620,8 +625,8 @@ mod tests {
     }
 
     fn request_for(marketplace: &str, mode: ExportMode) -> VaultRequest {
-        let mut value = request(mode);
-        value.scope = BuildScope::Marketplace(marketplace.to_owned());
+        let mut value = VaultRequest::for_marketplace("/vault", marketplace);
+        value.options.mode = mode;
         value
     }
 
@@ -1534,9 +1539,7 @@ mod tests {
             "/vault/marketplaces/other/plugins/kit/skills/quiet/quiet.md",
             "---\n---\n",
         );
-        let mut request = request(ExportMode::Build);
-        request.scope = BuildScope::Marketplace("house".to_owned());
-        let report = export_skills(&vfs, &request).unwrap();
+        let report = export_skills(&vfs, &request_for("house", ExportMode::Build)).unwrap();
         assert!(
             report
                 .warnings

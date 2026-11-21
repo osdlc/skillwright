@@ -23,7 +23,7 @@ const STAGE_DIR: &str = ".skillwright-stage";
 /// relative to `base`, gives way to what `files` holds under it.
 pub(super) struct Swap {
     pub(super) base: PathBuf,
-    pub(super) owned: Vec<String>,
+    pub(super) owned: Vec<&'static str>,
     pub(super) files: BTreeMap<String, PreviewWrite>,
     /// Every root's owned paths as the plan saw them, before it compared.
     pub(super) seen: Snapshot,

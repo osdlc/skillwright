@@ -36,7 +36,7 @@ impl Renderer<'_> {
     /// is in; a target with a `/` is a path from the linking file; a name is
     /// looked up in the two steps of section 4 rule 3.
     pub(super) fn resolve_wiki(
-        &self,
+        &mut self,
         token: &WikiToken<'_>,
         written: &str,
         from_file: &Path,
@@ -106,7 +106,7 @@ impl Renderer<'_> {
     /// ignored, with a warning when it differs; a name with no extension may
     /// leave out `.md` (section 4 rule 3).
     fn resolve_name(
-        &self,
+        &mut self,
         from_file: &Path,
         name: &str,
         written: &str,
@@ -117,7 +117,7 @@ impl Renderer<'_> {
     }
 
     /// Warns when `found` matched `name` only by ignoring case.
-    fn warn_case(&self, found: &Path, name: &str, written: &str, from_file: &Path) {
+    fn warn_case(&mut self, found: &Path, name: &str, written: &str, from_file: &Path) {
         let spelled = found
             .file_name()
             .map(|file| file.to_string_lossy())
@@ -125,15 +125,12 @@ impl Renderer<'_> {
         if spelled {
             return;
         }
-        self.call_context.warn(
-            self.relative_or_verbatim(from_file),
-            "link-case",
-            format!(
-                "`{written}` matches {} only by ignoring case; spell the name as the file \
-                 does (section 4 rule 3)",
-                self.relative_or_verbatim(found)
-            ),
+        let detail = format!(
+            "`{written}` matches {} only by ignoring case; spell the name as the file does \
+             (section 4 rule 3)",
+            self.relative_or_verbatim(found)
         );
+        self.warn(self.relative_or_verbatim(from_file), "link-case", detail);
     }
 
     /// The file a name-only link names, by the two steps of rule 3.

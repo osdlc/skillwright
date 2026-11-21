@@ -69,8 +69,8 @@ pub mod note;
 pub(crate) mod projection;
 pub mod refusal;
 pub mod settings;
-pub mod vfs;
 mod text;
+pub mod vfs;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
 pub use compile::{CallContext, SkillIndex};
