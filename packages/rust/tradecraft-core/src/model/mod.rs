@@ -64,8 +64,6 @@ pub use load::{LoadRequest, load, resolve_body};
 pub struct Marketplace {
     /// The name the marketplace publishes under: its folder name.
     pub name: String,
-    /// The vault's marketplace folder this was loaded from.
-    pub folder: String,
     /// The marketplace's identity and every plugin's manifest fields, the
     /// vault's notes folded over the root file's shared defaults.
     pub(crate) config: MarketplaceConfig,
