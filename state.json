@@ -145,9 +145,9 @@
       "line": 630,
       "title": "#42: \"Transfer it to osdlc/markdown\" names the wrong repo",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "60b19e6ed46a4d007e5958165922a2bc94398115"
     }
   ]
 }
