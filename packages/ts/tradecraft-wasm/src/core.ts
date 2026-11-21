@@ -18,7 +18,7 @@
  * | `discoverComponents` | the vault scan | `build`, `check`, and whatever needs a roster |
  * | `buildVault` | every marketplace, planned then written all or none | `build`, and `check` through `mode` |
  * | `loadMarketplace` | the marketplace, loaded and resolved, in the binding's own narrow shape | a host that wants structure rather than files |
- * | `knownTargets` | the target vocabulary | every verb that takes a target name |
+ * | `knownTargets` | the harness names | every verb that takes a harness name |
  * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
  *
  * A mode is a key on a request, never an export of its own — `check` is
@@ -46,7 +46,7 @@ import type {
   LoadRequest as GeneratedLoadRequest,
   Marketplace,
   RootFile,
-  Target,
+  Harness,
   VaultReport,
   VaultRequest as GeneratedVaultRequest,
 } from './core.generated.ts'
@@ -57,7 +57,7 @@ import type {
  * one door to the core.
  *
  * Re-exported, never re-declared, except for the `harnesses` of the two
- * requests, below, typed as {@link Target}s.
+ * requests, below, typed as {@link Harness} lists.
  * Everything else here is exactly what
  * `tradecraft-typegen` read off the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
@@ -88,7 +88,7 @@ export type {
   SkillId,
   SkippedNote,
   StaleKind,
-  Target,
+  Harness,
   UnitStatus,
   VaultReport,
   VersionBumpSuggestion,
@@ -97,14 +97,14 @@ export type {
   WasmResponses,
 } from './core.generated.ts'
 
-/** The generated `VaultRequest`, with `harnesses` typed as {@link Target}s. */
+/** The generated `VaultRequest`, with `harnesses` typed as {@link Harness} lists. */
 export type VaultRequest = Omit<GeneratedVaultRequest, 'harnesses'> & {
-  harnesses?: Target[]
+  harnesses?: Harness[]
 }
 
-/** The generated `LoadRequest`, with `harnesses` typed as {@link Target}s. */
+/** The generated `LoadRequest`, with `harnesses` typed as {@link Harness} lists. */
 export type LoadRequest = Omit<GeneratedLoadRequest, 'harnesses'> & {
-  harnesses?: Target[]
+  harnesses?: Harness[]
 }
 
 /**
@@ -163,12 +163,12 @@ function toCoreError(raw: unknown): CoreError {
 }
 
 /**
- * Every target name this build knows — `tradecraft_core::harness::KNOWN_TARGETS`,
+ * Every harness name this build knows — `tradecraft_core::harness::KNOWN_TARGETS`,
  * verbatim and in report order. A name typed on a command line and a name in
  * `build.harnesses` are checked against the same values.
  */
-export function knownTargets(): Target[] {
-  return callCore<Target[]>(() => knownTargetsWasm())
+export function knownTargets(): Harness[] {
+  return callCore<Harness[]>(() => knownTargetsWasm())
 }
 
 // --- discovery ---------------------------------------------------------------

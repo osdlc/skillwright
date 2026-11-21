@@ -20,6 +20,7 @@ Output:
 ### Changed
 
 - A note that is not UTF-8 or whose frontmatter does not parse is no longer reported as `reading <path>: <what>`. It is `<path>: <what>` in the list of skipped notes, and `unreadable-note: <path>: <what>` on its own.
+- A `build.harnesses` name that is not a harness is refused as `` `<name>` is not a harness `` and names the first such name only.
 
 ## [0.12.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.12.0...skillwright/v0.12.1) - 2026-11-12
 

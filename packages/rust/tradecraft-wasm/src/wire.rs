@@ -14,55 +14,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use tradecraft_core::model::load::{LoadRequest, load as core_load};
 use tradecraft_core::model::{Asset, Component, Marketplace, Plugin, Segment, SkillId};
-use tradecraft_core::refusal;
-use tradecraft_core::{CoreError, DiscoveryWarning, EntityKind, KNOWN_TARGETS, Vfs};
-
-/// A harness name: one of `KNOWN_TARGETS`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Target {
-    /// Claude Code.
-    Claude,
-    /// Codex.
-    Codex,
-    /// Cursor.
-    Cursor,
-    /// Pi.
-    Pi,
-}
-
-impl Target {
-    /// Every target, in `KNOWN_TARGETS` order.
-    pub const ALL: [Self; 4] = [Self::Claude, Self::Codex, Self::Cursor, Self::Pi];
-
-    /// The name `KNOWN_TARGETS` spells it with.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Claude => "claude",
-            Self::Codex => "codex",
-            Self::Cursor => "cursor",
-            Self::Pi => "pi",
-        }
-    }
-
-    /// The target named `name`. The core has already checked every name it
-    /// hands back, so an unknown one is a bug in this crate.
-    fn parse(name: &str) -> Result<Self, CoreError> {
-        Self::ALL
-            .into_iter()
-            .find(|t| t.as_str() == name)
-            .ok_or_else(|| {
-                CoreError::refused(
-                    refusal::UNKNOWN_TARGET,
-                    format!("`{name}` is not one of {KNOWN_TARGETS:?}"),
-                )
-            })
-    }
-}
-
-fn targets(names: &[String]) -> Result<Vec<Target>, CoreError> {
-    names.iter().map(|n| Target::parse(n)).collect()
-}
+use tradecraft_core::{CoreError, DiscoveryWarning, EntityKind, Harness, Vfs};
 
 /// A vault's marketplace, as `loadMarketplace` returns it.
 #[derive(Debug, Serialize)]
@@ -96,7 +48,7 @@ pub struct WirePlugin {
     /// The harnesses that name this plugin's skills without the plugin
     /// prefix their default adds.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub bare_on: Vec<Target>,
+    pub bare_on: Vec<Harness>,
 }
 
 /// A skill, a command or an agent.
@@ -126,46 +78,46 @@ pub struct WireComponent {
 ///
 /// Everything the core's `load` refuses.
 pub fn marketplace(vfs: &dyn Vfs, request: &LoadRequest) -> Result<WireMarketplace, CoreError> {
-    WireMarketplace::from_model(&core_load(vfs, request)?)
+    Ok(WireMarketplace::from_model(&core_load(vfs, request)?))
 }
 
 impl WireMarketplace {
-    fn from_model(market: &Marketplace) -> Result<Self, CoreError> {
-        Ok(Self {
+    fn from_model(market: &Marketplace) -> Self {
+        Self {
             name: market.name.clone(),
             plugins: market
                 .plugins
                 .iter()
-                .map(|(name, plugin)| Ok((name.clone(), WirePlugin::from_model(plugin)?)))
-                .collect::<Result<_, CoreError>>()?,
-            uncarried: components(&market.uncarried)?,
+                .map(|(name, plugin)| (name.clone(), WirePlugin::from_model(plugin)))
+                .collect(),
+            uncarried: components(&market.uncarried),
             warnings: market.warnings.clone(),
             checked: market.checked,
-        })
+        }
     }
 }
 
 impl WirePlugin {
-    fn from_model(plugin: &Plugin) -> Result<Self, CoreError> {
-        Ok(Self {
+    fn from_model(plugin: &Plugin) -> Self {
+        Self {
             name: plugin.name.clone(),
-            skills: components(&plugin.skills)?,
-            commands: components(&plugin.commands)?,
+            skills: components(&plugin.skills),
+            commands: components(&plugin.commands),
             assets: plugin.assets.clone(),
             references: plugin.references.iter().map(|r| r.path.clone()).collect(),
-            bare_on: targets(&plugin.bare_on)?,
-        })
+            bare_on: plugin.bare_on.clone(),
+        }
     }
 }
 
-fn components(list: &[Component]) -> Result<Vec<WireComponent>, CoreError> {
+fn components(list: &[Component]) -> Vec<WireComponent> {
     list.iter().map(WireComponent::from_model).collect()
 }
 
 impl WireComponent {
-    fn from_model(c: &Component) -> Result<Self, CoreError> {
+    fn from_model(c: &Component) -> Self {
         let resolved = c.resolved.as_ref();
-        Ok(Self {
+        Self {
             kind: c.kind,
             name: c.name.clone(),
             path: c.path.clone(),
@@ -184,23 +136,6 @@ impl WireComponent {
                 .flat_map(|r| &r.resources)
                 .map(|r| r.path.clone())
                 .collect(),
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_known_target_is_a_target() {
-        let names: Vec<&str> = Target::ALL.iter().map(|t| t.as_str()).collect();
-        assert_eq!(names, KNOWN_TARGETS);
-        for t in Target::ALL {
-            assert_eq!(
-                serde_json::to_string(&t).unwrap(),
-                format!("\"{}\"", t.as_str())
-            );
         }
     }
 }
