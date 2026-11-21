@@ -27,9 +27,9 @@
       "line": 603,
       "title": "Shared failure copied into every marketplace entry (err.duplicate) has no test",
       "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496907",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0ee3461e042595a98dc46946185026585b4c3922"
     },
     {
       "id": "r1-3",
