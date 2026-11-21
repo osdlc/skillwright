@@ -891,10 +891,7 @@ fn load_hooks_files(
             continue;
         };
         let text = String::from_utf8(vfs.read_file(&file.path)?).map_err(|_| {
-            CoreError::refused(
-                refusal::MALFORMED_HOOKS_FILE,
-                format!("{}: not UTF-8", file.rel),
-            )
+            CoreError::refused_at(refusal::MALFORMED_HOOKS_FILE, &file.rel, "not UTF-8")
         })?;
         let hooks = crate::hooks_file::parse_hooks_file(&text, &file.rel)?;
         for root in roots.iter().filter(|root| root.format().carries_hooks) {

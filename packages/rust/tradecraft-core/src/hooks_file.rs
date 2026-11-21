@@ -168,8 +168,7 @@ pub fn parse_hooks_file(text: &str, from: &str) -> Result<Vec<Hook>, CoreError> 
             format!("{from}: `{CLAUDE_ROOT}` is Claude Code's own; write `{CANONICAL_ROOT}`"),
         ));
     }
-    let malformed =
-        |what: String| CoreError::refused(refusal::MALFORMED_HOOKS_FILE, format!("{from}: {what}"));
+    let malformed = |what: String| CoreError::refused_at(refusal::MALFORMED_HOOKS_FILE, from, what);
     let root: Value = serde_json::from_str(text).map_err(|e| malformed(e.to_string()))?;
     let Some(root) = root.as_object() else {
         return Err(malformed("the file must be a JSON object".into()));

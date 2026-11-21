@@ -20,11 +20,11 @@
 - `targets` is removed: a `Component`, a `DiscoveredComponent` and `SharedDefaults` have no `targets` field, and a note or root file that sets it throws `Refused`. Pick harnesses with `build.harnesses` or a request's `harnesses`.
 - An unset identity field is absent instead of `null`: every component's `identity` in `discoverComponents`, so a skill's is `{}`. `parseRootFile` already left unset fields out. Test for `undefined`, not `null`. ([#75](https://github.com/osdlc/skillwright/issues/75))
 - `ContainerIdentity`'s fields are optional (`display_name?: string`, not `display_name: string | null`). The JSON stays flat: no `identity` key appears. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- A `Refused` `CoreError` carries its reason token as `token`. `MarketplaceRefusal` has `token` and `detail` in place of `error`.
+- `CoreErrorName` loses `RootNotFound`, which the core never threw.
 
 ### Changed
 
-- A `Refused` `CoreError` carries its reason token as `token`. `MarketplaceRefusal` has `token` and `detail` in place of `error`.
-- `CoreErrorName` loses `RootNotFound`, which the core never threw.
 - A note that is not UTF-8 or whose frontmatter does not parse throws `Refused` (`unreadable-note`), not `Io`.
 
 ## 0.2.0

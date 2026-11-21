@@ -167,12 +167,10 @@ pub fn check_vault_root(vfs: &dyn Vfs, dir: &Path) -> Result<(), CoreError> {
     for name in [ROOT_FILE, MARKETPLACES_DIR, DIST_DIR] {
         let path = dir.join(name);
         if vfs.is_symlink(&path) {
-            return Err(CoreError::refused(
+            return Err(CoreError::refused_at(
                 refusal::UNSAFE_PATH,
-                format!(
-                    "{}: `{name}` may not be a symlink. Replace it with the real file or folder",
-                    path.display()
-                ),
+                &path,
+                format!("`{name}` may not be a symlink. Replace it with the real file or folder"),
             ));
         }
     }
@@ -770,12 +768,12 @@ impl Walk<'_> {
     /// reading the link reads its target, so it ships as a copy.
     fn linked(&self, path: &Path) -> Result<bool, CoreError> {
         let refuse = |why: String| {
-            CoreError::refused(
+            CoreError::refused_at(
                 refusal::UNSAFE_PATH,
+                path,
                 format!(
-                    "{}: a symlink {why}. Point it inside its marketplace folder, or replace it \
-                     with the real file or folder",
-                    path.display()
+                    "a symlink {why}. Point it inside its marketplace folder, or replace it with \
+                     the real file or folder"
                 ),
             )
         };

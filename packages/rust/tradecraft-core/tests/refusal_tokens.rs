@@ -1,6 +1,8 @@
-//! Every `refusal` token is used by the core, the wasm binding or the CLI.
+//! Every `refusal` token is distinct and used by the core, the wasm binding
+//! or the CLI.
 //! Reads sibling crates' source, so it lives in `tests/`, which is not published.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 /// Appends every `.rs` file under `dir` to `text`.
@@ -23,22 +25,23 @@ fn is_used(used: &str, name: &str) -> bool {
 }
 
 #[test]
-fn every_token_is_used() {
+fn every_token_is_distinct_and_used() {
     let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut used = String::new();
     for krate in ["tradecraft-core", "tradecraft-wasm", "skillwright"] {
         sources(&crates.join(krate).join("src"), &mut used);
     }
     let mut seen = 0;
+    let mut values = BTreeSet::new();
     for line in include_str!("../src/refusal.rs").lines() {
-        let Some(name) = line
+        let Some((name, value)) = line
             .strip_prefix("pub const ")
             .and_then(|rest| rest.split_once(": Token = Token("))
-            .map(|(name, _)| name)
         else {
             continue;
         };
         seen += 1;
+        assert!(values.insert(value), "`{name}` repeats {value}");
         assert!(is_used(&used, name), "`{name}` is never used");
     }
     assert!(seen > 0, "no token parsed");
