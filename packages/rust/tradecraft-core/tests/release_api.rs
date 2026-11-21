@@ -61,9 +61,7 @@ fn vault(market: &str, tools: &str, review: &str) -> MemVfs {
 }
 
 fn request() -> VaultRequest {
-    let mut request = VaultRequest::new("/vault");
-    request.scope = BuildScope::Marketplace("house".to_owned());
-    request
+    VaultRequest::for_marketplace("/vault", "house")
 }
 
 fn build(vfs: &dyn Vfs) -> ExportReport {

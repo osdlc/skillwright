@@ -16,7 +16,7 @@ API:
 - `projection::{project_skill_reporting, redundant_override_keys, RedundantOverride}` and `FileTree::redundant_overrides` are removed.
 - `CallContext::{render, target, record}` and `Component::content` are removed. `Resolved::content` and `resolve_body`'s return type change.
 - `compile_note`, `CompileSource`, `CompiledNote`, `compile::Recorded` and `compile::CallSite` are no longer public. A compile now writes each call, link, inlined file and plugin-root path as a mark that only the crate decodes. Compile a component with `model::resolve_body`, which returns the decoded segments.
-- `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId` and `Marketplace::folder` is a `String`.
+- `PluginPolicy::{skills_dir, user_skills_dir, hooks_manifest_entry}`, `PluginFormat::{user_skills_dir, hooks_manifest_entry}` and `HarnessProfile::declaration` are removed. `PluginFormat::skills_dir` is a `String`, `HarnessProfile::runtime` is a `RuntimeId`. `Marketplace::folder` is removed; it equals `name`.
 - `keys::field_reference` is no longer public.
 - `CoreError::Refused` is `{ token, message }`. The token is a `refusal::Token`, and the new `refusal` module lists every one. `CoreError::token()`, `detail()` and `reason()` read a refusal without parsing its message.
 - `CoreError::RootNotFound` is removed.

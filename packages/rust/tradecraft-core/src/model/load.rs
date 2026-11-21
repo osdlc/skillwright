@@ -169,8 +169,7 @@ pub(crate) fn load_for(
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     apply_naming(&mut plugins, config)?;
     Ok(Marketplace {
-        name: market.clone(),
-        folder: market,
+        name: market,
         config: cascade.config,
         plugins,
         uncarried,

@@ -42,9 +42,7 @@ fn write(vfs: &MemVfs, path: &str, text: &str) {
 }
 
 fn request(marketplace: &str) -> VaultRequest {
-    let mut request = VaultRequest::new("/v");
-    request.scope = BuildScope::Marketplace(marketplace.to_owned());
-    request
+    VaultRequest::for_marketplace("/v", marketplace)
 }
 
 /// Every file under `dir`, with its bytes.
