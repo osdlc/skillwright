@@ -148,9 +148,9 @@
       "line": null,
       "title": "resolve_body's # Errors points at a module that lists no refusals, and the crate-private list misses unreadable-note",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a6540d935736bb5aed4de66c95cefcbdabbd677c"
     }
   ]
 }
