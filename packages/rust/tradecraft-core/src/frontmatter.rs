@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
+use crate::refusal;
 
 /// Which kind of unit a note is: what the folder it sits in names.
 ///
@@ -710,8 +711,8 @@ fn validate_arguments(arguments: &[Argument], key: &str, path: &Path) -> Result<
     let mut seen = std::collections::HashSet::new();
     for arg in arguments {
         if !is_slug(&arg.name) {
-            return Err(refuse(
-                "invalid-arguments",
+            return Err(CoreError::refused_at(
+                refusal::INVALID_ARGUMENTS,
                 path,
                 format!(
                     "`{key}` names `{}`, which is not a slug — it must match \
@@ -723,8 +724,8 @@ fn validate_arguments(arguments: &[Argument], key: &str, path: &Path) -> Result<
         if let Some(values) = &arg.values
             && values.is_empty()
         {
-            return Err(refuse(
-                "invalid-arguments",
+            return Err(CoreError::refused_at(
+                refusal::INVALID_ARGUMENTS,
                 path,
                 format!(
                     "`{key}` entry `{}`'s `values` is an empty list. Remove `values` for no \
@@ -736,8 +737,8 @@ fn validate_arguments(arguments: &[Argument], key: &str, path: &Path) -> Result<
         if let (Some(values), Some(default)) = (&arg.values, &arg.default)
             && !values.contains(default)
         {
-            return Err(refuse(
-                "invalid-arguments",
+            return Err(CoreError::refused_at(
+                refusal::INVALID_ARGUMENTS,
                 path,
                 format!(
                     "`{key}` entry `{}`'s `default` (`{default}`) is not one of its `values` \
@@ -752,8 +753,8 @@ fn validate_arguments(arguments: &[Argument], key: &str, path: &Path) -> Result<
             ));
         }
         if !seen.insert(arg.name.as_str()) {
-            return Err(refuse(
-                "invalid-arguments",
+            return Err(CoreError::refused_at(
+                refusal::INVALID_ARGUMENTS,
                 path,
                 format!(
                     "`{key}` declares `{}` more than once. Names must be unique",
@@ -801,11 +802,6 @@ pub(crate) fn type_name(value: &Value) -> &'static str {
         Value::Array(_) => "a list",
         Value::Object(_) => "a mapping",
     }
-}
-
-/// A refusal carrying a reason token, the note it is about, and the prose that says what to do.
-fn refuse(token: &str, path: &Path, message: impl fmt::Display) -> CoreError {
-    CoreError::refused(token, format!("{}: {message}", path.display()))
 }
 
 #[cfg(test)]

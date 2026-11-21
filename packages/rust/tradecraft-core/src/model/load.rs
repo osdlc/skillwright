@@ -27,6 +27,7 @@ use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
+use crate::refusal;
 use crate::settings::{RootFile, SharedDefaults};
 use crate::vault::{VaultNote, read_vault_note};
 
@@ -86,7 +87,7 @@ pub(crate) fn selected_harnesses(
         .collect();
     if !unknown.is_empty() {
         return Err(CoreError::refused(
-            "unknown-harness",
+            refusal::UNKNOWN_HARNESS,
             format!(
                 "no harness named {} — this build renders {}. Nothing was written",
                 unknown.join(", "),
@@ -271,7 +272,7 @@ pub(crate) fn load_for(
         .collect();
     if plugin_notes.is_empty() && skills.is_empty() && commands.is_empty() {
         return Err(CoreError::refused(
-            "empty-marketplace",
+            refusal::EMPTY_MARKETPLACE,
             format!(
                 "marketplace `{market}` under {} holds no plugin: add \
                  `{}/{market}/{}/<p>/<p>.md`. Nothing was written",
@@ -360,9 +361,7 @@ pub(crate) fn load_for(
 ///
 /// # Errors
 ///
-/// Everything the compile pass refuses (see [`crate::compile`]). Whether a
-/// harness ships what a call names is asked when the call is written
-/// ([`crate::model::Call::check_shipped`]).
+/// Everything the compile pass refuses (see [`crate::compile`]).
 pub fn resolve_body(
     vfs: &dyn Vfs,
     layout: &Layout,
@@ -556,19 +555,22 @@ fn unread(component: &DiscoveredComponent) -> Component {
 /// one parsed but holds a value of the wrong kind, else `unreadable-note`.
 fn skipped_wording<'a>(
     notes: impl IntoIterator<Item = &'a SkippedNote>,
-) -> (&'static str, &'static str) {
+) -> (refusal::Token, &'static str) {
     let (mut wrong_kind, mut other) = (false, false);
     for note in notes {
-        if note.reason == "malformed" {
+        if note.reason == refusal::MALFORMED {
             wrong_kind = true;
         } else {
             other = true;
         }
     }
     match (wrong_kind, other) {
-        (true, false) => ("malformed", "with a value of the wrong kind"),
-        (true, true) => ("unreadable-note", "this scan could not read or refused"),
-        _ => ("unreadable-note", "this scan could not read"),
+        (true, false) => (refusal::MALFORMED, "with a value of the wrong kind"),
+        (true, true) => (
+            refusal::UNREADABLE_NOTE,
+            "this scan could not read or refused",
+        ),
+        _ => (refusal::UNREADABLE_NOTE, "this scan could not read"),
     }
 }
 
@@ -650,7 +652,7 @@ fn resolve_marketplace(
     match (requested, present.len()) {
         (Some(name), _) if present.contains(name) => Ok(name.to_owned()),
         (Some(name), _) => Err(CoreError::refused(
-            "unknown-marketplace",
+            refusal::UNKNOWN_MARKETPLACE,
             format!(
                 "no marketplace `{name}` in this vault: it holds {}",
                 if present.is_empty() {
@@ -662,11 +664,11 @@ fn resolve_marketplace(
         )),
         (None, 1) => Ok(present.first().map(|m| (*m).to_owned()).unwrap_or_default()),
         (None, 0) => Err(CoreError::refused(
-            "empty-marketplace",
+            refusal::EMPTY_MARKETPLACE,
             "this vault holds no marketplace: add `marketplaces/<m>/<m>.md`. Nothing was written",
         )),
         (None, _) => Err(CoreError::refused(
-            "ambiguous-marketplace",
+            refusal::AMBIGUOUS_MARKETPLACE,
             format!(
                 "this vault holds {}: name the marketplace to use",
                 named(&present)
@@ -723,7 +725,7 @@ fn group_by_plugin(
             let siblings = pick(plugin);
             if let Some(first) = siblings.iter().find(|m| m.name == member.name) {
                 return Err(CoreError::refused(
-                    "path-collision",
+                    refusal::PATH_COLLISION,
                     format!(
                         "`{}` and `{}` both render as {} `{}` of plugin `{name}` — two \
                          components cannot publish onto one directory",
@@ -889,7 +891,7 @@ fn load_hooks_files(
             continue;
         };
         let text = String::from_utf8(vfs.read_file(&file.path)?).map_err(|_| {
-            CoreError::refused("malformed-hooks-file", format!("{}: not UTF-8", file.rel))
+            CoreError::refused_at(refusal::MALFORMED_HOOKS_FILE, &file.rel, "not UTF-8")
         })?;
         let hooks = crate::hooks_file::parse_hooks_file(&text, &file.rel)?;
         for root in roots.iter().filter(|root| root.format().carries_hooks) {

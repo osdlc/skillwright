@@ -803,7 +803,7 @@ fn case_7_packs_in_a_marketplace_or_plugin_block_is_refused() {
         request.mode = ExportMode::Check;
         // A check lists the refusal in its report.
         let report = build_vault(&vault_of(&files), &request).unwrap();
-        let said = &report.refused[0].error;
+        let said = &report.refused[0].detail;
         assert!(said.contains(&format!("`{at}.packs`")), "{note}: {said}");
         assert!(said.contains("removed"), "{note}: {said}");
         assert!(said.contains(note), "{note}: {said}");
@@ -895,7 +895,7 @@ fn a_symlink_is_read_when_its_target_stays_in_the_marketplace() {
     // A folder link that holds itself would never end.
     std::os::unix::fs::symlink(&tools, tools.join("references/loop")).unwrap();
     let err = read_layout(&vfs, &tmp).unwrap_err();
-    assert!(matches!(err, CoreError::Refused(_)), "{err}");
+    assert!(matches!(err, CoreError::Refused { .. }), "{err}");
     assert!(
         err.to_string().contains("a folder the walk is inside"),
         "{err}"
@@ -933,7 +933,7 @@ fn sibling_folder_links_that_lead_back_are_refused() {
 
     let err = read_layout(&tradecraft_core::NativeVfs, &tmp).unwrap_err();
     std::fs::remove_dir_all(&tmp).unwrap();
-    assert!(matches!(err, CoreError::Refused(_)), "{err}");
+    assert!(matches!(err, CoreError::Refused { .. }), "{err}");
     assert!(
         err.to_string().contains("a folder the walk is inside"),
         "{err}"
