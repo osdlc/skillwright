@@ -49,9 +49,9 @@
       "line": 9,
       "title": "docs/terms/drift.md:9 still names UnitStatus::Drift",
       "comment": "https://github.com/osdlc/skillwright/pull/162#pullrequestreview-5871946935",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0ee3461e042595a98dc46946185026585b4c3922"
     },
     {
       "id": "r1-5",
