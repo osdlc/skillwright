@@ -20,7 +20,8 @@ The owner wants:
 1. **One major feature per milestone.** Each milestone gets its own spec
    section, its own plan and its own PR, as v2 did with
    [structure-v2.md](structure-v2.md), [v2-plan.md](v2-plan.md) and one PR.
-   M0 is the exception: it changes no spec and lands as several PRs.
+   The only extra PRs are library-switch follow-ups (principle 5). M0 is the
+   other exception: it changes no spec and lands as several PRs.
 2. **Lean on the osdlc libraries.** Code that a library does, or should do,
    goes to the library. skillwright keeps only its own rules: the layout,
    link scope, calls and the pack table.
@@ -34,7 +35,7 @@ The owner wants:
    - one shared test helper module per crate, and no copied helpers;
    - every refusal token comes from the `refusal` module and is documented;
    - the M0 seams are used, not bypassed: plan once over owned paths, one
-     `Harness` enum, one `Scope`, one frontmatter reader.
+     `Harness` enum, one `BuildScope`, one frontmatter reader.
 5. **A milestone waits for a library release only where the table says so.**
    Where it does not wait, skillwright uses the current release and moves to
    the new one in a follow-up PR inside the same milestone.
@@ -43,9 +44,9 @@ The owner wants:
 
 | Milestone | Problem it solves | Who needs it (evidence) | skillwright work | Library work | Size | Depends on |
 |---|---|---|---|---|---|---|
-| **M0. Cleanup** | The code has duplicated helpers, dead paths and local copies of library jobs. The seams the next features need do not exist yet. | The owner. Issues [#46](https://github.com/osdlc/skillwright/issues/46), [#47](https://github.com/osdlc/skillwright/issues/47), [#50](https://github.com/osdlc/skillwright/issues/50), [#141](https://github.com/osdlc/skillwright/issues/141). `cargo install skillwright` builds two markdown-link versions ([#155](https://github.com/osdlc/skillwright/pull/155)). | The 12-step cleanup below: about -3,000 lines. Plan once over owned paths, one `Harness` enum, one `Scope`, structured refusals, one frontmatter reader. | markdown-link: [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649), [osdlc/osdlc#651](https://github.com/osdlc/osdlc/pull/651), `select` moved in, reference definitions and escapes as tokens (**wait**). typed-git: `toplevel`, `ls_tree`, `paths_into` (**wait**). vfs-walk: `empty_dirs` (**wait**). path-guard: one `Vfs` resolver, `lexical::relative` (**wait**). frontmatter-lossless: `LenientSplit::yaml_range` (**wait**). vfs-seam 0.2.1 (released). | Large, about 7 PRs | none |
-| **M1. Build levels** | `build` builds a whole marketplace or nothing. A release of one plugin needs a script. | skillwright's own `.github/workflows/plugin-release.yml` runs `scripts/plugin-marketplace.ts sync` after a whole build. M3's sync of one plugin needs it. | `--plugin <p>` on `build`, `check` and `bump`. A plugin build owns only its packs and its manifest entries. | None required. typed-git git-tree `Vfs` for an in-memory baseline (no wait). | Small to medium | M0 steps 1 to 8 |
-| **M2. Shared assets and cross-plugin links** | A file used by several plugins must be copied into each by hand. A link to another plugin is refused. Path-form calls are gone. | dev `solutions/ontological/plugin/skillwright.md`: 29 `build.assets` entries, `work-identity.mjs` in both `craft` and `sdlc`. 16 `sdlc` skills link `craft` references. 38 path-form calls. [#156](https://github.com/osdlc/skillwright/issues/156): 91 of 295 wikilinks in one vault embed notes outside any plugin. | `marketplaces/<m>/shared/`, copied into each pack that uses it. Step 3 of name lookup. The qualified call `/[[<p>:<s>]]`. | markdown-link: scoped `LinkIndex` (no wait). markdown-link or markdown-corpus: cross-root index, shared with osdlc/markdown tasks 27 and 29 (no wait). | Large | M0 |
+| **M0. Cleanup** | The code has duplicated helpers, dead paths and local copies of library jobs. The seams the next features need do not exist yet. | The owner. Issues [#46](https://github.com/osdlc/skillwright/issues/46), [#47](https://github.com/osdlc/skillwright/issues/47), [#50](https://github.com/osdlc/skillwright/issues/50), [#141](https://github.com/osdlc/skillwright/issues/141). `cargo install skillwright` built two markdown-link versions until [#155](https://github.com/osdlc/skillwright/pull/155). | The 12-step cleanup below: about -2,400 lines, from steps 1 to 8 as measured plus the estimates for 9 to 12. Plan once over owned paths, one `Harness` enum, one `BuildScope`, structured refusals, one frontmatter reader. | markdown-link: [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649) and [osdlc/osdlc#651](https://github.com/osdlc/osdlc/pull/651) (released in 0.10.0 and 0.11.0). `select` moved in, reference definitions and escapes as tokens (**wait**). typed-git: `toplevel`, `ls_tree`, `paths_into` (**wait**). vfs-walk: `empty_dirs` (**wait**). path-guard: one `Vfs` resolver, `lexical::relative` (no wait). frontmatter-lossless: `LenientSplit::yaml_range` (**wait**). vfs-seam 0.2.1 (released). | Large, about 7 PRs | none |
+| **M1. Build levels** | `build` builds a whole marketplace or nothing. | M3's sync of one plugin needs it. | `--plugin <p>` on `build`, `check` and `bump --changed-since`. A plugin build owns only its packs and its manifest entries. | None required. typed-git git-tree `Vfs` for an in-memory baseline (no wait). | Small to medium | M0 steps 1 to 8 |
+| **M2. Shared assets and cross-plugin links** | A file used by several plugins must be copied into each by hand. A link to another plugin is refused. Path-form calls are gone. | dev `solutions/ontological/plugin/skillwright.md`: 29 `build.assets` entries, `work-identity.mjs` in both `craft` and `sdlc`. 16 `sdlc` skills link `craft` references. 38 path-form calls. [#156](https://github.com/osdlc/skillwright/issues/156): 91 of 295 wikilinks in one vault embed notes outside any plugin. | `marketplaces/<m>/shared/`, copied into each pack that uses it. Step 3 of name lookup. The qualified call `/[[<p>:<s>]]`. | markdown-link: scoped `LinkIndex` (no wait). markdown-link or markdown-corpus: cross-root index, the Rust side of the markdown plan's tasks 27 and 29 (no wait). | Large | M0 |
 | **M3. Install to a location** | Output stops at `dist/<m>/`. Copying it to a repo root, another marketplace repo or a skills folder is a script, with no drift check. | dev `moon.yml:504` (`publish --all`), `scripts/guard-project-skills.ts` (`status --check` in CI), `solutions/ontological/plugin/skillwright.md:6` (`out: ..`), the committed trees under `solutions/ontological/`. skillwright's `plugin-marketplace.ts sync`. The determined app's `publish_note` and `get_publish_status`. | `sync` (copy packs and catalog entries into a tree), `publish` (plain skills into a skills folder), `status [--check]`, deletes through a ledger. | New crate `install-ledger` (**wait**). etag-write: a `Vfs` form and a tree swap (**wait**). agent-adapt: skills-folder paths agree with harness facts (no wait). | Large | M0, M1 |
 | **M4. Harness install** | Installing a marketplace into a harness has no command. | osdlc `packages/gh-actions/agent-setup/setup.sh:234` runs `skillwright harness install --git-url`, pinned to 0.7.0, and fakes an empty vault to do it. | `harness install`, `update`, `uninstall`, `link`, `unlink`, through each harness's own plugin CLI. | agent-adapt: a `cli` module with per-harness adapters through a spawn seam (**wait**). New Rust `harness-knowledge` crate (**wait**). | Medium to large | M0, M3 |
 | **M5. Adopt** | Existing `SKILL.md` folders cannot be read into a vault. | The determined app: `adopt_skills_into_vault`, `get_adopt_preview`, `detect_format` in dev's `determined-agent-skills`. [#51](https://github.com/osdlc/skillwright/issues/51). | `adopt <source>` and `adopt --from-git`, into `plugins/<p>/skills/<s>/<s>.md`. | agent-adapt: a parse direction for each renderer (**wait**). typed-git git-tree `Vfs` (**wait**). yaml-splice or frontmatter-lossless: a note-level field edit (**wait**). | Medium | M0 |
@@ -54,7 +55,7 @@ The owner wants:
 
 ```mermaid
 flowchart LR
-  M0[M0 Cleanup] --> M1[M1 Build levels]
+  M0[M0 Cleanup] -->|steps 1-8| M1[M1 Build levels]
   M0 --> M2[M2 Shared assets and links]
   M1 --> M3[M3 Install to a location]
   M0 --> M3
@@ -68,7 +69,7 @@ flowchart LR
 ### Why this order
 
 - **M0 first.** It builds the seams that M1 to M4 plug into: plan once over
-  owned paths, one `Scope`, one `Harness` enum and the typed-git verbs.
+  owned paths, one `BuildScope`, one `Harness` enum and the typed-git verbs.
   Building features first would add a fifth translator impl, a third request
   type and more copies of the git and link code.
 - **M1 before M2.** M1 is small, and M3 needs it. M2 needs the most library
@@ -118,23 +119,23 @@ In:
    `PluginDialect`, `HARNESS_BLOCKS`, the name matches and wasm's `Target`.
    `HarnessTranslator` becomes one struct. `PluginFormat` embeds
    `PluginPolicy`. One `carries(kind)`. About -355.
-5. **One scope and one identity.** `Scope { Vault, Marketplace, Plugin }` in
+5. **One scope and one identity.** `BuildScope { Vault, Marketplace }` in
    both public requests. `Position` inside `DiscoveredComponent`. `load_for`
    split into steps. About -185.
 6. **Plan once, swap over owned paths.** A public `plan`, `VaultPlan::report`
    and `VaultPlan::commit`. The swap takes a list of owned paths, not a
    profile. The CLI plans, confirms and commits once. About -155.
-7. **Split the big files.** `compile/`, `export/`, the module tree laid out as
-   the pipeline. About -105.
-8. **CLI runner and bump split.** One `RunFlags`, a report sink, `bump/` in
-   three files, CLI path helpers out of the core. The layout walk checks
-   containment through `guard::within`, so one place decides it. About -165.
+7. **Split the big files.** `compile/` and `export/`. About -105.
+8. **CLI runner and bump split.** One `RunFlags`, `bump/` in three files,
+   CLI path helpers out of the core. The layout walk checks containment
+   through `guard::within`, so one place decides it. About -165.
 9. **typed-git verbs.** Move bump's git plumbing to typed-git. Reuse the
    run's scan in `bump --changed-since` ([#141](https://github.com/osdlc/skillwright/issues/141)).
    About -400.
-10. **markdown-link moves.** Merge [#155](https://github.com/osdlc/skillwright/pull/155).
-    Land [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649) and
-    [osdlc/osdlc#651](https://github.com/osdlc/osdlc/pull/651). Then delete
+10. **markdown-link moves.** [#155](https://github.com/osdlc/skillwright/pull/155),
+    [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649) and
+    [osdlc/osdlc#651](https://github.com/osdlc/osdlc/pull/651) are merged, and
+    markdown-link 0.11.0 carries both osdlc PRs. Move to it. Then delete
     `code_regions`, `opens_markdown_link`, `is_blank_line`,
     `written_destination` and most of `markdown_destinations`. Use
     `relative_link` in place of `markdown_at` and `relative_path`. Use
@@ -147,21 +148,33 @@ In:
 Steps 1 to 8 are in skillwright only. Steps 9 to 11 wait on library releases.
 Step 12 can land any time after steps 5 and 6.
 
+The line counts are estimates. Steps 1 to 8 measured about -780 in their PRs,
+[#159](https://github.com/osdlc/skillwright/pull/159) to
+[#163](https://github.com/osdlc/skillwright/pull/163), against an estimate of
+about -1,535.
+
 Out: any change to the spec, any new command or flag, and the in-memory git
-baseline (M1 stretch).
+baseline (M1 stretch). Also deferred from steps 7 and 8: the full
+`layout/ note/ render/ write/` module reshuffle, which renames every public
+module path for no line gain, and a report sink, which removes no code while
+export and bump print differently.
 
 ### v2 rules it touches
 
-None of the spec. Two wire changes need a CHANGELOG entry:
+None of the spec. Three wire changes need a CHANGELOG entry:
 
 - refusals carry a separate token, and the wording says "vault root";
+- a `Harness` union replaces wasm's `Target`, and the `unknown-target` token
+  is gone;
 - `UnitStatus` becomes `Same` or `Differs`, and `DiscoveredComponent` carries
-  `Position`. The TS types are regenerated.
+  `Position`.
+
+The TS types are regenerated for each.
 
 ### Acceptance criteria
 
-- [ ] [#155](https://github.com/osdlc/skillwright/pull/155) is merged, and a
-      lockfile-free `cargo tree -d` in CI shows one markdown-link.
+- [x] [#155](https://github.com/osdlc/skillwright/pull/155) is merged.
+- [ ] A lockfile-free `cargo tree -d` in CI shows one markdown-link.
 - [ ] Every osdlc pin is at its crates.io release.
 - [ ] Each of the 12 steps above has landed, each PR passing the v2 gates.
 - [ ] One CLI `build` walks the vault once.
@@ -175,9 +188,8 @@ None of the spec. Two wire changes need a CHANGELOG entry:
       [#47](https://github.com/osdlc/skillwright/issues/47),
       [#50](https://github.com/osdlc/skillwright/issues/50) and
       [#141](https://github.com/osdlc/skillwright/issues/141) are closed.
-- [ ] The workspace is at least 2,500 lines smaller than at the start of M0.
-- [ ] The README points at osdlc/markdown's `docs/ecosystem-plan.md`
-      (ecosystem plan task 19).
+- [ ] The README points at osdlc/osdlc's
+      `docs/planning/markdown/ecosystem-plan.md` (ecosystem plan task 19).
 
 ### Owner questions
 
@@ -186,7 +198,7 @@ None of the spec. Two wire changes need a CHANGELOG entry:
   because M2 rewrites the code that step 10 replaces.
 - **Q3. How are the wire and error changes released?** Recommendation: one
   minor release of tradecraft-core and skillwright at the end of step 8, with
-  the changes listed under "Changed" in the CHANGELOG.
+  the three wire changes listed in each package's CHANGELOG.
 
 ## M1. Build levels
 
@@ -197,6 +209,10 @@ In:
 - `--plugin <p>` on `build`, `check` and `bump --changed-since`. With more
   than one marketplace, it needs `--marketplace <m>` when the name is not
   unique.
+- A `Plugin` variant on `BuildScope`.
+- `bump <p>` keeps its positional name for raising one plugin's version.
+  `--plugin <p>` only narrows `--changed-since`, so each job has one
+  spelling.
 - A plugin build owns `<packs>/<p>` for each harness built, and the plugin's
   entry in each marketplace manifest. Other packs and entries stay as they
   are.
@@ -211,7 +227,8 @@ writing anywhere but `dist/<m>/`.
 
 - Section 9 rule 4 (`foreign-tree`): it applies per owned path.
 - Section 9 rule 15 (`check`): it compares the owned paths of the scope.
-- Section 10 rules 2, 3 and 5: a new flag.
+- Section 10 rules 2, 3, 4 and 5: a new flag, and how it sits beside
+  `bump <p>`.
 - D2: a call to a plugin outside the build still resolves, since the whole
   marketplace is loaded.
 
@@ -226,9 +243,6 @@ writing anywhere but `dist/<m>/`.
 - [ ] A plugin build into an empty `dist/<m>/` writes a manifest with only p's
       entry.
 - [ ] `bump --changed-since <ref> --plugin p` compares only p.
-- [ ] skillwright's `plugin-release.yml` uses `build --plugin`, and
-      `scripts/plugin-marketplace.ts` keeps only its copy step (removed in
-      M3).
 
 ### Owner questions
 
@@ -627,12 +641,12 @@ Section 3 (`hooks/` holds only `hooks.json`) and section 4 rule 23 (Cursor).
 | [#50](https://github.com/osdlc/skillwright/issues/50) Compile scans twice | M0 step 10 | Closes with [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649). |
 | [#47](https://github.com/osdlc/skillwright/issues/47) Leftover `[[` gaps | M0 step 10 | Retitle: "undefined reference links, and brackets inside a call in code". |
 | [#46](https://github.com/osdlc/skillwright/issues/46) Valid Markdown refused | M0 step 10 | Closes with [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649). |
-| [#42](https://github.com/osdlc/skillwright/issues/42) markdown-db | Close | `markdown-db` is not in this repo. Transfer it to osdlc/markdown or close it. |
+| [#42](https://github.com/osdlc/skillwright/issues/42) markdown-db | Close | `markdown-db` is not in this repo. Transfer it to osdlc/osdlc (corpus-schema) or close it. |
 | [#4](https://github.com/osdlc/skillwright/issues/4) Migration gaps | Close | Every gap is closed. |
 
 Gaps with no issue get one when their milestone starts: dev's migration path
 (M2 and M3), the determined app's upgrade (M3, M5 and M6), osdlc
-`agent-setup` (M4) and one-plugin merges into a shared marketplace (M1 and M3).
+`agent-setup` (M4) and one-plugin merges into a shared marketplace (M3).
 
 ## Library work by repo
 
@@ -640,12 +654,12 @@ Gaps with no issue get one when their milestone starts: dev's migration path
 
 | Crate | Change | For | skillwright waits for a release |
 |---|---|---|---|
-| markdown-link | Land [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649) (rebase it; it conflicts), then [osdlc/osdlc#651](https://github.com/osdlc/osdlc/pull/651) | M0 step 10 | Yes |
+| markdown-link | [osdlc/osdlc#649](https://github.com/osdlc/osdlc/pull/649) and [osdlc/osdlc#651](https://github.com/osdlc/osdlc/pull/651), merged | M0 step 10 | Released in 0.10.0 and 0.11.0 |
 | markdown-link | Conformance cases for escapes (`\[[`, `\![[`, `\\[[`), so a minor release cannot change them | M0 step 10 | No |
 | markdown-link | Reference definitions as a `BodyLinkKind`, and escaped openers as their own kind | M0 step 10 | Yes |
 | markdown-link | Move `select` in from markdown-contract; markdown-contract re-exports it | M0 step 10 | Yes |
 | markdown-link | Scoped resolution in `LinkIndex`: an ordered list of scopes, every candidate per scope | M2 | No. skillwright keeps its resolver and switches after. |
-| markdown-link or markdown-corpus | A cross-root index with qualified ids, shared with osdlc/markdown tasks 27 and 29 | M2 | No |
+| markdown-link or markdown-corpus | A cross-root index with qualified ids, the Rust side of the markdown plan's tasks 27 and 29 | M2 | No |
 | typed-git | `query::toplevel`, `query::ls_tree`, `checkout::paths_into`, with bump's real-git tests moved in | M0 step 9 | Yes |
 | typed-git | A git-tree `Vfs` (or a small `vfs-git` crate) | M1 stretch, M5 | Yes for M5 |
 | vfs-walk | `WalkOptions::empty_dirs` | M0 step 10 | Yes |
@@ -669,17 +683,18 @@ Gaps with no issue get one when their milestone starts: dev's migration path
 | A parse direction for each renderer, with render-then-parse round-trip tests | M5 | Yes |
 | A feature gate for `tracing` and `toml` | Any time | No |
 
-### osdlc/markdown
+### The markdown plan (osdlc/osdlc)
 
-These are amendments to `docs/ecosystem-plan.md`:
+These are amendments to the markdown ecosystem plan in osdlc/osdlc,
+[`docs/planning/markdown/`](https://github.com/osdlc/osdlc/tree/main/docs/planning/markdown),
+where each task is its own record under `tasks/`:
 
 | Task | Amendment |
 |---|---|
-| 8 | Close it. skillwright's `harness-reference` already uses `@osdlc/corpus-schema` ^0.2.0. Fix the "Where things live" table in `docs/architecture.md` too. |
 | 11 | The resolver takes ordered scopes before the TS port. Otherwise the TS twin copies a resolver skillwright cannot use. Or restate the rule as "one resolver engine, with policies from the app". |
 | 14 | Say that skillwright's structural layout walk stays outside "the validator reads the corpus model". |
 | 19 | Note that skillwright adds its pointer in M0. |
-| 27, 29 | Add the Rust side. skillwright's `shared/` (M2) uses the same idea: one source, generated copies, a check that they match. Build the cross-root index once. |
+| 27, 29 | Both are done in TypeScript. Add a task for the Rust side. skillwright's `shared/` (M2) uses the same idea: one source, generated copies, a check that they match. Build the cross-root index once. |
 | 34 | Name markdown-relink as the Rust half of the move verb, with the injected resolver. |
-| Scope | Say that agent-adapt, harness facts, install and the parse direction are outside this plan, in an osdlc/osdlc track. |
+| Scope | Say that agent-adapt, harness facts, install and the parse direction are outside this plan. |
 | Rules | Add: a change to what a scanner reports is a breaking change, with a conformance case. |
