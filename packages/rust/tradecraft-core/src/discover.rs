@@ -55,7 +55,8 @@ use crate::vfs::Vfs;
 // No `Eq`: `identity` carries JSON for the two manifest fields
 // whose dialects allow an object, and `serde_json::Value` is only `PartialEq`
 // because it can hold a float. Nothing keys a map or a set on a whole
-// component — uniqueness is keyed on its position.
+// component — uniqueness is keyed on its position's marketplace, plugin
+// and name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct DiscoveredComponent {

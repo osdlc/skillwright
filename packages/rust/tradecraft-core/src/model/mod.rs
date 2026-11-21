@@ -374,7 +374,7 @@ pub struct SkillId {
 }
 
 impl SkillId {
-    /// The component a call to `component` names, `None` for a container.
+    /// `component` as a call names it, `None` for a container.
     pub fn of(component: &DiscoveredComponent) -> Option<Self> {
         match &component.position {
             Position::Component {
