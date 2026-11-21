@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 161,
-  "head": "940481493acb07d37d6d61e57e02284578795a46",
-  "base": "c1f29526378b3b09cc09bf058f2e9ffe164d489a",
-  "round": 2,
+  "head": "2c9b218696ad7ffa9445c855b26e4dd6a37bc1eb",
+  "base": "2c76bac462bd13a11469cb679ac75ea87d1ee15d",
+  "round": 3,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T06:04:43.607Z"
@@ -151,6 +151,28 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "b882efd3dd7eb54633d225923e9ae7cbc4758c68"
+    },
+    {
+      "id": "r3-1",
+      "round": 3,
+      "path": "packages/ts/tradecraft-wasm/CHANGELOG.md",
+      "line": 26,
+      "title": "The unknown-harness entry is under Breaking here and under Changed in tradecraft-core",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r3-2",
+      "round": 3,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 26,
+      "title": "The Breaking list leaves out the public `harness::translator::{Claude, Codex, Cursor, Pi}` structs this PR removes",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
