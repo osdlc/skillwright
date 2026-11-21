@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 163,
-  "head": "284fa2d6e22e21049932d8b095f9d6eeb38bec25",
-  "base": "fb5eb293c380b871eba22b2c1fa25bf90f1b94b4",
-  "round": 2,
+  "head": "2c5d4dd0eea956559355402d1a0beb4b0f83751f",
+  "base": "e0efd90bf75bbe9b240fdf835589e9ec9a3ffd14",
+  "round": 3,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T06:04:59.679Z"
@@ -140,6 +140,17 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "19061d1f6477a2c0a14c661941bfa65084e3961a"
+    },
+    {
+      "id": "r3-1",
+      "round": 3,
+      "path": "packages/rust/tradecraft-core/src/compile/render.rs",
+      "line": 701,
+      "title": "relative_or_verbatim's doc comment now documents `warn` instead",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
