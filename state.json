@@ -145,9 +145,9 @@
       "line": 701,
       "title": "relative_or_verbatim's doc comment now documents `warn` instead",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "2c88219a5b8023583f7498eaaa09d4e1076762f0"
     }
   ]
 }
