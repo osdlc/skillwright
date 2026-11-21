@@ -156,9 +156,9 @@
       "line": 26,
       "title": "The unknown-harness entry is under Breaking here and under Changed in tradecraft-core",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f8774daf282bda3384b33b1dddc0ea32e2f17ff8"
     },
     {
       "id": "r3-2",
