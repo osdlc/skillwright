@@ -137,9 +137,9 @@
       "line": 16,
       "title": "Split use lines for crate::vfs",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "19061d1f6477a2c0a14c661941bfa65084e3961a"
     }
   ]
 }
