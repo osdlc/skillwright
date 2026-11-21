@@ -71,9 +71,9 @@
       "line": 53,
       "title": "docs/terms/README.md:27 roster still says translator is one implementation of a shared trait",
       "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "940481493acb07d37d6d61e57e02284578795a46"
     },
     {
       "id": "r1-7",
