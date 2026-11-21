@@ -24,6 +24,7 @@ use crate::frontmatter::EntityKind;
 use crate::harness::Harness;
 use crate::keys::{KEYS, Shape};
 use crate::skill::split_frontmatter;
+use crate::text::list;
 
 /// The root file's name.
 pub const ROOT_FILE: &str = "skillwright.md";
@@ -339,25 +340,16 @@ fn root_key_refusal(key: &str) -> Option<String> {
     .into_iter()
     .filter(|kind| rows.iter().any(|spec| spec.kinds.contains(kind)))
     .collect();
-    let nouns: Vec<String> = kinds.iter().map(|kind| kind.as_str().to_owned()).collect();
-    let files: Vec<String> = kinds
-        .iter()
-        .map(|kind| format!("`<{}>.md`", &kind.as_str()[..1]))
-        .collect();
     Some(format!(
         "it is not a shared default; it belongs in a {} note, {}",
-        or_list(&nouns),
-        or_list(&files)
+        list(kinds.iter().map(|kind| kind.as_str()), "or"),
+        list(
+            kinds
+                .iter()
+                .map(|kind| format!("`<{}>.md`", &kind.as_str()[..1])),
+            "or"
+        )
     ))
-}
-
-/// `a`, `a or b`, `a, b or c`.
-fn or_list(items: &[String]) -> String {
-    match items.split_last() {
-        Some((last, rest)) if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
-        Some((last, _)) => last.clone(),
-        None => String::new(),
-    }
 }
 
 /// The top-level keys of a root file's mapping it refuses, each with why, in

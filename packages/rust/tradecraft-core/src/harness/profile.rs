@@ -702,13 +702,11 @@ impl Harness {
     /// than asked for.
     pub fn parse(name: &str) -> Result<Self, CoreError> {
         Self::from_name(name).ok_or_else(|| {
-            let known: Vec<String> = Self::ALL.iter().map(|h| format!("`{h}`")).collect();
-            let (last, rest) = known.split_last().expect("four harnesses");
             CoreError::refused(
                 refusal::UNKNOWN_HARNESS,
                 format!(
-                    "`{name}` is not a harness. The harnesses are {} and {last}",
-                    rest.join(", ")
+                    "`{name}` is not a harness. The harnesses are {}",
+                    crate::text::named(Self::ALL)
                 ),
             )
         })
