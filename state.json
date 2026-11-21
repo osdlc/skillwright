@@ -123,9 +123,9 @@
       "line": 802,
       "title": "Snapshot doc sentence reads as 'keeps a file's size within the mtime granularity'",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b418c160e98b2ededc9d8b04378089d787fd8fdc"
     }
   ]
 }
