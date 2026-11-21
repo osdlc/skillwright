@@ -799,8 +799,8 @@ struct DestState {
 }
 
 /// What `base` holds under `paths`: [`DestState`], and each file's size,
-/// modification time and execute bit. An edit that keeps a file's size within
-/// the filesystem's modification-time granularity is not seen.
+/// modification time and execute bit. An edit that keeps a file's size and
+/// lands within the filesystem's modification-time granularity is not seen.
 #[derive(PartialEq, Eq)]
 struct Snapshot {
     paths: Vec<&'static str>,
