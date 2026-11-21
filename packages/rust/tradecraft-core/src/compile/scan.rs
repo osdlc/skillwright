@@ -10,8 +10,6 @@ use markdown_link::{
 
 use crate::hooks_file::{RootKind, plugin_root_refs};
 
-// --- The scanner ------------------------------------------------------------
-
 /// What a scanned token is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TokenKind {

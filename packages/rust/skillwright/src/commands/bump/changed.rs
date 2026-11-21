@@ -329,8 +329,7 @@ fn apply(flags: &BumpFlags, rows: &mut [Row], ctx: &mut CommandContext<'_>) -> R
         if flags.run.dry_run {
             row.status = "dry-run";
         } else {
-            // A failed write is reported on its row; the bumps already
-            // written still reach the report.
+            // The bumps already written still reach the report.
             if let Err(err) = write_bump(planned, &new) {
                 row.status = "refused";
                 row.reason = Some(format!("the write failed: {err}"));

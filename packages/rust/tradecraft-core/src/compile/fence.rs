@@ -1,8 +1,6 @@
-//! A file embedded as text: an image link, or the file inlined as a fenced
-//! block that keeps the containers its line opens (spec section 5 rules 9 to
-//! 14).
-
-// --- Extension vocabularies -------------------------------------------------
+//! An embed of a file that is not a note: an image link, or the file inlined
+//! as a fenced block that keeps the containers its line opens (spec section 5
+//! rules 9 to 14).
 
 /// Embeds of these render as images (`![label](path)`); any other file
 /// that is not a note is inlined as a fenced block.

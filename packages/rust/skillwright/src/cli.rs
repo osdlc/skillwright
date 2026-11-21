@@ -54,7 +54,7 @@ struct ReadOnlyGlobals {
 }
 
 impl ReadOnlyGlobals {
-    /// The run's flags for a verb that writes nothing: dry_run and yes are false.
+    /// The run's flags for a verb that writes nothing.
     fn run(&self, marketplace: Option<&str>, harness: &HarnessArg) -> RunFlags {
         RunFlags {
             vault: self.vault.clone(),

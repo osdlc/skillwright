@@ -14,8 +14,7 @@ pub use tradecraft_core::{BuildSettings, ROOT_FILE, RootFile};
 /// Resolve a flag's path as the shell would: absolute as given, `~` or a
 /// `~/` prefix against the home directory, anything else relative to
 /// `base` with `.` and `..` collapsed. `~name` and `~\` are relative
-/// paths. The rule `--vault` and `--changed-since` follow, with `base` the
-/// working directory.
+/// paths.
 pub fn resolve_against_cwd(path: &str, base: &Path) -> PathBuf {
     if path == "~" || path == "~/" {
         return home_dir();

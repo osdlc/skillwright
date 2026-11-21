@@ -1,4 +1,4 @@
-//! `--changed-since <ref>`: the ref's build inputs checked out into a
+//! `--changed-since <ref|dir>`: the ref's build inputs checked out into a
 //! temporary folder and built there, or a built folder used as it is.
 
 use std::collections::BTreeSet;
