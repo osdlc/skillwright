@@ -68,9 +68,9 @@
       "line": 135,
       "title": "Step 10's merge work is already done: #155, osdlc/osdlc#649 and #651 are merged",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "60b19e6ed46a4d007e5958165922a2bc94398115"
     },
     {
       "id": "r1-7",
