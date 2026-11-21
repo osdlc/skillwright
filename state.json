@@ -178,9 +178,9 @@
       "line": null,
       "title": "PR description says field_reference is #[doc(hidden)], but it is now a private test helper",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "2443bc9e95f8d5ca8ad01959a80fdc8e40a69cf9"
     }
   ]
 }
