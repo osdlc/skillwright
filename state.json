@@ -123,9 +123,9 @@
       "line": 214,
       "title": "M1 adds `--plugin` to `bump` but omits section 10 rule 4, which already names a plugin with `bump <p>`",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "60b19e6ed46a4d007e5958165922a2bc94398115"
     },
     {
       "id": "r1-12",
