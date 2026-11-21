@@ -93,9 +93,9 @@
       "line": 17,
       "title": "D-QXRN still describes the translator trait, the dialect and profile.format()",
       "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "940481493acb07d37d6d61e57e02284578795a46"
     },
     {
       "id": "r2-1",
