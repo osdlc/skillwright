@@ -82,9 +82,9 @@
       "line": 113,
       "title": "unreadable doc lists a narrower scope than its callers and the token doc",
       "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891880",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a74e82f92e2f1691772cd94ea920408bb3ee15f3"
     },
     {
       "id": "r1-8",
