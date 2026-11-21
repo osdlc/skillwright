@@ -32,8 +32,12 @@ fn every_token_is_distinct_and_used() {
         sources(&crates.join(krate).join("src"), &mut used);
     }
     let mut seen = 0;
+    let mut declared = 0;
     let mut values = BTreeSet::new();
     for line in include_str!("../src/refusal.rs").lines() {
+        if line.starts_with("pub const ") {
+            declared += 1;
+        }
         let Some((name, value)) = line
             .strip_prefix("pub const ")
             .and_then(|rest| rest.split_once(": Token = Token("))
@@ -45,4 +49,5 @@ fn every_token_is_distinct_and_used() {
         assert!(is_used(&used, name), "`{name}` is never used");
     }
     assert!(seen > 0, "no token parsed");
+    assert_eq!(seen, declared, "a `pub const` line did not parse");
 }
