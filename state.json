@@ -38,9 +38,9 @@
       "line": 160,
       "title": "bump's own UTF-8 check skips the unreadable-note token; 'bump keeps CoreError until it prints' is not delivered",
       "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891839",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a74e82f92e2f1691772cd94ea920408bb3ee15f3"
     },
     {
       "id": "r1-4",
