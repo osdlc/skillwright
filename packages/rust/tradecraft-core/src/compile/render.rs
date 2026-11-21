@@ -698,9 +698,6 @@ impl<'a> Renderer<'a> {
         )
     }
 
-    /// For messages only: the vault-relative spelling when there is one, the
-    /// verbatim path when there is not — an error about a path must never
-    /// itself error.
     /// Records a warning about the file at `path`.
     pub(super) fn warn(&mut self, path: String, reason: &str, detail: String) {
         self.warnings.push(DiscoveryWarning {
@@ -710,6 +707,9 @@ impl<'a> Renderer<'a> {
         });
     }
 
+    /// For messages only: the vault-relative spelling when there is one, the
+    /// verbatim path when there is not — an error about a path must never
+    /// itself error.
     pub(super) fn relative_or_verbatim(&self, path: &Path) -> String {
         self.vault_relative(path)
             .unwrap_or_else(|_| path.display().to_string())
