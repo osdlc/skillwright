@@ -159,9 +159,9 @@
       "line": 14,
       "title": "`prompt::ask` removal is filed under the released 0.12.1, not [Unreleased]",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "9dc1c86bb44a2f1500bd57787505b86f985c6a24"
     },
     {
       "id": "r2-3",
