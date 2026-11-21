@@ -200,9 +200,9 @@
       "line": 126,
       "title": "read_vault_note's missing-description change is in no changelog",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "6e2073b358dba846d5dee884937dcd1eaa89e9c3"
     }
   ]
 }
