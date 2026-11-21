@@ -635,6 +635,8 @@ pub fn plan(
 ///   `refused: empty-marketplace` (no plugin), `unknown-harness` (a harness
 ///   name no harness answers to), `foreign-tree` (output this vault did not
 ///   build) and `path-collision`. Nothing is written.
+/// * A build only: `refused: output-changed` when a `dist/<m>/` changed
+///   between the plan and the write. Nothing is written.
 /// * A build only: [`CoreError::SwapFailed`] and the I/O errors of the swap.
 pub fn build_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultReport, CoreError> {
     let loaded = load_vault(vfs, &request.vault_root, &request.scope)?;
@@ -797,7 +799,8 @@ struct DestState {
 }
 
 /// What `base` holds under `paths`: [`DestState`], and each file's size,
-/// modification time and execute bit.
+/// modification time and execute bit. An edit that keeps a file's size within
+/// the filesystem's modification-time granularity is not seen.
 #[derive(PartialEq, Eq)]
 struct Snapshot {
     paths: Vec<&'static str>,
