@@ -27,9 +27,9 @@
       "line": 21,
       "title": "'Every transformation above' points at nothing after the move",
       "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801588",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "284fa2d6e22e21049932d8b095f9d6eeb38bec25"
     },
     {
       "id": "r1-3",
