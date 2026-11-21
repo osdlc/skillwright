@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 160,
-  "head": "6a158299e86e08176b4376521b91078d58de6a54",
-  "base": "232c2be6d8f9f55334f520310818190267167de9",
-  "round": 1,
+  "head": "a74e82f92e2f1691772cd94ea920408bb3ee15f3",
+  "base": "fd32ce04c3f628c8291de1a0f283c4fc8cdaf959",
+  "round": 2,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T03:09:35.485Z"
@@ -115,6 +115,39 @@
       "line": 169,
       "title": "magic token count in the test",
       "comment": "https://github.com/osdlc/skillwright/pull/160#discussion_r4547891900",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 26,
+      "title": "This PR's Changed block is filed under the released 0.50.1, not [Unreleased]",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/skillwright/CHANGELOG.md",
+      "line": 20,
+      "title": "This PR's Changed block is filed under the released 0.12.1, not [Unreleased]",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "resolve_body's # Errors points at a module that lists no refusals, and the crate-private list misses unreadable-note",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
