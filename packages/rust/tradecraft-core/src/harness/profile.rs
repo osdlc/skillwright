@@ -52,8 +52,7 @@ pub enum Harness {
 /// serializes it, and typegen reads a constant's declared type.
 pub const KNOWN_TARGETS: &[Harness] = &Harness::ALL;
 
-/// One harness's row: its product name, the runtime it renders through and
-/// its plugin policy.
+/// One harness's row of data.
 #[derive(Debug)]
 pub struct HarnessProfile {
     /// The harness's product name, for messages.
@@ -672,7 +671,8 @@ static PROFILES: [HarnessProfile; 4] = [CLAUDE, CODEX, CURSOR, PI];
 pub const PLUGIN_HOOKS_PATH: &str = "hooks/hooks.json";
 
 impl Harness {
-    /// Every harness, in report order.
+    /// Every harness, in report order. That is also declaration order:
+    /// [`Self::profile`] and [`Self::format`] index by discriminant.
     pub const ALL: [Self; 4] = [Self::Claude, Self::Codex, Self::Cursor, Self::Pi];
 
     /// The name a note, `build.harnesses` and `--harness` spell it with.
@@ -698,8 +698,8 @@ impl Harness {
     /// # Errors
     ///
     /// `refused: unknown-harness` — a name no harness answers to. Refused
-    /// rather than ignored: silently building less than was asked for is the
-    /// failure this crate is built around.
+    /// rather than ignored, so a build never silently renders fewer harnesses
+    /// than asked for.
     pub fn parse(name: &str) -> Result<Self, CoreError> {
         Self::from_name(name).ok_or_else(|| {
             let known: Vec<String> = Self::ALL.iter().map(|h| format!("`{h}`")).collect();

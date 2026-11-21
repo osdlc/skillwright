@@ -10,10 +10,10 @@
 //!
 //! `build` writes each marketplace into `<root>/dist/<m>/`
 //! ([`crate::paths::dist_dir`]); nothing moves it. Each harness gets its own
-//! top-level tree inside it: `.claude-plugin/`,
-//! `.agents/`, `.cursor-plugin/` and `.pi/`. Each tree carries that harness's
-//! marketplace manifest (Pi has none), its pack manifests in its own dialect,
-//! and every skill, at `<packs>/<plugin>/skills/<name>/`.
+//! top-level tree inside it: `.claude-plugin/`, `.agents/`, `.cursor-plugin/`
+//! and `.pi/`. Each tree carries that harness's marketplace manifest (Pi has
+//! none), its pack manifests in its own dialect, and every skill, at
+//! `<packs>/<plugin>/skills/<name>/`.
 //!
 //! The trees are disjoint by construction: the harnesses translate a skill's
 //! tool names and frontmatter differently, so the same skill is one file per
@@ -21,10 +21,9 @@
 //!
 //! A plugin's commands render alongside its skills, at
 //! `<packs>/<plugin>/commands/<name>.<ext>`, on each harness whose plugin
-//! format has a place for them
-//! ([`crate::harness::PluginFormat::carries`]). A command narrowed
-//! out this way has no file and no manifest mention there, and the report
-//! names it as [`ExportUnit::NotCarried`] for that harness.
+//! format has a place for them ([`crate::harness::PluginFormat::carries`]).
+//! A command narrowed out this way has no file and no manifest mention there,
+//! and the report names it as [`ExportUnit::NotCarried`] for that harness.
 //!
 //! Which harnesses a build renders is [`VaultRequest::harnesses`] when it
 //! names any, else the root file's `build.harnesses`, else all of them. A
@@ -36,8 +35,8 @@
 //!
 //! The vault is loaded once into the marketplace model ([`crate::model`]) —
 //! every note read, every body resolved — and the translator writes that
-//! model as each harness's tree.
-//! What a note means is decided once, harness blocks included.
+//! model as each harness's tree. What a note means is decided once, harness
+//! blocks included.
 //!
 //! # One render, two verbs
 //!
@@ -66,8 +65,8 @@
 //!
 //! # A build replaces only what it owns
 //!
-//! The swap unit is what [`owned_paths`] names: a harness's
-//! packs folder and its marketplace manifest. Those are generated output,
+//! The swap unit is what [`owned_paths`] names: a harness's packs folder and
+//! its marketplace manifest. Those are generated output,
 //! replaced on every build. Anything inside them the render did not produce —
 //! a stale pack, a stray file, an empty directory — goes with the swap, and
 //! `check` reports exactly that set as stale, which is what keeps its verdict
@@ -796,11 +795,10 @@ fn compare_root(
 ) -> Result<(Vec<ExportUnit>, bool), CoreError> {
     let admitted = admitted_plugins(Translator(spec), market);
     let diff = diff_root(vfs, out, spec, &admitted, rendered, &market.config)?;
-    // The swap replaces this root's owned paths. Holding work this build
-    // did not produce, they are far likelier to be a misconfiguration than
-    // an invitation. A rebuild is told from a stranger by the rule in
-    // [`DestTree::built_here`]. Refused on `check` too: it exists to say what
-    // a build would do.
+    // The swap replaces this root's owned paths wholesale, and files there
+    // this build did not produce are likelier a misconfiguration than output
+    // to overwrite. `DestTree::built_here` tells an earlier build from them.
+    // `check` refuses too, since it reports what a build would do.
     if diff.foreign {
         return Err(CoreError::refused(
             refusal::FOREIGN_TREE,
@@ -1168,11 +1166,10 @@ fn slices_of<'a>(
     stale_plugins: &BTreeSet<&str>,
     rendered: &BTreeMap<String, PreviewWrite>,
 ) -> (BTreeMap<&'a str, PluginSlice<'a>>, Vec<(String, StaleKind)>) {
-    // Bucket what carries a story by the plugin that owns it. Membership is
-    // decided against the two NAME sets, never by path shape alone: a
-    // symlinked plugin directory is absent from `plugin_dirs` and present
-    // among the files, so it is neither carried nor stale, and falls to the
-    // loose pile like any other stray.
+    // A path joins a plugin only by name, in `admitted` or `stale_plugins`,
+    // never by path shape alone: a symlinked plugin directory is absent from
+    // `plugin_dirs` but present among the files, so it is in neither set and
+    // is reported as a stale file like any other stray.
     let mut slices: BTreeMap<&str, PluginSlice> = BTreeMap::new();
     let mut loose: Vec<&str> = Vec::new();
     for relative in &sets.extra {
@@ -1193,11 +1190,10 @@ fn slices_of<'a>(
         }
     }
 
-    // Empty directories, in the one order that keeps each to a single story:
-    // inside a carried plugin it drifts that plugin; inside a stale one that
-    // plugin's unit already speaks for it; where the render owns files
-    // beneath it the owning unit reports the gap; otherwise it is stale on
-    // its own.
+    // Each empty directory is reported once, by the first arm that matches:
+    // inside a carried plugin it marks that plugin drifted; inside a stale
+    // plugin that plugin's unit covers it; above a rendered file the unit
+    // owning that file reports it; otherwise it is stale on its own.
     let mut stale_paths: Vec<(String, StaleKind)> = Vec::new();
     for dir in &dest.state.empty_dirs {
         match split_pack(packs, dir) {

@@ -225,7 +225,7 @@ fn insert_after(map: &mut Block, after: &str, key: &str, value: serde_json::Valu
 }
 
 /// A plugin's `repository` and `homepage`, its own or the marketplace's,
-/// added after `license` when the dialect's manifest has the field.
+/// added after `license` when `harness`'s manifest has the field.
 fn add_links(map: &mut Block, config: &MarketplaceConfig, plugin: &str, harness: Harness) {
     let fields = harness.format().policy.manifest_fields;
     let identity = plugin_identity(config, plugin);
