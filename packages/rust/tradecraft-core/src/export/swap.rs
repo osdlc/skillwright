@@ -15,9 +15,8 @@ use crate::vfs::{PreviewWrite, Vfs};
 /// Under the base rather than beside it, because a swap is a rename and a
 /// rename is only atomic within one filesystem: the one directory guaranteed
 /// to share a filesystem with the thing being replaced is the thing's own
-/// parent. It stays invisible to the
-/// diff because `scan_output` reads only the entries a root owns, and
-/// this is never one of them.
+/// parent. It stays invisible to the diff because `scan_output` in `dest.rs`
+/// reads only the entries a root owns, and this is never one of them.
 const STAGE_DIR: &str = ".skillwright-stage";
 
 /// What a build replaces in one output folder: each of `owned`, a path

@@ -691,7 +691,7 @@ mod tests {
         assert!(message.contains("Two/Shared2.md"), "{message}");
     }
 
-    // --- Resolution at the edges, as `resolve_strict` reads them ------------
+    // --- Resolution at the edges -------------------------------------------
 
     #[test]
     fn a_name_prefers_the_skill_folder_and_a_path_is_relative_to_the_linking_note() {
