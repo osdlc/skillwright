@@ -137,9 +137,9 @@
       "line": 20,
       "title": "This PR's Changed block is filed under the released 0.12.1, not [Unreleased]",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0f0cb3d0bae3bbf7407e70d3a0cb72a96a573578"
     },
     {
       "id": "r2-3",
