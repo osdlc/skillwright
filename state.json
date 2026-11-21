@@ -60,9 +60,9 @@
       "line": 53,
       "title": "tradecraft-wasm README.md:61 still names the removed Target type",
       "comment": "https://github.com/osdlc/skillwright/pull/161#pullrequestreview-5871467772",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "940481493acb07d37d6d61e57e02284578795a46"
     },
     {
       "id": "r1-6",
