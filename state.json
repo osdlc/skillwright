@@ -16,9 +16,9 @@
       "line": 138,
       "title": "Commit after the prompt acts on a destination scan made before it; foreign-tree guard and stale report no longer cover the wait",
       "comment": "https://github.com/osdlc/skillwright/pull/162#discussion_r4548496900",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "0ee3461e042595a98dc46946185026585b4c3922"
     },
     {
       "id": "r1-2",
