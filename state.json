@@ -1,12 +1,156 @@
 {
   "schema": 1,
   "pr": 157,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "aa48a7a74c777cddc125eedca1e3314b20f3edea",
+  "base": "194c104b0833d72fca1a9eec25b4118418f48c7b",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-w2flgo",
     "at": "2026-11-21T02:48:50.926Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 674,
+      "title": "osdlc/markdown's docs/ecosystem-plan.md no longer exists; the amendments target a deleted file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 121,
+      "title": "Step 5's `Scope { Vault, Marketplace, Plugin }` does not match what #162 builds",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 129,
+      "title": "Step 8 promises a report sink that #163 drops, and acceptance requires every step",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 155,
+      "title": "\"Two wire changes\" leaves out the Harness change that line 168 requires",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 653,
+      "title": "path-guard is \"wait\" in the Order table and \"No\" in the library table",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 135,
+      "title": "Step 10's merge work is already done: #155, osdlc/osdlc#649 and #651 are merged",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 178,
+      "title": "The 2,500-line acceptance bar is at risk on the stack's measured numbers",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 57,
+      "title": "Diagram makes M1 wait for all of M0; the table and Q2 say steps 1 to 8",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 179,
+      "title": "M0 acceptance points the README at a file that was deleted",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 47,
+      "title": "M1's evidence: skillwright's plugin vault has one plugin, so `build --plugin` changes nothing there",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 214,
+      "title": "M1 adds `--plugin` to `bump` but omits section 10 rule 4, which already names a plugin with `bump <p>`",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 40,
+      "title": "Principle 5 adds a follow-up PR inside a milestone; principle 1 says one PR per milestone",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-13",
+      "round": 1,
+      "path": "docs/spec/roadmap.md",
+      "line": 630,
+      "title": "#42: \"Transfer it to osdlc/markdown\" names the wrong repo",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
