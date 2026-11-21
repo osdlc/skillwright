@@ -997,24 +997,32 @@ impl Vfs for DeniedMarket {
     }
 }
 
+/// Reads a vault of one plugin, `tools`, with an empty `references/`, after
+/// `links` adds to the plugin folder it is given, through a host that cannot
+/// resolve the path ending in `denied`. The refusal.
+#[cfg(unix)]
+fn denied_layout(denied: &'static str, links: impl FnOnce(&Path)) -> CoreError {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let tools = root.join("marketplaces/acme/plugins/tools");
+    std::fs::create_dir_all(tools.join("references")).unwrap();
+    std::fs::write(root.join("skillwright.md"), ROOT).unwrap();
+    std::fs::write(root.join("marketplaces/acme/acme.md"), NOTE).unwrap();
+    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
+    links(&tools);
+    read_layout(&DeniedMarket(denied), root).unwrap_err()
+}
+
 /// A host that cannot resolve the folder a symlink must stay inside refuses
 /// the vault as an unsafe path; it does not fail with a bare host error.
 #[cfg(unix)]
 #[test]
 fn a_symlink_whose_scope_cannot_be_resolved_is_refused() {
-    let tmp = std::env::temp_dir().join(format!("tc-layout-denied-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    let tools = tmp.join("marketplaces/acme/plugins/tools");
-    std::fs::create_dir_all(tools.join("references")).unwrap();
-    std::fs::write(tmp.join("skillwright.md"), ROOT).unwrap();
-    std::fs::write(tmp.join("marketplaces/acme/acme.md"), NOTE).unwrap();
-    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
-    std::fs::write(tools.join("references/x.md"), "x").unwrap();
-    std::os::unix::fs::symlink(tools.join("references/x.md"), tools.join("references/y.md"))
-        .unwrap();
-
-    let err = read_layout(&DeniedMarket("marketplaces/acme"), &tmp).unwrap_err();
-    std::fs::remove_dir_all(&tmp).unwrap();
+    let err = denied_layout("marketplaces/acme", |tools| {
+        std::fs::write(tools.join("references/x.md"), "x").unwrap();
+        std::os::unix::fs::symlink(tools.join("references/x.md"), tools.join("references/y.md"))
+            .unwrap();
+    });
     assert!(
         err.to_string().starts_with("refused: unsafe-path: "),
         "{err}"
@@ -1026,18 +1034,10 @@ fn a_symlink_whose_scope_cannot_be_resolved_is_refused() {
 #[cfg(unix)]
 #[test]
 fn a_walk_ancestor_that_cannot_be_resolved_is_refused() {
-    let tmp = std::env::temp_dir().join(format!("tc-layout-denied-up-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    let tools = tmp.join("marketplaces/acme/plugins/tools");
-    std::fs::create_dir_all(tools.join("references")).unwrap();
-    std::fs::create_dir_all(tools.join("other")).unwrap();
-    std::fs::write(tmp.join("skillwright.md"), ROOT).unwrap();
-    std::fs::write(tmp.join("marketplaces/acme/acme.md"), NOTE).unwrap();
-    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
-    std::os::unix::fs::symlink(tools.join("other"), tools.join("references/y")).unwrap();
-
-    let err = read_layout(&DeniedMarket("plugins/tools/references"), &tmp).unwrap_err();
-    std::fs::remove_dir_all(&tmp).unwrap();
+    let err = denied_layout("plugins/tools/references", |tools| {
+        std::fs::create_dir_all(tools.join("other")).unwrap();
+        std::os::unix::fs::symlink(tools.join("other"), tools.join("references/y")).unwrap();
+    });
     assert!(
         err.to_string().starts_with("refused: unsafe-path: "),
         "{err}"

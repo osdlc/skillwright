@@ -730,6 +730,13 @@ impl Harness {
         &FORMATS.get_or_init(|| Self::ALL.map(resolve_format))[self as usize]
     }
 
+    /// The pack manifest of `plugin`, relative to the marketplace directory:
+    /// `<packs>/<plugin>/<manifest>`.
+    pub fn pack_manifest(self, plugin: &str) -> String {
+        let f = self.format();
+        format!("{}/{plugin}/{}", f.policy.packs, f.plugin_manifest)
+    }
+
     /// The harness's slug in the knowledge file.
     pub(crate) const fn knowledge_slug(self) -> &'static str {
         match self {

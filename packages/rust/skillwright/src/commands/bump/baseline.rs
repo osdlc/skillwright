@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
-    LoadedVault, NativeVfs, ROOT_FILE, VaultRequest, build_vault, dist_dir, is_vault_root,
+    BuildOptions, LoadedVault, NativeVfs, ROOT_FILE, dist_dir, is_vault_root, plan,
 };
 
 use crate::ctx::CommandContext;
@@ -148,7 +148,8 @@ impl BuiltRef {
     }
 
     /// Builds each marketplace of `loaded` from the checkout into its
-    /// `dist/<m>/`. One the ref does not hold gets an empty folder.
+    /// `dist/<m>/`. One the ref does not hold gets an empty folder. A
+    /// refusal builds none of them.
     fn build_marketplaces(
         &self,
         loaded: &LoadedVault,
@@ -158,23 +159,24 @@ impl BuiltRef {
         // The ref's refusal names the temporary checkout, so it is said as
         // this flag's failure.
         let mut said: Vec<u8> = Vec::new();
-        let Ok(base) = resolve_at(base_root, None, &mut said) else {
+        let Ok(mut base) = resolve_at(base_root, None, &mut said) else {
             let said = String::from_utf8_lossy(&said);
             return Err(format!("building it failed: {}", said.trim_end()));
         };
         for market in &loaded.marketplaces {
-            let out = dist_dir(base_root, &market.name);
-            let Some(base_market) = base.marketplace(&market.name) else {
+            if base.marketplace(&market.name).is_none() {
+                let out = dist_dir(base_root, &market.name);
                 std::fs::create_dir_all(&out)
                     .map_err(|err| format!("cannot create {}: {err}", out.display()))?;
-                continue;
-            };
-            let mut request = VaultRequest::for_marketplace(&base.root, &base_market.name);
-            request.options.harnesses.clone_from(harnesses);
-            build_vault(&NativeVfs, &request)
-                .map_err(|err| format!("building it failed: {}", err.reason()))?;
+            }
         }
-        Ok(())
+        base.marketplaces
+            .retain(|m| loaded.marketplace(&m.name).is_some());
+        let mut options = BuildOptions::default();
+        options.harnesses.clone_from(harnesses);
+        plan(&NativeVfs, &base, &options)
+            .and_then(|planned| planned.commit(&NativeVfs))
+            .map_err(|err| format!("building it failed: {}", err.reason()))
     }
 }
 
@@ -202,7 +204,7 @@ const WHOLE_TREE: &str = ".";
 
 /// `path` relative to `top`, forward-slashed, [`WHOLE_TREE`] for `top`
 /// itself. `None` for a path outside `top`, which is not a git path.
-fn relative_to(top: &Path, path: &Path) -> Option<String> {
+pub(super) fn relative_to(top: &Path, path: &Path) -> Option<String> {
     let rel = path.strip_prefix(top).ok()?;
     let parts: Vec<String> = rel
         .components()

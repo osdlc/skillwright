@@ -73,9 +73,7 @@ impl Skip {
     fn of(baseline: &Path, roots: &[Harness], plugin: &str, current: &str) -> Skip {
         let mut held = false;
         for root in roots {
-            let format = root.format();
-            let (packs, manifest) = (format.policy.packs, format.plugin_manifest);
-            let Ok(bytes) = std::fs::read(baseline.join(packs).join(plugin).join(manifest)) else {
+            let Ok(bytes) = std::fs::read(baseline.join(root.pack_manifest(plugin))) else {
                 continue;
             };
             held = true;
@@ -141,6 +139,11 @@ pub(super) fn run_changed(
         scheme,
         now: utc_now_stamp(),
     };
+    if !loaded.marketplaces.is_empty()
+        && let Err(code) = run.check_baseline(ctx, &baseline)
+    {
+        return code;
+    }
     let mut rows: Vec<Row> = Vec::new();
     for market in &loaded.marketplaces {
         let found = run
@@ -178,6 +181,36 @@ struct Changed<'a> {
 }
 
 impl Changed<'_> {
+    /// Refuses an unknown harness name, and a baseline directory that holds
+    /// no plugin manifest for any harness this run compares. Neither depends
+    /// on the marketplace, so it runs once.
+    fn check_baseline(&self, ctx: &mut CommandContext<'_>, baseline: &Baseline) -> Result<(), i32> {
+        let since = self.since;
+        let mut roots: Vec<Harness> =
+            match owned_paths(&self.loaded.settings, &self.flags.run.harnesses) {
+                Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
+                Err(err) => return Err(refused(ctx.err, &err.reason())),
+            };
+        roots.dedup();
+        if let Baseline::Dir(dir) = baseline
+            && !holds_a_plugin_manifest(dir, &roots)
+        {
+            let expected: Vec<String> = roots
+                .iter()
+                .map(|root| root.pack_manifest("<plugin>"))
+                .collect();
+            return Err(refused(
+                ctx.err,
+                &format!(
+                    "--changed-since `{since}`: {} holds no plugin manifest for any configured harness; a built marketplace holds one at {}",
+                    dir.display(),
+                    expected.join(" or ")
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     /// The check of `market` against its built tree in `baseline`.
     fn compare(
         &self,
@@ -190,34 +223,6 @@ impl Changed<'_> {
         request.options.mode = ExportMode::Check;
         request.options.harnesses.clone_from(&flags.run.harnesses);
         request.options.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<Harness> = match owned_paths(&self.loaded.settings, &flags.run.harnesses)
-        {
-            Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
-            Err(err) => return Err(refused(ctx.err, &err.reason())),
-        };
-        roots.dedup();
-        if let Baseline::Dir(dir) = baseline
-            && !holds_a_plugin_manifest(dir, &roots)
-        {
-            let expected: Vec<String> = roots
-                .iter()
-                .map(|root| {
-                    let format = root.format();
-                    format!(
-                        "{}/<plugin>/{}",
-                        format.policy.packs, format.plugin_manifest
-                    )
-                })
-                .collect();
-            return Err(refused(
-                ctx.err,
-                &format!(
-                    "--changed-since `{since}`: {} holds no plugin manifest for any configured harness; a built marketplace holds one at {}",
-                    dir.display(),
-                    expected.join(" or ")
-                ),
-            ));
-        }
         one_report(build_vault(&NativeVfs, &request))
             .map_err(|err| failed(ctx.err, &format!("comparing against `{since}`"), &err))
     }

@@ -454,11 +454,7 @@ fn plugin_version_bump(
     config: &MarketplaceConfig,
 ) -> Option<VersionBumpSuggestion> {
     let current_version = overrides_for(config, plugin).and_then(|o| o.identity.version.clone())?;
-    let manifest_key = format!(
-        "{}/{plugin}/{}",
-        spec.format().policy.packs,
-        spec.format().plugin_manifest
-    );
+    let manifest_key = spec.pack_manifest(plugin);
     if !rendered.contains_key(&manifest_key) {
         return None;
     }
