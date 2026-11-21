@@ -27,8 +27,6 @@ serde = { workspace = true }
 serde_json = { workspace = true, features = ["preserve_order"] }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
-# Compares path segments the way APFS does.
-unicode-normalization = { workspace = true }
 # Per-runtime rendering: frontmatter dialects, tool-name translation, the
 # per-target skills directory, annotations and peer resources.
 agent-adapt = { workspace = true }

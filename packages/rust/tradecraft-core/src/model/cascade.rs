@@ -65,18 +65,16 @@ impl Cascade {
     /// scan, over `root`, the root file's shared defaults.
     pub(crate) fn over(
         containers: &[DiscoveredComponent],
-        market: Option<&str>,
+        market: &str,
         root: &SharedDefaults,
     ) -> Self {
         let mut config = root_config(root);
 
         // A marketplace's own note belongs to no marketplace, so its folder
         // finds it.
-        let note = market.and_then(|name| {
-            containers
-                .iter()
-                .find(|c| c.kind == EntityKind::Marketplace && c.folder() == name)
-        });
+        let note = containers
+            .iter()
+            .find(|c| c.kind == EntityKind::Marketplace && c.folder() == market);
         if let Some(note) = note {
             config.name = Some(note.name.clone());
             take_description(&mut config.description, note);
@@ -85,12 +83,10 @@ impl Cascade {
             merge_blocks(&mut config.blocks, &note.blocks);
         }
         if config.name.is_none() {
-            config.name = market.map(str::to_owned);
+            config.name = Some(market.to_owned());
         }
         // A marketplace's version is its own note's, never the root's.
-        if market.is_some() {
-            config.identity.version = note.and_then(|n| n.identity.version.clone());
-        }
+        config.identity.version = note.and_then(|n| n.identity.version.clone());
 
         // Each plugin note fills its own entry. The marketplace's blocks reach
         // it through `plugin_block`, less what `plain_inherited` names.
@@ -179,15 +175,13 @@ fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<St
 
 /// Whether this note sits in the folder of the marketplace being built,
 /// `marketplaces/<market>/`. Its own note does too.
-pub(super) fn belongs_to(component: &DiscoveredComponent, market: Option<&str>) -> bool {
-    market.is_some_and(|market| {
-        component
-            .vault_relative_path
-            .strip_prefix(crate::layout::MARKETPLACES_DIR)
-            .and_then(|rest| rest.strip_prefix('/'))
-            .and_then(|rest| rest.strip_prefix(market))
-            .is_some_and(|rest| rest.starts_with('/'))
-    })
+pub(super) fn belongs_to(component: &DiscoveredComponent, market: &str) -> bool {
+    component
+        .vault_relative_path
+        .strip_prefix(crate::layout::MARKETPLACES_DIR)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .and_then(|rest| rest.strip_prefix(market))
+        .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// The inherited keys `identity` sets as plain frontmatter on a note of

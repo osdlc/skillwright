@@ -29,8 +29,6 @@ unsafe_code = "forbid"
 missing_docs = "warn"
 
 [workspace.dependencies]
-# Path comparison that folds Unicode case and normalization.
-unicode-normalization = "0.1.26"
 # `derive` for the skillwright CLI's argument structs.
 clap = { version = "4.5.40", features = ["derive"] }
 # The RFC 3339 timestamps skillwright writes.
@@ -60,7 +58,7 @@ markdown-contract = { version = "0.4.3", default-features = false }
 markdown-link = "0.9.1"
 path-guard = "0.3.3"
 typed-git = "0.4.0"
-vfs-seam = { version = "0.2.0", default-features = false }
+vfs-seam = { version = "0.2.1", default-features = false }
 vfs-walk = "0.2.0"
 yaml-splice = "0.3.4"
 

@@ -114,8 +114,7 @@ use std::borrow::Cow;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::vfs::normalize;
-use tradecraft_core::vfs::{Metadata, VfsError};
+use tradecraft_core::vfs::{Metadata, VfsError, ms_f64_to_ns, normalize};
 use tradecraft_core::{CoreError, DirEntry, Vfs};
 use wasm_bindgen::prelude::*;
 
@@ -480,22 +479,6 @@ fn to_metadata(path: &Path, value: &JsValue) -> Result<Metadata, VfsError> {
     })
 }
 
-/// A JS `mtimeMs` (milliseconds as an `f64`, maybe fractional) as whole
-/// nanoseconds, or `None` when it is not finite.
-///
-/// The whole milliseconds and the fraction are converted apart: an `f64` of
-/// nanoseconds since 1970 has no room for the last digits, but `ms - ms.floor()`
-/// is exact. This undoes vfs-seam's `ns_to_ms_f64`, which is how Node builds
-/// `mtimeMs`, to the nearest nanosecond.
-fn ms_f64_to_ns(ms: f64) -> Option<i64> {
-    if !ms.is_finite() {
-        return None;
-    }
-    let whole = ms.floor();
-    let frac_ns = ((ms - whole) * 1_000_000.0).round() as i64;
-    (whole as i64).checked_mul(1_000_000)?.checked_add(frac_ns)
-}
-
 fn field(value: &JsValue, key: &str) -> Option<JsValue> {
     js_sys::Reflect::get(value, &JsValue::from_str(key)).ok()
 }
@@ -549,31 +532,4 @@ fn message_of(error: &JsValue) -> String {
         .ok()
         .and_then(|json| json.as_string())
         .unwrap_or_else(|| "the host filesystem threw a value with no message".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ms_f64_to_ns;
-
-    #[test]
-    fn a_fractional_mtime_keeps_its_fraction_in_nanoseconds() {
-        assert_eq!(ms_f64_to_ns(1.5), Some(1_500_000));
-        assert_eq!(ms_f64_to_ns(0.000_001), Some(1));
-        assert_eq!(ms_f64_to_ns(-1.25), Some(-1_250_000));
-        // A present-day Node `mtimeMs`: 2026-11-05, plus 123_456 ns.
-        let ns: i64 = 1_793_836_800_000_123_456;
-        let ms = (ns / 1_000_000_000) as f64 * 1000.0 + (ns % 1_000_000_000) as f64 / 1_000_000.0;
-        let back = ms_f64_to_ns(ms).unwrap();
-        // An f64 of ms this large holds the time to within a quarter
-        // microsecond, so the fraction comes back to that precision.
-        assert!((back - ns).abs() < 250, "{back} vs {ns}");
-        assert_eq!(back / 1_000_000, ns / 1_000_000);
-    }
-
-    #[test]
-    fn a_non_finite_or_out_of_range_mtime_is_no_time() {
-        assert_eq!(ms_f64_to_ns(f64::NAN), None);
-        assert_eq!(ms_f64_to_ns(f64::INFINITY), None);
-        assert_eq!(ms_f64_to_ns(1e300), None);
-    }
 }

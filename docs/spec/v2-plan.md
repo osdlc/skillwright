@@ -120,7 +120,7 @@ same commit:
 - the goldens under `skillwright/tests/fixtures/golden/`, re-blessed with
   `TRADECRAFT_BLESS=1 cargo test -p skillwright --test build_golden`;
 - `docs/reference/fields.md`, when the key table changes, regenerated with
-  `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test field_reference`;
+  `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --lib keys::tests`;
 - `core.generated.ts`, when a wasm export or its types change: run
   `cargo run -p tradecraft-typegen` and copy the file into
   `packages/ts/tradecraft-wasm/src/`;
@@ -931,7 +931,7 @@ tests and the gates above hold. The number in brackets is the commit.
   `dist/<m>/`. Re-blessed whenever output changes.
 - `tradecraft-core/tests/release_api.rs`: workspace cases go [2], namespace
   cases go [3].
-- `tradecraft-core/tests/field_reference.rs`: re-blessed whenever the key
+- `tradecraft-core/src/keys.rs` (its field-reference test): re-blessed whenever the key
   table changes.
 - `packages/ts/tradecraft-wasm/tests/load-marketplace.test.ts` and the
   other TypeScript tests read v1 vaults (`marketplaces/house/skillwright.md`,
