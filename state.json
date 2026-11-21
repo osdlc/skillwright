@@ -16,9 +16,9 @@
       "line": 188,
       "title": "Intra-doc link to refuse_marks broke when it moved to validate.rs",
       "comment": "https://github.com/osdlc/skillwright/pull/163#discussion_r4548801578",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "284fa2d6e22e21049932d8b095f9d6eeb38bec25"
     },
     {
       "id": "r1-2",
