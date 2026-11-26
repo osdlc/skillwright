@@ -305,9 +305,9 @@ dependencies = [
 
 [[package]]
 name = "etag-write"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16a7352801302969f6b33fd0a8252ceb3f4ec53e5d7f2ce2497cfc8407b26bf2"
+checksum = "fd7d1f3d672fd3ffad9529abf2685491916412fae9e71a7eb2111dd80c13baa9"
 dependencies = [
  "sha2",
  "thiserror",
@@ -339,9 +339,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "frontmatter-lossless"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9852435f53bcb57dd6ba143016c31dbc071695c0609021f86c6e375c561d9a34"
+checksum = "30bff898eecdb2c568bc02818f82265e47258720be608fa6f7ab9982987df221"
 
 [[package]]
 name = "futures-core"
@@ -544,9 +544,9 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "markdown-contract"
-version = "0.4.1"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba7af0223d6d3472e9b83ab6274ab4ef5b05f599fa1e9eb9270e09206b2bdb9e"
+checksum = "bfd21fc930760f5db320a36cd46ffded601d9ebb0585c3582cd34050013b5d02"
 dependencies = [
  "comrak",
  "globset",
@@ -560,9 +560,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-corpus"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98f41b185c9b7b6cd859920377f854714f35229f92d06f82cd7db5bb07899e0a"
+checksum = "b87de96aca680837d86015b33a41948a9441b7365137c8a8d4c7568605d32db9"
 dependencies = [
  "frontmatter-lossless",
  "markdown-link",
@@ -574,9 +574,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-link"
-version = "0.8.0"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70578cf8c4bb6c593943a8330bbdac1c2b29cf9fa25b36ccca2edb2429c29365"
+checksum = "593b4ccbe43fc572ef2ede8626edbe61b9b4c5ff2d61bb1d7c2abfa5ee14cc4f"
 dependencies = [
  "slug-collate",
  "yaml-splice",
@@ -584,9 +584,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-relink"
-version = "0.3.0"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f96ed05b1bec82829b5cd16e2293a31db8903f170954abb31360da42fca4896"
+checksum = "406febc02f325778214026ac183ce7baef971d742a18b6eb5e80d95697719fdc"
 dependencies = [
  "etag-write",
  "markdown-corpus",
@@ -600,9 +600,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-vault-fs"
-version = "0.5.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20e01ebb088ba2abfa09093419234ca0b6db4f57f8ce296f4017c766efaebe7d"
+checksum = "08c2c3a3ce03650d8e2cfaca75a933febf272648124f028ecde3b07bde6115de"
 dependencies = [
  "path-guard",
  "regex",
@@ -705,9 +705,9 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "path-guard"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d437321161206d6831fdd721e31b2ff29032fb57aa819ed7ea6c037ba6249b5"
+checksum = "42b67b1ac128048e301bebb00fbf98b7e9d99a2616d5752adccb42ab1c57efac"
 dependencies = [
  "thiserror",
 ]
@@ -962,7 +962,7 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skillwright"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "chrono",
  "clap",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "tradecraft-core"
-version = "0.48.0"
+version = "0.48.1"
 dependencies = [
  "agent-adapt",
  "frontmatter-lossless",
@@ -1252,18 +1252,18 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vfs-seam"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23639d4340fded7ca3c23a53ef8e8d6bdd4c97880d6863e952d7e1eb6aae6891"
+checksum = "962c534c3d406e4288918237b1791eef8f23aa5d4783131eb199d699b67c731b"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "vfs-walk"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9661061db069f0cb29d03736987d5b731a4ba637dfb05b024e95727f180eccec"
+checksum = "843e11cabcdab38250b9a2a2044b78296a882cd0510d03eed5ea7424eab379d4"
 dependencies = [
  "thiserror",
  "vfs-seam",
@@ -1427,9 +1427,9 @@ dependencies = [
 
 [[package]]
 name = "yaml-splice"
-version = "0.3.3"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4640e81de4d3290ca247eabadabb0281fd1171c378c382e6251d98d2694bc901"
+checksum = "e921536e6a1ea43164712064cd9d32bdcc448e17dbc950399cd0ca7eaef8b28d"
 dependencies = [
  "saphyr-parser",
  "serde_json",

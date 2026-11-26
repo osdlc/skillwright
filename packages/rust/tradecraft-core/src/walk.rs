@@ -100,7 +100,11 @@ fn vault_options(
         attachments: true,
         hide: Hide::Off,
         refuse_symlinks,
-        propagate_errors,
+        errors: if propagate_errors {
+            Errors::Propagate
+        } else {
+            Errors::Skip
+        },
         skip_names: vec![SKIPPED[0].to_owned()],
         prune_dirs: prune.iter().map(|name| (*name).to_owned()).collect(),
         exclude: built_paths(),

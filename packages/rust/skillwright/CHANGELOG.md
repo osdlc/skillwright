@@ -7,6 +7,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.10.1) - 2026-11-26
+
+A maintenance release of the 0.10 line, cut from `skillwright/v0.10.0`
+rather than main, for consumers of the `apply` module 0.12 removed.
+
+### Changed
+
+- Built on `tradecraft-core` 0.48.1 and its markdown crates: `yaml-splice`
+  0.4, `markdown-link` 0.11, `markdown-corpus` 0.5, `markdown-relink` 0.4.3
+  and `markdown-vault-fs` 0.8.
+
 ## [0.10.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.9.0...skillwright/v0.10.0) - 2026-11-10
 
 ### Breaking
