@@ -1897,6 +1897,7 @@ const SCAN: ScanOptions = ScanOptions {
     code_rules: CodeRules::SkillExport,
     skip_html_comments: true,
     self_links: true,
+    all_markdown_links: false,
 };
 
 /// Every wiki token in `markdown` that is *live* — not inside a fenced code

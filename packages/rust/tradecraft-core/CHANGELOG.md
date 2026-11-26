@@ -7,6 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.48.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.48.0...tradecraft-core/v0.48.1) - 2026-11-26
+
+A maintenance release of the 0.48 line, cut from `tradecraft-core/v0.48.0`
+rather than main, for consumers that still use the modules 0.50 removed.
+
+### Changed
+
+- Built on `yaml-splice` 0.4, `markdown-link` 0.11, `markdown-corpus` 0.5,
+  `markdown-relink` 0.4.3, `markdown-vault-fs` 0.8 and `markdown-contract`
+  0.4.4. `yaml-splice` and `markdown-link` types appear in this crate's API,
+  so a caller moves to those lines with it.
+- Links follow `markdown-link` 0.11's rules. An embed indented four or more
+  spaces after a blank line is an indented code block, so it is not
+  inlined.
+
 ## [0.48.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.47.0...tradecraft-core/v0.48.0) - 2026-11-10
 
 ### Breaking

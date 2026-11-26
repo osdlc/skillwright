@@ -4809,7 +4809,7 @@ mod tests {
         .unwrap();
         vfs.write_file(
             Path::new("/vault/skills/code-review.md"),
-            b"---\nname: code-review\ndescription: Reviews a diff.\n---\n\n              ![[reviewer]]\n\nSee [[house-style]].\n",
+            b"---\nname: code-review\ndescription: Reviews a diff.\n---\n\n![[reviewer]]\n\nSee [[house-style]].\n",
         )
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
