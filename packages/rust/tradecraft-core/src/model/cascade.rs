@@ -70,33 +70,27 @@ impl Cascade {
         root: &SharedDefaults,
     ) -> Self {
         let mut config = root_config(root);
+        config.name = Some(market.to_owned());
 
-        // A marketplace's own note belongs to no marketplace, so its folder
-        // finds it.
-        let note = containers
-            .iter()
-            .find(|c| c.kind == EntityKind::Marketplace && c.folder() == market);
+        let note = containers.iter().find(|c| {
+            c.position.kind() == EntityKind::Marketplace && c.position.marketplace() == market
+        });
         if let Some(note) = note {
-            config.name = Some(note.name.clone());
             take_description(&mut config.description, note);
             drop_shadowed(&mut config.blocks, &note.identity, EntityKind::Marketplace);
             config.identity.overlay(&note.identity);
             merge_blocks(&mut config.blocks, &note.blocks);
-        }
-        if config.name.is_none() {
-            config.name = Some(market.to_owned());
         }
         // A marketplace's version is its own note's, never the root's.
         config.identity.version = note.and_then(|n| n.identity.version.clone());
 
         // Each plugin note fills its own entry. The marketplace's blocks reach
         // it through `plugin_block`, less what `plain_inherited` names.
-        for note in containers
-            .iter()
-            .filter(|c| c.kind == EntityKind::Plugin)
-            .filter(|c| belongs_to(c, market))
-        {
-            let overrides = config.plugins.entry(note.folder().to_owned()).or_default();
+        for note in containers.iter().filter(|c| {
+            c.position.kind() == EntityKind::Plugin && c.position.marketplace() == market
+        }) {
+            let name = note.position.name().to_owned();
+            let overrides = config.plugins.entry(name).or_default();
             take_description(&mut overrides.description, note);
             overrides.identity.overlay(&note.identity);
             merge_blocks(&mut overrides.blocks, &note.blocks);
@@ -169,17 +163,6 @@ fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<St
             }
         }
     }
-}
-
-/// Whether this note sits in the folder of the marketplace being built,
-/// `marketplaces/<market>/`. Its own note does too.
-pub(super) fn belongs_to(component: &DiscoveredComponent, market: &str) -> bool {
-    component
-        .vault_relative_path
-        .strip_prefix(crate::layout::MARKETPLACES_DIR)
-        .and_then(|rest| rest.strip_prefix('/'))
-        .and_then(|rest| rest.strip_prefix(market))
-        .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// The inherited keys `identity` sets as plain frontmatter on a note of

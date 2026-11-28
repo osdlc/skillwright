@@ -118,9 +118,9 @@ impl WireComponent {
     fn from_model(c: &Component) -> Self {
         let resolved = c.resolved.as_ref();
         Self {
-            kind: c.kind,
-            name: c.name.clone(),
-            path: c.path.clone(),
+            kind: c.kind(),
+            name: c.name().to_owned(),
+            path: c.path().to_owned(),
             blocks: c.extensions.blocks.clone(),
             description: resolved.map(|r| r.content.description.clone()),
             calls: resolved

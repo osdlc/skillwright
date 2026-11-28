@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use tradecraft_core::{CoreError, ExportMode, MemVfs, Vfs, load_vault};
+use tradecraft_core::{BuildScope, CoreError, MemVfs, VaultRequest, Vfs, load_vault};
 
 /// `build_vault` over the one marketplace a request covers: its report.
 fn export(
@@ -70,10 +70,10 @@ fn put(vfs: &MemVfs, rel: &str, text: &str) {
 
 /// Builds `harnesses`, or every harness when empty.
 fn build_for(vfs: &dyn Vfs, harnesses: &[&str]) -> Result<(), CoreError> {
-    let loaded = load_vault(vfs, Path::new("/v"), None)?;
-    let mut request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let loaded = load_vault(vfs, Path::new("/v"), &BuildScope::Vault)?;
+    let mut request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
     if !harnesses.is_empty() {
-        request.harnesses = harnesses.iter().map(|h| (*h).to_owned()).collect();
+        request.options.harnesses = harnesses.iter().map(|h| (*h).to_owned()).collect();
     }
     export(vfs, &request).map(|_| ())
 }

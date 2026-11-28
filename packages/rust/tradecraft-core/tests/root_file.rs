@@ -4,7 +4,9 @@
 
 use std::path::Path;
 
-use tradecraft_core::{ExportMode, MemVfs, Vfs, load_vault, parse_root_file, read_layout};
+use tradecraft_core::{
+    BuildScope, MemVfs, VaultRequest, Vfs, load_vault, parse_root_file, read_layout,
+};
 
 /// `build_vault` over the one marketplace a request covers: its report.
 fn export(
@@ -50,19 +52,19 @@ fn root(frontmatter: &str) -> MemVfs {
 fn layout_refusal(vfs: &MemVfs) -> String {
     let said = read_layout(vfs, Path::new("/v")).unwrap_err().to_string();
     assert!(said.contains("refused: layout"), "{said}");
-    let loaded = load_vault(vfs, Path::new("/v"), None).unwrap_err();
+    let loaded = load_vault(vfs, Path::new("/v"), &BuildScope::Vault).unwrap_err();
     assert_eq!(loaded.to_string(), said);
     said
 }
 
 /// A build of every marketplace in `vfs`, its error as text.
 fn build_error(vfs: &MemVfs) -> String {
-    let loaded = match load_vault(vfs, Path::new("/v"), None) {
+    let loaded = match load_vault(vfs, Path::new("/v"), &BuildScope::Vault) {
         Ok(loaded) => loaded,
         Err(err) => return err.to_string(),
     };
     for marketplace in &loaded.marketplaces {
-        let request = loaded.vault_request(marketplace, ExportMode::Build);
+        let request = VaultRequest::for_marketplace(&loaded.root, &marketplace.name);
         if let Err(err) = export(vfs, &request) {
             return err.to_string();
         }
@@ -139,7 +141,12 @@ fn an_unknown_root_key_and_an_unknown_build_key_warn() {
         "{:?}",
         root.warnings
     );
-    load_vault(&vault(&[("skillwright.md", text)]), Path::new("/v"), None).unwrap();
+    load_vault(
+        &vault(&[("skillwright.md", text)]),
+        Path::new("/v"),
+        &BuildScope::Vault,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -295,8 +302,8 @@ fn build_harnesses_accept_only_the_four_harness_names() {
 #[test]
 fn build_harnesses_picks_the_trees_written() {
     let vfs = root("build:\n  harnesses: [claude, pi]");
-    let loaded = load_vault(&vfs, Path::new("/v"), None).unwrap();
-    let request = loaded.vault_request(&loaded.marketplaces[0], ExportMode::Build);
+    let loaded = load_vault(&vfs, Path::new("/v"), &BuildScope::Vault).unwrap();
+    let request = VaultRequest::for_marketplace(&loaded.root, &loaded.marketplaces[0].name);
     export(&vfs, &request).unwrap();
     let mut trees: Vec<String> = vfs
         .read_dir(Path::new("/v/dist/acme"))

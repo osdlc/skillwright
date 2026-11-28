@@ -166,8 +166,10 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
 /// # Errors
 ///
 /// A build: the first marketplace's refusal, with nothing written, or
-/// `SwapFailed`. `Refused` (`compare-with`) for a build that names
-/// `compare_with`, or a request for several marketplaces that does.
+/// `SwapFailed`. `Refused` (`output-changed`) when a `dist/<m>/` changed
+/// between the plan and the write, with nothing written. `Refused`
+/// (`compare-with`) for a build that names `compare_with`, or a request for
+/// several marketplaces that does.
 #[wasm_bindgen(js_name = buildVault)]
 pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
@@ -246,7 +248,7 @@ fn throwable(message: &str) -> JsValue {
 mod tests {
     use std::path::Path;
 
-    use tradecraft_core::{ExportMode, MemVfs, Vfs};
+    use tradecraft_core::{BuildScope, ExportMode, MemVfs, Vfs};
 
     use super::*;
 
@@ -254,10 +256,10 @@ mod tests {
     fn a_vault_request_s_absences_are_the_core_defaults() {
         let request: VaultRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
         assert_eq!(request.vault_root, PathBuf::from("/vault"));
-        assert_eq!(request.mode, ExportMode::Build);
-        assert_eq!(request.marketplace, None);
-        assert!(request.harnesses.is_empty());
-        assert_eq!(request.compare_with, None);
+        assert_eq!(request.options.mode, ExportMode::Build);
+        assert_eq!(request.scope, BuildScope::Vault);
+        assert!(request.options.harnesses.is_empty());
+        assert_eq!(request.options.compare_with, None);
     }
 
     #[test]
@@ -271,8 +273,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(request.mode, ExportMode::Check);
-        assert_eq!(request.marketplace.as_deref(), Some("house"));
+        assert_eq!(request.options.mode, ExportMode::Check);
+        assert_eq!(request.scope, BuildScope::Marketplace("house".to_owned()));
     }
 
     #[test]
@@ -334,7 +336,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|c| c["kind"] == "skill")
+            .find(|c| c["position"]["kind"] == "skill")
             .unwrap();
         assert_eq!(skill["identity"], serde_json::json!({}), "{json}");
     }

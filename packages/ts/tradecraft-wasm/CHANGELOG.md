@@ -24,10 +24,12 @@
 - `CoreErrorName` loses `RootNotFound`, which the core never threw.
 - A note that is not UTF-8 or whose frontmatter does not parse throws `Refused` (`unreadable-note`), not `Io`: a caller that branches on `coreName === 'Io'` sees a refusal instead.
 - `ExportUnit`'s `root` is typed as `Harness`, not `string`, and `knownTargets()` is typed as `Harness[]` in `WasmResponses` too.
+- `UnitStatus` is `Same` or `Differs`, and `DiscoveredComponent` carries `Position`; the TS types are regenerated. A unit's `status` is `'same'` or `'differs'` in place of `'ok'`, `'drift'`, `'written'` and `'unchanged'`; the report's `mode` gives the verb. `ExportUnit`'s not-carried `kind` is typed as `EntityKind`. A `DiscoveredComponent`'s `position` (`at`, `marketplace`, and `plugin`, `kind` and `name` where the note has them) replaces `name`, `kind`, `plugin` and `marketplace`. `Position` is exported.
 
 ### Changed
 
 - A `harnesses` name that is not a harness throws `Refused` (`unknown-harness`) with `` `<name>` is not a harness. The harnesses are ... ``. Of several unknown names, the first is named.
+- `buildVault` throws `Refused` (`output-changed`), writing nothing, when an owned path in `dist/<m>/` changed between its plan and its write.
 
 ## 0.2.0
 
