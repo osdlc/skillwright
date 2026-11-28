@@ -61,8 +61,8 @@ pub use load::{LoadRequest, load, load_in, resolve_body};
 pub struct Marketplace {
     /// The name the marketplace publishes under.
     pub name: String,
-    /// The vault's marketplace folder this was loaded from. Always set.
-    pub folder: Option<String>,
+    /// The vault's marketplace folder this was loaded from.
+    pub folder: String,
     /// The marketplace's identity and every plugin's manifest fields, the
     /// vault's notes folded over the root file's shared defaults.
     pub(crate) config: MarketplaceConfig,
@@ -128,22 +128,21 @@ pub struct Component {
     pub path: String,
     /// Its harness-only fields, by harness.
     pub extensions: Extensions,
-    /// Its content: name, description, the modeled fields and the
-    /// annotations every harness receives, with `arguments` applied for a
-    /// skill or a command. The body is the note's own; the resolved one is
-    /// [`Self::resolved`]. `None` until the note is read in full, which a load
-    /// does only for what some requested harness admits.
-    pub content: Option<SkillContent>,
-    /// The body and its files, resolved. `None` when no harness this load is
-    /// for admits the component.
+    /// The note read in full, its body and files resolved. `None` when no
+    /// harness this load is for admits the component.
     pub resolved: Option<Resolved>,
     /// What the scan found.
     pub discovered: DiscoveredComponent,
 }
 
-/// A body and the files it reaches, every link and call pointed at its node.
+/// A read note: its content, and its body and the files it reaches with
+/// every link and call pointed at its node.
 #[derive(Debug, Clone)]
 pub struct Resolved {
+    /// Name, description, the modeled fields and the annotations every
+    /// harness receives, with `arguments` applied for a skill or a command.
+    /// The body is the note's own; the resolved one is [`Self::body`].
+    pub content: SkillContent,
     /// The entry's body.
     pub body: Body,
     /// Every file that travels with it, by output path.
@@ -374,13 +373,6 @@ pub struct Extensions {
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
 }
 
-impl Extensions {
-    /// Every block, the shape [`SkillContent::apply_overrides`] takes.
-    pub fn blocks(&self) -> BTreeMap<String, serde_json::Map<String, serde_json::Value>> {
-        self.blocks.clone()
-    }
-}
-
 /// A file copied verbatim into a pack.
 #[derive(Debug, Clone, Serialize)]
 pub struct Asset {
@@ -402,7 +394,7 @@ pub struct HooksFile {
     pub hooks: Vec<agent_adapt::Hook>,
 }
 
-/// Splits a recording compile's output into segments.
+/// Splits a compile's output into segments.
 ///
 /// A mark that does not parse, or names a site the record does not hold, is
 /// left as text: the record is this module's own and a stray mark is a bug,
@@ -500,7 +492,6 @@ mod tests {
                     plugin: "p".into(),
                     name: "a".into(),
                     kind: EntityKind::Skill,
-                    shipped: true,
                 },
                 destination: "a".into(),
                 caller: "b.md".into(),

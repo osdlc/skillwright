@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+API:
+
+- `prompt::ask` is removed.
+
 ## [0.12.2](https://github.com/osdlc/skillwright/compare/skillwright/v0.12.1...skillwright/v0.12.2) - 2026-11-28
 
 ### Dependencies

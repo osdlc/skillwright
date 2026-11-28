@@ -2,7 +2,7 @@
 
 Status: current, moving.
 
-The file-access trait every read and write goes through, so the same code runs natively and as wasm. `PreviewVfs` captures writes, which is how dry runs and `check` work. It is osdlc's [vfs-seam](https://github.com/osdlc/osdlc/blob/main/docs/terms/vfs-seam.md), re-exported ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
+The file-access trait every read and write goes through, so the same code runs natively and as wasm. `ExportMode::Check` renders and compares without writing anything. It is osdlc's [vfs-seam](https://github.com/osdlc/osdlc/blob/main/docs/terms/vfs-seam.md), re-exported ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
 
 ## In code
 

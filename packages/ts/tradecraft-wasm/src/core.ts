@@ -23,8 +23,8 @@
  *
  * A mode is a key on a request, never an export of its own — `check` is
  * `buildVault` with `mode: "check"`. This file never predicts what it would
- * do: the core runs the identical path over a capturing overlay and hands back
- * the report the write would have produced.
+ * do: the core runs the identical path without writing and hands back the report
+ * the write would have produced.
  *
  * No request carries configuration: the core reads `skillwright.md` through
  * the vfs, and a request's `harnesses` only narrows its `build.harnesses`.
