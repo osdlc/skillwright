@@ -7,7 +7,7 @@
 //! * **Validation.** A key outside the table for a note's kind is unknown,
 //!   and gets a warning. A key of ours with the wrong [`Shape`] is refused
 //!   when the note is read. An [`Owner::Spec`] key on a
-//!   skill, agent or command is refused by [`crate::vault`] when its value is
+//!   skill, agent or command is refused by [`crate::note`] when its value is
 //!   the wrong kind, by the check a harness block applies to the same key. On
 //!   other kinds a spec key's shape is documentation.
 //! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from

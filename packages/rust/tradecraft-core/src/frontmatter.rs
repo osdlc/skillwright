@@ -837,7 +837,7 @@ mod tests {
 
     const NOTE: &str = "/vault/skills/code-review.md";
 
-    /// Frontmatter as `crate::vault` hands it over: a JSON object.
+    /// Frontmatter as `crate::note` hands it over: a JSON object.
     fn fields(value: Value) -> Map<String, Value> {
         match value {
             Value::Object(map) => map,
@@ -1152,11 +1152,11 @@ mod tests {
 
     /// Whether a note of `kind` with `value` at `key` reads, as the vault
     /// reader takes it: our keys through [`VaultFrontmatter::take_from`],
-    /// then the spec keys left behind through [`crate::vault::check_spec_kinds`].
+    /// then the spec keys left behind through [`crate::note::check_spec_kinds`].
     fn note_accepts(kind: EntityKind, key: &str, value: Value) -> bool {
         let mut map = fields(json!({ "description": "d", key: value }));
         VaultFrontmatter::take_from(&mut map, Path::new(NOTE), kind).is_ok()
-            && crate::vault::check_spec_kinds(&mut map, Path::new(NOTE), kind).is_ok()
+            && crate::note::check_spec_kinds(&mut map, Path::new(NOTE), kind).is_ok()
     }
 
     /// The accept and refuse answers for the component keys whose type the

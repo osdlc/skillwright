@@ -26,11 +26,11 @@ use super::manifest::{
     render_plugin_manifest,
 };
 use super::profile::PLUGIN_HOOKS_PATH;
-use super::profile::{CliInvocation, Harness, HarnessProfile, PluginFormat, SkillNaming};
+use super::profile::{Harness, HarnessProfile, PluginFormat, RootPathStyle, SkillNaming};
 use crate::content::SkillProjection;
 use crate::error::CoreError;
-use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
+use crate::model::config::MarketplaceConfig;
 use crate::model::{
     Body, Call, Component, Marketplace, Plugin, PluginRootPath, ResolvedRef, ResourceContent,
     Segment,
@@ -57,7 +57,7 @@ impl FileTree {
     /// written in decides, the same as writes landing on one directory.
     pub fn insert(&mut self, path: &str, bytes: Vec<u8>, executable: bool) {
         self.files.insert(
-            crate::skill::forward_slashed(Path::new(path)),
+            crate::vfs::forward_slashed(Path::new(path)),
             PreviewWrite { bytes, executable },
         );
     }
@@ -92,7 +92,7 @@ impl Translator {
     /// spec does not admit.
     fn published_name(self, plugin: &Plugin, skill: &str) -> Result<String, CoreError> {
         let naming = naming(self.0, &plugin.bare_on);
-        crate::export::published_skill_name(naming, &plugin.name, skill)
+        crate::harness::shipped_skill_name(naming, &plugin.name, skill)
     }
 
     /// A call, as this harness invokes the skill it names.
@@ -104,7 +104,7 @@ impl Translator {
     fn render_call(self, call: &Call) -> Result<String, CoreError> {
         let profile = self.profile();
         call.check_shipped(self.format().carries(call.skill.kind), profile.label)?;
-        crate::export::rendered_skill_call(
+        crate::harness::rendered_skill_call(
             profile.runtime,
             naming(self.0, &call.bare_on),
             &call.skill.plugin,
@@ -217,11 +217,11 @@ impl Translator {
                 self.profile().label,
             ));
         }
-        match self.format().policy.cli_invocation {
-            CliInvocation::PluginRootToken => {
+        match self.format().policy.root_path_style {
+            RootPathStyle::PluginRootToken => {
                 Ok(format!("{}/{}", crate::hooks_file::CLAUDE_ROOT, root.path))
             }
-            CliInvocation::SkillRelativePath => Ok(relative_path(
+            RootPathStyle::SkillRelativePath => Ok(relative_path(
                 &self.installed(plugin, &root.from)?,
                 &self.installed(plugin, &root.path)?,
             )),

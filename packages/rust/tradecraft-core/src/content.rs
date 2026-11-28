@@ -28,7 +28,7 @@ pub struct SkillContent {
     /// [`crate::frontmatter::VaultFrontmatter::arguments`] for why that is
     /// not the contradiction it looks like. `Vec::new()` by construction
     /// whenever this `SkillContent` comes from
-    /// [`crate::vault::read_vault_note`]; only
+    /// [`crate::note::read_vault_note`]; only
     /// [`SkillContent::apply_arguments`] fills it in, called by
     /// [`mod@crate::model::load`] after the read, before the projection.
     pub arguments: Vec<Argument>,
@@ -64,7 +64,7 @@ pub struct SkillContent {
     /// The second field here sourced from skillwright's own keys, and it is
     /// here for the same reason [`Self::arguments`] is: a renderer needs it.
     /// `BTreeMap::new()` by construction from
-    /// [`crate::vault::read_vault_note`]; only
+    /// [`crate::note::read_vault_note`]; only
     /// [`SkillContent::apply_overrides`] fills it in, and only after
     /// [`crate::model::cascade::fold_harness_blocks`] has folded the target names and
     /// checked every key against the harness that will receive it.
@@ -81,7 +81,7 @@ impl SkillContent {
     /// of its own.
     ///
     /// A hand-written hint or name list always wins — this never overwrites
-    /// a `Some`. Never called by [`crate::vault::read_vault_note`];
+    /// a `Some`. Never called by [`crate::note::read_vault_note`];
     /// [`mod@crate::model::load`] calls it once, between reading a note and
     /// projecting it, so every harness sees the same derived hint, name list,
     /// and argument list.
@@ -99,7 +99,7 @@ impl SkillContent {
     ///
     /// Keyed by the harness name, which is what the projection looks one up
     /// by. Called by the translator between the model and the projection —
-    /// never by [`crate::vault::read_vault_note`], which has no harness
+    /// never by [`crate::note::read_vault_note`], which has no harness
     /// roster.
     pub fn apply_overrides(
         &mut self,

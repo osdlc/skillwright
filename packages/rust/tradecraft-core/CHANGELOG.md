@@ -25,7 +25,7 @@ API:
 - `MISSING_DESCRIPTION_REASON`, `PATH_COLLISION_REASON` and `layout::LAYOUT_REASON` are removed. Use `refusal::MISSING_DESCRIPTION`, `refusal::PATH_COLLISION` and `refusal::LAYOUT`.
 - A note that is not UTF-8 is refused with `unreadable-note` (`CoreError::Refused`), not reported as `CoreError::Io`.
 - `read_vault_note` refuses a skill, agent or command note with no `description` as `missing-description` (`CoreError::Refused`), not `CoreError::Io`.
-- `Harness` is added, one enum for the four harnesses, with `ALL`, `as_str`, `parse`, `profile` and `format`. `PluginDialect`, `keys::HARNESS_BLOCKS`, `PROFILES`, the `CLAUDE`, `CODEX`, `CURSOR` and `PI` rows, `profile_named`, `with_plugin_format`, `HarnessProfile::name`, `PluginPolicy::dialect` and the `harness::translator::{Claude, Codex, Cursor, Pi}` structs are removed. `KNOWN_TARGETS` is a `&[Harness]`.
+- `Harness` is added, one enum for the four harnesses, with `ALL`, `as_str`, `parse`, `profile`, `format` and `pack_manifest`. `PluginDialect`, `keys::HARNESS_BLOCKS`, `PROFILES`, the `CLAUDE`, `CODEX`, `CURSOR` and `PI` rows, `profile_named`, `with_plugin_format`, `HarnessProfile::name`, `PluginPolicy::dialect` and the `harness::translator::{Claude, Codex, Cursor, Pi}` structs are removed. `KNOWN_TARGETS` is a `&[Harness]`.
 - `HarnessProfile::{format, owned_paths, split_pack, accepted_override_keys, block_keys}` are removed. Use `Harness::format`.
 - `PluginFormat` holds `policy: &'static PluginPolicy` and the facts resolved from it, in place of a copy of each policy field. `PluginFormat::carries(kind)` says whether a pack has a place for a member of that kind.
 - `ExportUnit`'s `root`, `model::Plugin::bare_on` and `model::Call::bare_on` hold `Harness`, and `owned_paths` returns `(Harness, &str)` pairs. `marketplace_manifest_path`, `plugin_manifest_path` and `packs_path` are removed; use `Harness::format`.
@@ -38,12 +38,21 @@ API:
 - `compile::IndexedSkill` is removed: `SkillIndex` holds `SkillId`, which `SkillId::of` builds from a `DiscoveredComponent`.
 - `plan(vfs, &loaded, &options)` is added. It returns a `VaultPlan`, with `outcomes()`, `report()` and `commit(vfs)`; `build_vault` calls all three. A `VaultReport` converts from `outcomes()`. `BuildOptions` and `VaultPlan` are exported at the root.
 - `UnitStatus` changes (see Changed), and `UnitStatus::as_str` is removed. `ExportUnit::NotCarried`'s `kind` is an `EntityKind`.
+- `compile::Closure`, `CompiledNote::closures` and `model::Resolved::closures` are removed. Nothing read them.
+- `export::{published_skill_name, rendered_skill_call}` move to `harness`, and `export` no longer re-exports `SkillNaming` and `CliInvocation`.
+- Renamed: `published_skill_name` to `shipped_skill_name` (at the root too), `harness::CliInvocation` to `RootPathStyle`, `PluginPolicy::cli_invocation` to `root_path_style`, `settings::REFUSED_ROOT_KEYS` to `V1_ROOT_KEYS`, and the `destination` field of `compile::CallSite` and `model::Call` to `written`.
+- The `vault` module is renamed `note`, and `skill::split_frontmatter` moves into it. `paths::{BuildScope, LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file}` move to `model::vault`, and `status::VersionBumpSuggestion` to `export`. The `skill` and `status` modules are removed. The root re-exports are unchanged.
+- The `semver` module and the root `BumpLevel`, `next_version` and `parse_semver` are removed. Only `skillwright bump` used them, and it holds them now.
+- The `paths` module and the root `resolve_path` are removed. They were the CLI's path helpers, and the CLI holds what it uses.
+- `CoreError` is `Clone`: `CoreError::Io`'s `source` is an `Arc<std::io::Error>`.
+- `CallContext::warnings` is removed. `resolve_body` appends what the compile warned about to a `warnings` argument.
 
 ### Changed
 
 - Messages say "vault root" in place of "corpus root".
 - A name that is not a harness is refused one way, in a request and in `build.harnesses`: `` `<name>` is not a harness. The harnesses are `claude`, `codex`, `cursor` and `pi` ``, with `unknown-harness` on a request. Of several unknown names, the first is named.
 - `UnitStatus` is `Same` or `Differs` in place of `Ok`, `Drift`, `Written` and `Unchanged`. A report's `mode` gives the verb: a check reads `same` as ok and `differs` as drift, a build reads them as unchanged and written.
+- When the host cannot resolve the marketplace folder, or a folder the walk is inside, while checking a symlink, `read_layout` refuses with `unsafe-path` in place of an `Io` error.
 - `VaultPlan::commit` re-reads each `dist/<m>/` and refuses with the new `output-changed` token, writing nothing, when an owned path changed since `plan` read it. A build that rendered again after its prompt had the same protection.
 
 ## [0.50.2](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.50.1...tradecraft-core/v0.50.2) - 2026-11-28
