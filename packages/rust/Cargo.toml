@@ -57,12 +57,12 @@ wasm-bindgen = "=0.2.126"
 agent-adapt = "0.19.2"
 frontmatter-lossless = "1.1.2"
 markdown-contract = { version = "0.4.3", default-features = false }
-markdown-link = "0.9.1"
+markdown-link = "0.11.0"
 path-guard = "0.3.3"
 typed-git = "0.4.0"
 vfs-seam = { version = "0.2.0", default-features = false }
 vfs-walk = "0.2.0"
-yaml-splice = "0.3.4"
+yaml-splice = "0.4.0"
 
 # The member crate others depend on, also named by version so a published
 # manifest points at crates.io. release-plz publishes it before skillwright.
