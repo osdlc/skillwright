@@ -6,7 +6,7 @@ A harness's name as written in `build.harnesses` or `--harness`: `claude`, `code
 
 ## In code
 
-`KNOWN_TARGETS` in `harness/profile.rs`.
+`Harness::parse` and `Harness::as_str` in `harness/profile.rs`.
 
 ## Not to be confused with
 

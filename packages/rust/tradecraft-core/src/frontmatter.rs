@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
+use crate::harness::Harness;
 use crate::refusal;
 
 /// Which kind of unit a note is: what the folder it sits in names.
@@ -261,7 +262,7 @@ impl ContainerIdentity {
 ///
 /// Deliberately **not** part of [`crate::SkillContent`]: these keys are
 /// configuration about *this* vault, and keeping them off the type
-/// [`crate::projection::project_skill`] renders makes the strip structural.
+/// the projection renders makes the strip structural.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VaultFrontmatter {
     /// `arguments` — what this skill or command's invocation takes,
@@ -329,9 +330,13 @@ impl VaultFrontmatter {
             Vec::new()
         };
         let mut overrides = Map::new();
-        for harness in crate::keys::HARNESS_BLOCKS.iter().filter(|h| reads(h)) {
+        for harness in Harness::ALL
+            .map(Harness::as_str)
+            .into_iter()
+            .filter(|h| reads(h))
+        {
             if let Some(block) = take_harness_block(&mut ours, harness) {
-                overrides.insert((*harness).to_owned(), Value::Object(block));
+                overrides.insert(harness.to_owned(), Value::Object(block));
             }
         }
         // A key a block reads set to nothing is unset and dropped. One it does
@@ -499,9 +504,9 @@ fn refuse_keys(
     if matches!(
         kind,
         EntityKind::Skill | EntityKind::Agent | EntityKind::Command
-    ) && let Some(harness) = crate::keys::HARNESS_BLOCKS.iter().find(|harness| {
+    ) && let Some(harness) = Harness::ALL.iter().find(|harness| {
         [ours, fields].iter().any(|map| {
-            map.get(**harness)
+            map.get(harness.as_str())
                 .and_then(Value::as_object)
                 .is_some_and(|block| block.contains_key(crate::harness::manifest::NAMING_KEY))
         })

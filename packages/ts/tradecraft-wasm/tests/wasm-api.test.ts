@@ -21,7 +21,7 @@ import {
   type DiscoveredComponent,
   type LoadRequest,
   type Plugin,
-  type Target,
+  type Harness,
   type VaultRequest,
 } from '../src/core.ts'
 import { toCorePath } from '../src/host-path.ts'
@@ -188,14 +188,14 @@ test('loadMarketplace on a vault of two marketplaces needs a name', () => {
   expect(message).toContain('marketplace')
 })
 
-test('Target is the four names knownTargets() returns', () => {
+test('Harness is the four names knownTargets() returns', () => {
   const four = ['claude', 'codex', 'cursor', 'pi'] as const
-  expectTypeOf<Target>().toEqualTypeOf<(typeof four)[number]>()
+  expectTypeOf<Harness>().toEqualTypeOf<(typeof four)[number]>()
   expect(knownTargets()).toEqual([...four])
-  expectTypeOf(knownTargets()).toEqualTypeOf<Target[]>()
-  expectTypeOf<NonNullable<LoadRequest['harnesses']>>().toEqualTypeOf<Target[]>()
-  expectTypeOf<NonNullable<VaultRequest['harnesses']>>().toEqualTypeOf<Target[]>()
-  expectTypeOf<NonNullable<Plugin['bare_on']>>().toEqualTypeOf<Target[]>()
+  expectTypeOf(knownTargets()).toEqualTypeOf<Harness[]>()
+  expectTypeOf<NonNullable<LoadRequest['harnesses']>>().toEqualTypeOf<Harness[]>()
+  expectTypeOf<NonNullable<VaultRequest['harnesses']>>().toEqualTypeOf<Harness[]>()
+  expectTypeOf<NonNullable<Plugin['bare_on']>>().toEqualTypeOf<Harness[]>()
   expectTypeOf<DiscoveredComponent>().not.toHaveProperty('targets')
   expectTypeOf<Component>().not.toHaveProperty('targets')
 })

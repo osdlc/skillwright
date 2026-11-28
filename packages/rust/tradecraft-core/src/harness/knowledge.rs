@@ -832,8 +832,8 @@ mod tests {
     #[test]
     fn every_profile_harness_with_a_lookup_is_in_the_slice() {
         let slice = slice();
-        for profile in crate::harness::profile::with_plugin_format() {
-            let slug = crate::harness::profile::knowledge_slug(profile.name);
+        for harness in crate::harness::Harness::ALL {
+            let slug = harness.knowledge_slug();
             assert!(slice.harnesses.iter().any(|h| h == slug), "{slug}");
         }
     }
