@@ -5,6 +5,7 @@ use yaml_splice::edit_frontmatter;
 use yaml_splice::parse::parse_mapping;
 
 use crate::error::CoreError;
+use crate::refusal;
 
 /// The note's `version`, or `None` when its frontmatter has none.
 ///
@@ -35,7 +36,7 @@ pub fn read_version(source: &str) -> Result<Option<String>, CoreError> {
             || "`version` must be a string".to_owned(),
             |r| r.sentence("version"),
         );
-    Err(CoreError::refused("malformed", refusal))
+    Err(CoreError::refused(refusal::MALFORMED, refusal))
 }
 
 /// The note with its `version` set to `version`, every other byte kept. A
@@ -61,7 +62,7 @@ pub fn set_version(source: &str, version: &str) -> Result<String, CoreError> {
         if split.yaml.is_none() || split.yaml_range != (start..end) {
             if lenient.yaml.trim().is_empty() {
                 return Err(CoreError::refused(
-                    "frontmatter-edit",
+                    refusal::FRONTMATTER_EDIT,
                     "the frontmatter block is empty and its fences are not plain `---` \
                      lines at the top of the note, so `version` cannot be added in place. \
                      Write each fence as `---` alone on its line, at the top",
@@ -98,13 +99,13 @@ fn edit_version(yaml: &str, version: &str) -> Result<String, CoreError> {
     };
     let outcome = edit_frontmatter(yaml, &[edit]).map_err(|e| {
         CoreError::refused(
-            "frontmatter-edit",
+            refusal::FRONTMATTER_EDIT,
             format!("frontmatter could not be edited: {e}"),
         )
     })?;
     String::from_utf8(outcome.bytes).map_err(|e| {
         CoreError::refused(
-            "frontmatter-encoding",
+            refusal::FRONTMATTER_ENCODING,
             format!("edited frontmatter is not UTF-8: {e}"),
         )
     })
@@ -119,7 +120,7 @@ fn frontmatter_mapping(source: &str) -> Result<Option<yaml_splice::Mapping>, Cor
     }
     parse_mapping(yaml).map(Some).map_err(|e| {
         CoreError::refused(
-            "frontmatter-read",
+            refusal::FRONTMATTER_READ,
             format!("frontmatter could not be read: {e}"),
         )
     })

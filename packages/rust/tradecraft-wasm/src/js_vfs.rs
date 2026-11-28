@@ -115,7 +115,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::vfs::{Metadata, VfsError, ms_f64_to_ns, normalize};
-use tradecraft_core::{CoreError, DirEntry, Vfs};
+use tradecraft_core::{CoreError, DirEntry, Vfs, refusal};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -204,10 +204,10 @@ impl JsVfs {
     /// than failing the whole build before anything is attempted.
     pub fn adopt(value: JsValue) -> Result<Self, CoreError> {
         if !value.is_object() {
-            return Err(CoreError::Refused(
+            return Err(CoreError::refused(
+                refusal::INVALID_VFS,
                 "the filesystem passed to the core must be an object with readFile, readDir, \
-                 writeFile, createDirAll, exists, isExecutable, and setExecutable"
-                    .to_string(),
+                 writeFile, createDirAll, exists, isExecutable, and setExecutable",
             ));
         }
         let host: HostVfs = value.unchecked_into();

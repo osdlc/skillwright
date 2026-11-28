@@ -257,7 +257,7 @@ fn a_check_reports_every_marketplace_when_two_refuse() {
         .collect();
     assert_eq!(refused, ["acme", "zoo"]);
     for r in &report.refused {
-        assert!(r.error.starts_with("refused: "), "{}", r.error);
+        assert!(r.token.is_some(), "{r:?}");
     }
     assert!(!vfs.exists(Path::new("/v/dist")));
 }
@@ -351,4 +351,19 @@ impl Vfs for FailingRename<'_> {
     fn remove(&self, path: &Path) -> Result<(), VfsError> {
         self.inner.remove(path)
     }
+}
+
+#[test]
+fn a_note_that_is_not_utf8_is_skipped_by_the_scan_and_refused_by_the_build() {
+    let vfs = vault("", &["m"]);
+    let path = Path::new("/v/marketplaces/m/plugins/tools/skills/review/review.md");
+    vfs.create_dir_all(path.parent().unwrap()).unwrap();
+    vfs.write_file(path, &[0xff, 0xfe]).unwrap();
+
+    let scan = tradecraft_core::discover::discover_components(&vfs, Path::new("/v")).unwrap();
+    assert_eq!(scan.skipped.len(), 1, "{:?}", scan.skipped);
+    assert_eq!(scan.skipped[0].reason, "unreadable-note");
+
+    let err = build_vault(&vfs, &VaultRequest::new("/v")).unwrap_err();
+    assert_eq!(err.token(), Some(tradecraft_core::refusal::UNREADABLE_NOTE));
 }

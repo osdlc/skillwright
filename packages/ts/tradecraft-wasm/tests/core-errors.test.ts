@@ -50,7 +50,18 @@ describe('a host filesystem that throws a value with no message', () => {
 
       expect(raw).toBeInstanceOf(CoreError)
       expect((raw as CoreError).coreName).toBe('Io')
+      expect((raw as CoreError).token).toBeUndefined()
       expect((raw as CoreError).message).toContain(tmp)
     })
   }
+})
+
+describe('a filesystem that is not an object', () => {
+  test('is a Refused CoreError with the invalid-vfs token', () => {
+    const raw = thrownBy(() => discoverComponents(42 as unknown as Vfs, { vault_root: tmp }))
+
+    expect(raw).toBeInstanceOf(CoreError)
+    expect((raw as CoreError).coreName).toBe('Refused')
+    expect((raw as CoreError).token).toBe('invalid-vfs')
+  })
 })
