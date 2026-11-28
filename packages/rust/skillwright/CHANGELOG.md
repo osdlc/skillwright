@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.2](https://github.com/osdlc/skillwright/compare/skillwright/v0.12.1...skillwright/v0.12.2) - 2026-11-28
+
+### Dependencies
+
+- Updated the following local packages: tradecraft-core
+
 ## [0.12.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.12.0...skillwright/v0.12.1) - 2026-11-12
 
 - Depend on markdown-link 0.9, so an install builds one copy of it.
