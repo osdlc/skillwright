@@ -19,7 +19,7 @@
     "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
   "devDependencies": {
-    "@osdlc/harness-knowledge": "0.2.0",
+    "@osdlc/harness-knowledge": "0.3.0",
     "@osdlc/prettier-config": "^0.3.1",
     "@types/node": "catalog:",
     "prettier": "catalog:",
